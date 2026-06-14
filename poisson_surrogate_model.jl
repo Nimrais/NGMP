@@ -30,12 +30,16 @@ function bethe_poisson_smoother(y_counts;
                                 m0       = 0.0,
                                 v0       = 10.0,
                                 max_iter = 100,
-                                tol      = 1e-6)
+                                tol      = 1e-6,
+                                verbose  = true,
+                                snapshot_every = 0)
     N    = length(y_counts)
     mbar = log.(y_counts .+ 1.0)         # initial marginal means
     vbar = fill(1.0, N)                  # initial marginal variances
     local result, mnew, vnew
     Fhist = Float64[]                    # Bethe Free Energy trajectory
+    Δqhist = Float64[]                   # marginal-update trajectory
+    snapshots = NamedTuple[]
 
     for iter in 1:max_iter
         # (A) refresh the Gaussian surrogate for every Poisson factor:
@@ -58,23 +62,33 @@ function bethe_poisson_smoother(y_counts;
         post = result.posteriors[:x]
         mnew = map(mean, post)
         vnew = map(var, post)
+        Δq = max(maximum(abs.(mnew .- mbar)), maximum(abs.(vnew .- vbar)))
+        push!(Δqhist, Δq)
         mbar, vbar = mnew, vnew
 
-        # Convergence on the Bethe Free Energy of the linearized model.
+        # Keep the changing-surrogate BFE for diagnostics. Convergence is
+        # measured on the posterior marginals because the surrogate changes.
         F = isempty(result.free_energy) ? NaN : result.free_energy[end]
         push!(Fhist, F)
-        ΔF = length(Fhist) < 2 ? Inf : abs(Fhist[end] - Fhist[end-1])
+        verbose && @info "iter $iter   F_surrogate = $(round(F, sigdigits=6))   Δq = $(round(Δq, sigdigits=3))"
 
-        @info "iter $iter   F = $(round(F, sigdigits=6))   ΔF = $(round(ΔF, sigdigits=3))"
+        save_snapshot = snapshot_every > 0 && iter % snapshot_every == 0
+        if save_snapshot || Δq < tol || iter == max_iter
+            push!(snapshots, (iteration = iter, means = copy(mbar),
+                              variances = copy(vbar)))
+        end
 
-        if ΔF < tol
-            @info "converged in $iter iterations (|ΔF| < $tol)"
+        if Δq < tol
+            verbose && @info "converged in $iter iterations (Δq < $tol)"
             break
         end
     end
 
     return (means = mbar, variances = vbar,
-            free_energy = Fhist, result = result)
+            free_energy = Fhist, update_norm = Δqhist,
+            iterations = length(Δqhist), converged = Δqhist[end] < tol,
+            snapshots = snapshots,
+            result = result)
 end
 
 
@@ -102,7 +116,9 @@ function bethe_damped_poisson_smoother(y_counts;
                                        v0       = 10.0,
                                        max_iter = 200,
                                        tol      = 1e-6,
-                                       α        = 0.1)
+                                       α        = 0.1,
+                                       verbose  = true,
+                                       snapshot_every = 0)
     N    = length(y_counts)
     mbar = log.(y_counts .+ 1.0)
     vbar = fill(1.0, N)
@@ -113,6 +129,8 @@ function bethe_damped_poisson_smoother(y_counts;
 
     local result, mnew, vnew
     Fhist = Float64[]
+    Δqhist = Float64[]
+    snapshots = NamedTuple[]
 
     for iter in 1:max_iter
         # (A) target surrogate γ*_k in canonical form, evaluated at current marginal
@@ -140,29 +158,38 @@ function bethe_damped_poisson_smoother(y_counts;
         post = result.posteriors[:x]
         mnew = map(mean, post)
         vnew = map(var, post)
+        Δq = max(maximum(abs.(mnew .- mbar)), maximum(abs.(vnew .- vbar)))
+        push!(Δqhist, Δq)
         mbar, vbar = mnew, vnew
 
         F = isempty(result.free_energy) ? NaN : result.free_energy[end]
         push!(Fhist, F)
-        ΔF = length(Fhist) < 2 ? Inf : abs(Fhist[end] - Fhist[end-1])
+        verbose && @info "iter $iter   F_surrogate = $(round(F, sigdigits=6))   Δq = $(round(Δq, sigdigits=3))"
 
-        @info "iter $iter   F = $(round(F, sigdigits=6))   ΔF = $(round(ΔF, sigdigits=3))"
+        save_snapshot = snapshot_every > 0 && iter % snapshot_every == 0
+        if save_snapshot || Δq < tol || iter == max_iter
+            push!(snapshots, (iteration = iter, means = copy(mbar),
+                              variances = copy(vbar)))
+        end
 
-        if ΔF < tol
-            @info "converged in $iter iterations (|ΔF| < $tol, α = $α)"
+        if Δq < tol
+            verbose && @info "converged in $iter iterations (Δq < $tol, α = $α)"
             break
         end
     end
 
     return (means = mbar, variances = vbar,
-            free_energy = Fhist, result = result,
+            free_energy = Fhist, update_norm = Δqhist,
+            iterations = length(Δqhist), converged = Δqhist[end] < tol,
+            snapshots = snapshots,
+            result = result,
             eta_gamma = ηγ, lambda_gamma = Λγ)
 end
 
 
 # ----------------------------------------------------------------------------
-# Simulate a log-Gaussian Cox / Poisson state-space chain, run the smoother,
-# and visualize how well the posteriors recover the latent random walk.
+# Simulate one data set and compare plain and damped Bethe smoothers using
+# identical priors, initialization, tolerance, and iteration budget.
 # Wrapped in begin ... end so the whole block runs as a single expression.
 # ----------------------------------------------------------------------------
 begin
@@ -174,69 +201,132 @@ begin
     z_true = cumsum(sqrt(σ_true) .* randn(N))
     y = map(z -> rand(Poisson(exp(z))), z_true)
 
-    res = bethe_damped_poisson_smoother(y; σ = σ_true,
-                                           m0 = 0.0, v0 = 10.0,
-                                           max_iter = 300, tol = 1e-6, α=0.25)
+    common = (;σ = σ_true, m0 = 0.0, v0 = 10.0,
+              max_iter = 200, tol = 1e-6, verbose = false,
+              snapshot_every = 50)
 
-    m = res.means
-    v = res.variances
-    s = sqrt.(v)
-    F = res.free_energy
+    # Compile both paths before timing so method order does not dominate the
+    # runtime comparison.
+    warm_y = y[1:10]
+    bethe_poisson_smoother(warm_y; σ = σ_true, max_iter = 1, verbose = false)
+    bethe_damped_poisson_smoother(warm_y; σ = σ_true, max_iter = 1,
+                                  α = 0.25, verbose = false)
 
-    rmse_z  = sqrt(mean((m .- z_true).^2))
-    covered = mean((z_true .>= m .- 1.96 .* s) .& (z_true .<= m .+ 1.96 .* s))
-    println("\nRMSE on z      : ", round(rmse_z,  digits = 4))
-    println("95% coverage   : ", round(covered, digits = 3))
-    println("final F        : ", round(F[end],   digits = 4))
+    plain_t  = @timed bethe_poisson_smoother(y; common...)
+    damped_t = @timed bethe_damped_poisson_smoother(y; common..., α = 0.25)
+    plain, damped = plain_t.value, damped_t.value
+
+    function metrics(res, elapsed)
+        s = sqrt.(res.variances)
+        return (rmse = sqrt(mean((res.means .- z_true) .^ 2)),
+                coverage = mean(abs.(z_true .- res.means) .<= 1.96 .* s),
+                iterations = res.iterations, converged = res.converged,
+                seconds = elapsed)
+    end
+    plain_metrics  = metrics(plain, plain_t.time)
+    damped_metrics = metrics(damped, damped_t.time)
+
+    println("\nPoisson smoother comparison (same data and stopping rule)")
+    println(rpad("method", 14), rpad("RMSE", 10), rpad("coverage", 12),
+            rpad("iters", 8), rpad("seconds", 10), "converged")
+    for (name, x) in (("Bethe", plain_metrics), ("Damped (0.25)", damped_metrics))
+        println(rpad(name, 14), rpad(string(round(x.rmse, digits = 4)), 10),
+                rpad(string(round(x.coverage, digits = 3)), 12),
+                rpad(string(x.iterations), 8),
+                rpad(string(round(x.seconds, digits = 3)), 10), x.converged)
+    end
 
     t      = 1:N
     λ_true = exp.(z_true)
-    λ_post = exp.(m .+ v ./ 2)
-    resid  = (z_true .- m) ./ s
-    xs     = range(-4, 4; length = 200)
+    s_plain, s_damped = sqrt.(plain.variances), sqrt.(damped.variances)
 
     # (1) log-rate space: true z_k vs posterior mean ± 1.96σ
     p1 = plot(t, z_true; label = "true z_k", lw = 2, color = :black,
               xlabel = "k", ylabel = "log-rate z_k",
-              title  = "Latent log-rate: posterior vs truth")
-    plot!(p1, t, m; ribbon = 1.96 .* s, fillalpha = 0.25,
-          label = "posterior mean ± 1.96σ",
-          color = :dodgerblue, lw = 2)
+              title  = "Latent log-rate")
+    plot!(p1, t, plain.means; ribbon = 1.96 .* s_plain, fillalpha = 0.12,
+          label = "Bethe", color = :darkorange, lw = 1.5)
+    plot!(p1, t, damped.means; ribbon = 1.96 .* s_damped, fillalpha = 0.12,
+          label = "damped Bethe (α=0.25)", color = :dodgerblue, lw = 1.5)
 
     # (2) rate space: true rate, counts, posterior expected rate
     p2 = scatter(t, y; label = "counts y_k", ms = 3, color = :gray,
                  xlabel = "k", ylabel = "rate / count",
                  title  = "Rate space")
     plot!(p2, t, λ_true; label = "true rate exp(z_k)", color = :black,     lw = 2)
-    plot!(p2, t, λ_post; label = "E_q[exp(z_k)]",      color = :dodgerblue, lw = 2)
+    plot!(p2, t, exp.(plain.means .+ plain.variances ./ 2);
+          label = "Bethe rate", color = :darkorange, lw = 1.5)
+    plot!(p2, t, exp.(damped.means .+ damped.variances ./ 2);
+          label = "damped rate", color = :dodgerblue, lw = 1.5)
 
-    # (3) calibration of posterior std
-    p3 = histogram(resid; bins = 30, normalize = :pdf,
-                   label = "(z_true − m)/σ",
-                   xlabel = "standardized residual", ylabel = "density",
-                   title  = "Posterior calibration",
-                   color = :dodgerblue, alpha = 0.6)
-    plot!(p3, xs, pdf.(Normal(0, 1), xs); label = "N(0,1)",
-          color = :black, lw = 2)
+    # The common stopping statistic is directly comparable across methods.
+    p3 = plot(plain.update_norm; yscale = :log10, lw = 2,
+              color = :darkorange, label = "Bethe",
+              xlabel = "outer iteration", ylabel = "max marginal change",
+              title = "Convergence")
+    plot!(p3, damped.update_norm; lw = 2, color = :dodgerblue,
+          label = "damped Bethe (α=0.25)")
 
-    # (4) Bethe Free Energy convergence trajectory
-    p4 = plot(1:length(F), F; lw = 2, marker = :circle, ms = 4,
-              color = :dodgerblue, label = "F (linearized BFE)",
-              xlabel = "outer iteration", ylabel = "F",
-              title  = "Bethe Free Energy convergence")
+    # This BFE belongs to a different Gaussian surrogate each iteration. It is
+    # useful diagnostically, but it is not a shared objective or stopping rule.
+    p4 = plot(plain.free_energy; lw = 2, color = :darkorange, label = "Bethe",
+              xlabel = "outer iteration", ylabel = "surrogate BFE",
+              title = "Changing-surrogate BFE")
+    plot!(p4, damped.free_energy; lw = 2, color = :dodgerblue,
+          label = "damped Bethe (α=0.25)")
 
     plt = plot(p1, p2, p3, p4; layout = (4, 1), size = (900, 1200),
-               legend = :topleft)
-    savefig(plt, joinpath(@__DIR__, "rxinfer_posterior.png"))
+               legend = :topright, dpi = 600)
+    savefig(plt, joinpath(@__DIR__, "poisson_bethe_comparison.png"))
+    savefig(plt, joinpath(@__DIR__, "poisson_bethe_comparison.pdf"))
     display(plt)
+
+    # Progress snapshots expose how damping changes the path, not just the
+    # final answer. After one method converges, its final state is held fixed
+    # in subsequent panels while the other method continues iterating.
+    function latest_snapshot(snapshots, iteration)
+        eligible = filter(s -> s.iteration <= iteration, snapshots)
+        return isempty(eligible) ? first(snapshots) : last(eligible)
+    end
+
+    checkpoint_iters = collect(50:50:max(plain.iterations, damped.iterations))
+    progress_plots = Any[]
+    for iter in checkpoint_iters
+        plain_snapshot = latest_snapshot(plain.snapshots, iter)
+        damped_snapshot = latest_snapshot(damped.snapshots, iter)
+        plain_ci = 1.96 .* sqrt.(plain_snapshot.variances)
+        damped_ci = 1.96 .* sqrt.(damped_snapshot.variances)
+        p = plot(t, z_true; color = :black, lw = 1.5, label = "truth",
+                 xlabel = "k", ylabel = "z_k", title = "Iteration $iter")
+        plot!(p, t, plain_snapshot.means; ribbon = plain_ci,
+              color = :darkorange, fillalpha = 0.12, lw = 1.5,
+              label = "Bethe 95% CI @$(plain_snapshot.iteration)")
+        plot!(p, t, damped_snapshot.means; ribbon = damped_ci,
+              color = :dodgerblue, fillalpha = 0.12, lw = 1.5,
+              label = "damped 95% CI @$(damped_snapshot.iteration)")
+        push!(progress_plots, p)
+    end
+
+    p_energy = plot(plain.free_energy; lw = 2, color = :darkorange,
+                    label = "Bethe", xlabel = "outer iteration",
+                    ylabel = "surrogate BFE", title = "Free energy")
+    plot!(p_energy, damped.free_energy; lw = 2, color = :dodgerblue,
+          label = "damped Bethe (α=0.25)")
+    checkpoint_rows = cld(length(progress_plots), 2)
+    checkpoint_plt = plot(progress_plots...;
+                          layout = (checkpoint_rows, 2), legend = :topright)
+    progress_layout = @layout [checkpoints{0.72h}
+                               energy{0.28h}]
+    progress_plt = plot(checkpoint_plt, p_energy; layout = progress_layout,
+                        size = (1200, 320 * checkpoint_rows + 380),
+                        legend = :topright, dpi = 600)
+    savefig(progress_plt, joinpath(@__DIR__, "poisson_bethe_progress.png"))
+    savefig(progress_plt, joinpath(@__DIR__, "poisson_bethe_progress.pdf"))
+    display(progress_plt)
 
     println("\nfirst 10 latent log-rates:")
     println("  true     : ", round.(z_true[1:10], digits = 3))
-    println("  smoothed : ", round.(m[1:10],      digits = 3))
-    println("  std-err  : ", round.(s[1:10],      digits = 3))
+    println("  Bethe    : ", round.(plain.means[1:10],  digits = 3))
+    println("  damped   : ", round.(damped.means[1:10], digits = 3))
     println("  counts   : ", y[1:10])
 end
-
-# This experiment shows that there is indeed optimal momentum value if you will run this experiment with α=0.01 and smaller almost no momentum
-# the result will be very bad model if you are using some good momentum value like α=0.4 it actually will converge to a good model and BFE is convering as well
-# if α=0.75 the model is good but BFE does not converge and has periodic behaviour near the optimum 
