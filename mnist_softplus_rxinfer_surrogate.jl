@@ -62,6 +62,7 @@ end
     x_img_y, x_img_Λ,
     b_img_y, b_img_Λ,
     x_cls_y, x_cls_Λ,
+    x_smooth_y, x_smooth_Λ,
     u_cls_y, u_cls_Λ,
     c_cls_y, c_cls_Λ,
     b_prior_m, b_prior_Λ,
@@ -97,6 +98,7 @@ end
         x[n, p, f] ~ Normal(mean = 0.0, precision = x_weak_precision)
         x_sp_y[n, p, f] ~ Normal(mean = x[n, p, f], precision = x_sp_Λ[n, p, f])
         x_cls_y[n, p, f] ~ Normal(mean = x[n, p, f], precision = x_cls_Λ[n, p, f])
+        x_smooth_y[n, p, f] ~ Normal(mean = x[n, p, f], precision = x_smooth_Λ[n, p, f])
 
         for r in 1:r_count
             x_img_y[n, p, f, r] ~ Normal(mean = x[n, p, f], precision = x_img_Λ[n, p, f, r])
@@ -119,6 +121,7 @@ function surrogate_observation(site, priors; global_site_scale = 1.0)
     x_img_y, x_img_Λ = nat_to_observations(site.x_img_xi, site.x_img_Λ)
     b_img_y, b_img_Λ = nat_to_observations(site.b_img_xi, site.b_img_Λ; scale = global_site_scale)
     x_cls_y, x_cls_Λ = nat_to_observations(site.x_cls_xi, site.x_cls_Λ)
+    x_smooth_y, x_smooth_Λ = nat_to_observations(site.x_smooth_xi, site.x_smooth_Λ)
     u_cls_y, u_cls_Λ = nat_to_observations(site.u_cls_xi, site.u_cls_Λ; scale = global_site_scale)
     c_cls_y, c_cls_Λ = nat_to_observations(site.c_cls_xi, site.c_cls_Λ; scale = global_site_scale)
 
@@ -128,6 +131,7 @@ function surrogate_observation(site, priors; global_site_scale = 1.0)
         x_img_y = x_img_y, x_img_Λ = x_img_Λ,
         b_img_y = b_img_y, b_img_Λ = b_img_Λ,
         x_cls_y = x_cls_y, x_cls_Λ = x_cls_Λ,
+        x_smooth_y = x_smooth_y, x_smooth_Λ = x_smooth_Λ,
         u_cls_y = u_cls_y, u_cls_Λ = u_cls_Λ,
         c_cls_y = c_cls_y, c_cls_Λ = c_cls_Λ,
         b_prior_m = priors.b_m, b_prior_Λ = priors.b_Λ,
@@ -224,10 +228,10 @@ end
 
 function init_priors(num_features, num_spatial_bins;
                      b_var = 1.0, u_var = 1.0, c_var = 4.0,
-                     b_mean = 0.05, seed = 1)
+                     b_mean = 0.05, r_count = 4, seed = 1)
     rng = MersenneTwister(seed)
-    b_m = b_mean .+ 0.01 .* randn(rng, num_features, 4)
-    b_Λ = fill(inv(b_var), num_features, 4)
+    b_m = b_mean .+ 0.01 .* randn(rng, num_features, r_count)
+    b_Λ = fill(inv(b_var), num_features, r_count)
     u_count = num_features * num_spatial_bins
     u_m = 0.01 .* randn(rng, u_count)
     u_Λ = fill(inv(u_var), u_count)
@@ -259,6 +263,8 @@ function zero_sites(n_count, p_count, f_count, r_count, u_count)
         b_img_Λ = zeros(n_count, p_count, f_count, r_count),
         x_cls_xi = zeros(n_count, p_count, f_count),
         x_cls_Λ = zeros(n_count, p_count, f_count),
+        x_smooth_xi = zeros(n_count, p_count, f_count),
+        x_smooth_Λ = zeros(n_count, p_count, f_count),
         u_cls_xi = zeros(n_count, u_count),
         u_cls_Λ = zeros(n_count, u_count),
         c_cls_xi = zeros(n_count),
@@ -274,11 +280,47 @@ function damp_sites(site, target, alpha)
     return NamedTuple{names}(values)
 end
 
+function add_smoothness_sites!(target, mx, smooth_precision)
+    smooth_precision <= 0 && return target
+    n_count, p_count, f_count = size(mx)
+    side = round(Int, sqrt(p_count))
+    side * side == p_count || return target
+
+    for n in 1:n_count, row in 1:side, col in 1:side, f in 1:f_count
+        p = (row - 1) * side + col
+        neighbor_sum = 0.0
+        neighbor_count = 0
+        if row > 1
+            neighbor_sum += mx[n, p - side, f]
+            neighbor_count += 1
+        end
+        if row < side
+            neighbor_sum += mx[n, p + side, f]
+            neighbor_count += 1
+        end
+        if col > 1
+            neighbor_sum += mx[n, p - 1, f]
+            neighbor_count += 1
+        end
+        if col < side
+            neighbor_sum += mx[n, p + 1, f]
+            neighbor_count += 1
+        end
+        if neighbor_count > 0
+            precision = smooth_precision * neighbor_count
+            target.x_smooth_xi[n, p, f] += smooth_precision * neighbor_sum
+            target.x_smooth_Λ[n, p, f] += precision
+        end
+    end
+    return target
+end
+
 function refresh_sites(batch_x, batch_y, marginals, old_site;
                        sigma_a2 = 1.0,
                        sigma_sp2 = 0.05^2,
                        sigma_y2 = 0.18^2,
-                       num_spatial_bins = 49)
+                       num_spatial_bins = 49,
+                       smooth_precision = 0.0)
     p_count, r_count, n_count = size(batch_x)
     f_count = size(marginals.mx, 3)
     u_count = length(marginals.mu)
@@ -292,6 +334,7 @@ function refresh_sites(batch_x, batch_y, marginals, old_site;
     mb, vb = marginals.mb, marginals.vb
     mu, vu = marginals.mu, marginals.vu
     mc, vc = marginals.mc, marginals.vc
+    add_smoothness_sites!(target, mx, smooth_precision)
 
     # Softplus sites: a -> x. The receiving a site uses the x cavity; the x
     # site uses the a prior cavity in this minimal graph.
@@ -407,6 +450,7 @@ function infer_batch_rxinfer(priors, batch_x, batch_y;
                              sigma_y2 = 0.18^2,
                              alpha = 0.08,
                              global_site_scale = 1.0,
+                             smooth_precision = 0.0,
                              max_inner = 12,
                              tol = 1e-4,
                              verbose = false)
@@ -420,7 +464,8 @@ function infer_batch_rxinfer(priors, batch_x, batch_y;
         result = run_surrogate_bp(site, priors; sigma_a2, global_site_scale)
         marginals = extract_marginals(result)
         target = refresh_sites(batch_x, batch_y, marginals, site;
-                               sigma_a2, sigma_sp2, sigma_y2, num_spatial_bins)
+                               sigma_a2, sigma_sp2, sigma_y2,
+                               num_spatial_bins, smooth_precision)
         new_site = damp_sites(site, target, alpha)
         last_delta = maximum(maximum(abs.(getfield(new_site, name) .- getfield(site, name))) for name in keys(site))
         site = new_site
@@ -443,6 +488,7 @@ function infer_batch_rxinfer_streaming(priors, batch_x, batch_y;
                                        sigma_y2 = 0.18^2,
                                        alpha = 0.08,
                                        global_site_scale = 1.0,
+                                       smooth_precision = 0.0,
                                        max_inner = 12,
                                        tol = 1e-4,
                                        verbose = false)
@@ -457,7 +503,8 @@ function infer_batch_rxinfer_streaming(priors, batch_x, batch_y;
         for inner in 1:max_inner
             marginals = run_surrogate_bp!(state, site, priors; global_site_scale)
             target = refresh_sites(batch_x, batch_y, marginals, site;
-                                   sigma_a2, sigma_sp2, sigma_y2, num_spatial_bins)
+                                   sigma_a2, sigma_sp2, sigma_y2,
+                                   num_spatial_bins, smooth_precision)
             new_site = damp_sites(site, target, alpha)
             last_delta = maximum(maximum(abs.(getfield(new_site, name) .- getfield(site, name))) for name in keys(site))
             site = new_site
@@ -526,6 +573,329 @@ function infer_image_features_rx(priors, image_patches;
     return extract_marginals(result)
 end
 
+function refresh_image_sites(batch_x, marginals, old_site;
+                             sigma_a2 = 1.0,
+                             sigma_sp2 = 0.05^2,
+                             sigma_y2 = 0.18^2,
+                             smooth_precision = 0.0)
+    p_count, r_count, n_count = size(batch_x)
+    f_count = size(marginals.mx, 3)
+    u_count = length(marginals.mu)
+    target = zero_sites(n_count, p_count, f_count, r_count, u_count)
+
+    ma, mx, vx = marginals.ma, marginals.mx, marginals.vx
+    mb, vb = marginals.mb, marginals.vb
+    add_smoothness_sites!(target, mx, smooth_precision)
+
+    for n in 1:n_count, p in 1:p_count, f in 1:f_count
+        target.x_sp_xi[n, p, f], target.x_sp_Λ[n, p, f] =
+            softplus_to_x_site(0.0, sigma_a2, sigma_sp2)
+        target.a_xi[n, p, f], target.a_Λ[n, p, f] =
+            positive_softplus_to_a_site(ma[n, p, f], mx[n, p, f], vx[n, p, f], sigma_sp2)
+    end
+
+    for n in 1:n_count, p in 1:p_count, r in 1:r_count
+        y = batch_x[p, r, n]
+        prod_mean = [mx[n, p, f] * mb[f, r] for f in 1:f_count]
+        prod_var = [vx[n, p, f] * vb[f, r] +
+                    vx[n, p, f] * mb[f, r]^2 +
+                    vb[f, r] * mx[n, p, f]^2 for f in 1:f_count]
+        total_mean = sum(prod_mean)
+        total_var = sigma_y2 + sum(prod_var)
+        for f in 1:f_count
+            residual = y - (total_mean - prod_mean[f])
+            noise = max(total_var - prod_var[f], sigma_y2)
+            g, h = product_log_derivatives(mx[n, p, f], residual, mb[f, r], vb[f, r], noise)
+            target.x_img_xi[n, p, f, r], target.x_img_Λ[n, p, f, r] =
+                positive_site_from_grad_hess(mx[n, p, f], g, h; max_precision = 1e3)
+        end
+    end
+
+    return target
+end
+
+function infer_image_features_batch_rx_streaming(priors, batch_x;
+                                                 num_features = size(priors.b_m, 1),
+                                                 sigma_a2 = 1.0,
+                                                 sigma_sp2 = 0.05^2,
+                                                 sigma_y2 = 0.18^2,
+                                                 alpha = 0.15,
+                                                 smooth_precision = 0.0,
+                                                 max_inner = 10,
+                                                 tol = 1e-4)
+    p_count, r_count, n_count = size(batch_x)
+    site = zero_sites(n_count, p_count, num_features, r_count, length(priors.u_m))
+    state = start_surrogate_stream(site, priors; sigma_a2, global_site_scale = 0.0)
+    last_delta = Inf
+
+    try
+        local marginals
+        for _ in 1:max_inner
+            marginals = run_surrogate_bp!(state, site, priors; global_site_scale = 0.0)
+            target = refresh_image_sites(batch_x, marginals, site;
+                                         sigma_a2, sigma_sp2, sigma_y2,
+                                         smooth_precision)
+            new_site = damp_sites(site, target, alpha)
+            last_delta = maximum(maximum(abs.(getfield(new_site, name) .- getfield(site, name))) for name in keys(site))
+            site = new_site
+            last_delta < tol && break
+        end
+        marginals = run_surrogate_bp!(state, site, priors; global_site_scale = 0.0)
+        return marginals, last_delta
+    finally
+        stop_surrogate_stream!(state)
+    end
+end
+
+function refresh_class_conditioned_sites(label, marginals, old_site;
+                                         sigma_a2 = 1.0,
+                                         sigma_sp2 = 0.05^2,
+                                         num_spatial_bins = 49,
+                                         label_strength = 1.0,
+                                         smooth_precision = 0.0)
+    n_count, p_count, f_count = size(marginals.mx)
+    n_count == 1 || error("Class-conditioned generation currently expects one synthetic image.")
+    u_count = length(marginals.mu)
+    bin_ids = patch_bin_ids(p_count; num_bins = num_spatial_bins)
+    bin_counts = [count(==(q), bin_ids) for q in 1:num_spatial_bins]
+    target = zero_sites(n_count, p_count, f_count, size(old_site.x_img_xi, 4), u_count)
+
+    ma, mx, vx = marginals.ma, marginals.mx, marginals.vx
+    mu, vu = marginals.mu, marginals.vu
+    mc, vc = marginals.mc, marginals.vc
+    add_smoothness_sites!(target, mx, smooth_precision)
+
+    for p in 1:p_count, f in 1:f_count
+        x_cav_xi = mx[1, p, f] / vx[1, p, f] - old_site.x_sp_xi[1, p, f]
+        x_cav_Λ = inv(vx[1, p, f]) - old_site.x_sp_Λ[1, p, f]
+        mx_cav, vx_cav = gaussian_from_nat(x_cav_xi, x_cav_Λ)
+        target.a_xi[1, p, f], target.a_Λ[1, p, f] =
+            positive_softplus_to_a_site(ma[1, p, f], mx_cav, vx_cav, sigma_sp2)
+
+        target.x_sp_xi[1, p, f], target.x_sp_Λ[1, p, f] =
+            softplus_to_x_site(0.0, sigma_a2, sigma_sp2)
+    end
+
+    gmean = zeros(u_count)
+    gvar = zeros(u_count)
+    for f in 1:f_count, q in 1:num_spatial_bins
+        idx = (f - 1) * num_spatial_bins + q
+        count_q = bin_counts[q]
+        for p in 1:p_count
+            if bin_ids[p] == q
+                gmean[idx] += mx[1, p, f] / count_q
+                gvar[idx] += vx[1, p, f] / count_q^2
+            end
+        end
+    end
+
+    prod_mean = zeros(u_count)
+    prod_var = zeros(u_count)
+    tmean = mc
+    for k in 1:u_count
+        prod_mean[k], prod_var[k] = mean_var_product(gmean[k], gvar[k], mu[k], vu[k])
+        tmean += prod_mean[k]
+    end
+
+    xi_t, lambda_t, _ = logistic_site(tmean, label)
+    xi_t *= label_strength
+    lambda_t *= label_strength
+    pseudo_y = xi_t / lambda_t
+    pseudo_noise = inv(lambda_t)
+
+    for f in 1:f_count, q in 1:num_spatial_bins
+        idx = (f - 1) * num_spatial_bins + q
+        residual = pseudo_y - (mc + sum(prod_mean) - prod_mean[idx])
+        noise = max(pseudo_noise + vc + sum(prod_var) - prod_var[idx], pseudo_noise)
+        gg, hh = product_log_derivatives(gmean[idx], residual, mu[idx], vu[idx], noise)
+        xi_g, λ_g = positive_site_from_grad_hess(gmean[idx], gg, hh; max_precision = 1e3)
+
+        count_q = bin_counts[q]
+        for p in 1:p_count
+            if bin_ids[p] == q
+                target.x_cls_xi[1, p, f] += xi_g / count_q
+                target.x_cls_Λ[1, p, f] += λ_g / count_q^2
+            end
+        end
+    end
+
+    return target
+end
+
+function image_to_overlapping_patches(img14; patch_side = 3)
+    grid_side = 14 - patch_side + 1
+    patches = zeros(Float64, grid_side * grid_side, patch_side^2)
+    idx = 1
+    for i in 1:grid_side, j in 1:grid_side
+        r = 1
+        for di in 0:(patch_side - 1), dj in 0:(patch_side - 1)
+            patches[idx, r] = img14[i + di, j + dj]
+            r += 1
+        end
+        idx += 1
+    end
+    return patches
+end
+
+function select_binary_mnist_overlap(; digit0 = 0, digit1 = 1,
+                                     ntrain = 256, ntest = 128, nval = 128,
+                                     seed = 1, patch_side = 3)
+    Random.seed!(seed)
+    train = MNIST(split = :train)
+    test = MNIST(split = :test)
+    train_images = Float64.(train.features)
+    test_images = Float64.(test.features)
+    train_labels = Int.(train.targets)
+    test_labels = Int.(test.targets)
+
+    function collect_split(images, labels, nmax)
+        inds = findall(l -> l == digit0 || l == digit1, labels)
+        shuffle!(inds)
+        inds = inds[1:min(nmax, length(inds))]
+        grid_side = 14 - patch_side + 1
+        x = zeros(Float64, grid_side * grid_side, patch_side^2, length(inds))
+        y = zeros(Int, length(inds))
+        for (k, idx) in enumerate(inds)
+            img = downsample14(@view images[:, :, idx])
+            x[:, :, k] .= image_to_overlapping_patches(img; patch_side)
+            y[k] = labels[idx] == digit1 ? 1 : 0
+        end
+        return x, y
+    end
+
+    train_all_x, train_all_y = collect_split(train_images, train_labels, ntrain + nval)
+    ntrain_actual = min(ntrain, length(train_all_y))
+    train_x = train_all_x[:, :, 1:ntrain_actual]
+    train_y = train_all_y[1:ntrain_actual]
+    val_start = ntrain_actual + 1
+    val_x = train_all_x[:, :, val_start:end]
+    val_y = train_all_y[val_start:end]
+    test_x, test_y = collect_split(test_images, test_labels, ntest)
+    return BinaryMnist(train_x, train_y, val_x, val_y, test_x, test_y)
+end
+
+function patches_to_image14(patches; patch_side = 2)
+    img = zeros(Float64, 14, 14)
+    weight = zeros(Float64, 14, 14)
+    grid_side = round(Int, sqrt(size(patches, 1)))
+    stride = patch_side == 2 && grid_side == 7 ? 2 : 1
+    idx = 1
+    for row in 1:grid_side, col in 1:grid_side
+        i = 1 + (row - 1) * stride
+        j = 1 + (col - 1) * stride
+        r = 1
+        for di in 0:(patch_side - 1), dj in 0:(patch_side - 1)
+            img[i + di, j + dj] += patches[idx, r]
+            weight[i + di, j + dj] += 1.0
+            r += 1
+        end
+        idx += 1
+    end
+    img ./= max.(weight, 1.0)
+    return img
+end
+
+function decode_patches_from_x(mx, b_m)
+    p_count, f_count = size(mx)
+    r_count = size(b_m, 2)
+    patches = zeros(Float64, p_count, r_count)
+    for p in 1:p_count, r in 1:r_count
+        patches[p, r] = sum(mx[p, f] * b_m[f, r] for f in 1:f_count)
+    end
+    return patches
+end
+
+function classifier_evidence_map(mx, priors; num_spatial_bins = 49)
+    p_count, f_count = size(mx)
+    bin_ids = patch_bin_ids(p_count; num_bins = num_spatial_bins)
+    bin_counts = [count(==(q), bin_ids) for q in 1:num_spatial_bins]
+    evidence = zeros(Float64, p_count)
+    for f in 1:f_count, q in 1:num_spatial_bins
+        idx = (f - 1) * num_spatial_bins + q
+        for p in 1:p_count
+            if bin_ids[p] == q
+                evidence[p] += mx[p, f] * priors.u_m[idx] / bin_counts[q]
+            end
+        end
+    end
+    grid_side = round(Int, sqrt(p_count))
+    return reshape(evidence, grid_side, grid_side)
+end
+
+function class_conditioned_generation(priors, label;
+                                      num_spatial_bins = 49,
+                                      p_count = 49,
+                                      patch_side = 2,
+                                      sigma_a2 = 1.0,
+                                      sigma_sp2 = 0.05^2,
+                                      label_strength = 1.0,
+                                      smooth_precision = 0.0,
+                                      alpha = 0.15,
+                                      max_inner = 40,
+                                      tol = 1e-4)
+    num_features = size(priors.b_m, 1)
+    site = zero_sites(1, p_count, num_features, size(priors.b_m, 2), length(priors.u_m))
+    last_delta = Inf
+    local marginals
+
+    for inner in 1:max_inner
+        result = run_surrogate_bp(site, priors; sigma_a2, global_site_scale = 0.0)
+        marginals = extract_marginals(result)
+        target = refresh_class_conditioned_sites(label, marginals, site;
+                                                 sigma_a2, sigma_sp2,
+                                                 num_spatial_bins,
+                                                 label_strength, smooth_precision)
+        new_site = damp_sites(site, target, alpha)
+        last_delta = maximum(maximum(abs.(getfield(new_site, name) .- getfield(site, name))) for name in keys(site))
+        site = new_site
+        last_delta < tol && break
+    end
+
+    result = run_surrogate_bp(site, priors; sigma_a2, global_site_scale = 0.0)
+    marginals = extract_marginals(result)
+    mx = dropdims(marginals.mx, dims = 1)
+    patches = decode_patches_from_x(mx, priors.b_m)
+    image = clamp.(patches_to_image14(patches; patch_side), 0.0, 1.0)
+    grid_side = round(Int, sqrt(p_count))
+    x_total = reshape(sum(mx; dims = 2), grid_side, grid_side)
+    evidence = classifier_evidence_map(mx, priors; num_spatial_bins)
+    logit = priors.c_m + sum(evidence)
+    return (label = label, image = image, patches = patches, mx = mx,
+            x_total = x_total, evidence = evidence, logit = logit,
+            prob1 = sigmoid(logit), delta = last_delta, marginals = marginals)
+end
+
+function save_class_generation_figure(path, priors; num_spatial_bins = 49,
+                                      p_count = 49, patch_side = 2,
+                                      label_strength = 1.0,
+                                      smooth_precision = 0.0)
+    gen0 = class_conditioned_generation(priors, 0; num_spatial_bins, p_count,
+                                        patch_side, label_strength, smooth_precision)
+    gen1 = class_conditioned_generation(priors, 1; num_spatial_bins, p_count,
+                                        patch_side, label_strength, smooth_precision)
+
+    @eval using Plots
+    return Base.invokelatest(save_class_generation_figure_loaded, path, gen0, gen1, label_strength)
+end
+
+function save_class_generation_figure_loaded(path, gen0, gen1, label_strength)
+    plt = Plots.plot(layout = (3, 2), size = (900, 1050))
+    gens = (gen0, gen1)
+    for (col, gen) in enumerate(gens)
+        Plots.heatmap!(plt[col], reverse(gen.image; dims = 1),
+                       color = :grays, aspect_ratio = :equal,
+                       axis = false, title = "label=$(gen.label), p1=$(round(gen.prob1, digits=3)), strength=$(label_strength)")
+        Plots.heatmap!(plt[col + 2], reverse(gen.x_total; dims = 1),
+                       color = :viridis, aspect_ratio = :equal,
+                       axis = false, title = "total local x")
+        Plots.heatmap!(plt[col + 4], reverse(gen.evidence; dims = 1),
+                       color = Plots.cgrad([:blue, :white, :red]), aspect_ratio = :equal,
+                       axis = false, title = "classifier evidence")
+    end
+    Plots.savefig(plt, path)
+    return (path = path, label0 = gen0, label1 = gen1)
+end
+
 function predict_rx(priors, image_patches; num_spatial_bins = 49)
     m = infer_image_features_rx(priors, image_patches)
     p_count = size(image_patches, 1)
@@ -544,6 +914,35 @@ function predict_rx(priors, image_patches; num_spatial_bins = 49)
     return sigmoid(priors.c_m + dot(priors.u_m, pooled))
 end
 
+function predict_batch_rx_streaming(priors, batch_x;
+                                    num_spatial_bins = 49,
+                                    smooth_precision = 0.0,
+                                    max_inner = 10,
+                                    alpha = 0.15)
+    m, delta = infer_image_features_batch_rx_streaming(priors, batch_x;
+                                                       smooth_precision,
+                                                       max_inner,
+                                                       alpha)
+    n_count, p_count, f_count = size(m.mx)
+    bin_ids = patch_bin_ids(p_count; num_bins = num_spatial_bins)
+    bin_counts = [count(==(q), bin_ids) for q in 1:num_spatial_bins]
+    probs = zeros(Float64, n_count)
+
+    for n in 1:n_count
+        pooled = zeros(length(priors.u_m))
+        for f in 1:f_count, q in 1:num_spatial_bins
+            idx = (f - 1) * num_spatial_bins + q
+            for p in 1:p_count
+                if bin_ids[p] == q
+                    pooled[idx] += m.mx[n, p, f] / bin_counts[q]
+                end
+            end
+        end
+        probs[n] = sigmoid(priors.c_m + dot(priors.u_m, pooled))
+    end
+    return probs, delta
+end
+
 function evaluate_rx(priors, x, y; max_images = size(x, 3), num_spatial_bins = 49)
     n = min(max_images, size(x, 3))
     correct = 0
@@ -554,21 +953,97 @@ function evaluate_rx(priors, x, y; max_images = size(x, 3), num_spatial_bins = 4
     return correct / n
 end
 
+function evaluate_rx_streaming(priors, x, y;
+                               max_images = size(x, 3),
+                               num_spatial_bins = 49,
+                               batch_size = 4,
+                               smooth_precision = 0.0,
+                               max_inner = 10,
+                               alpha = 0.15,
+                               log_every = 0)
+    n = min(max_images, size(x, 3))
+    correct = 0
+    seen = 0
+    deltas = Float64[]
+
+    for (batch_idx, start_idx) in enumerate(1:batch_size:n)
+        inds = start_idx:min(start_idx + batch_size - 1, n)
+        probs, delta = predict_batch_rx_streaming(priors, x[:, :, inds];
+                                                  num_spatial_bins,
+                                                  smooth_precision,
+                                                  max_inner,
+                                                  alpha)
+        for (j, idx) in enumerate(inds)
+            correct += (probs[j] >= 0.5) == (y[idx] == 1)
+            seen += 1
+        end
+        push!(deltas, delta)
+        if log_every > 0 && (batch_idx == 1 || batch_idx % log_every == 0)
+            println("eval_batch=$batch_idx seen=$seen acc=$(round(correct / seen, digits=4)) delta=$(round(delta, sigdigits=3))")
+        end
+    end
+
+    return (acc = correct / seen, mean_delta = mean(deltas), n = seen)
+end
+
+function train_rxinfer_priors_only(; digit0 = 0, digit1 = 1,
+                                   ntrain = 1000, num_features = 4,
+                                   num_spatial_bins = 49, batch_size = 4,
+                                   epochs = 1, seed = 1, alpha = 0.08,
+                                   streaming = true, log_every = 25,
+                                   patch_side = 2, overlap = false,
+                                   smooth_precision = 0.0,
+                                   max_inner = 12)
+    data = overlap || patch_side != 2 ?
+        select_binary_mnist_overlap(; digit0, digit1, ntrain, nval = 0, ntest = 0, seed, patch_side) :
+        select_binary_mnist(; digit0, digit1, ntrain, nval = 0, ntest = 0, seed)
+    priors = init_priors(num_features, num_spatial_bins;
+                         r_count = size(data.train_x, 2), seed = seed + 10)
+    site_scale = inv(epochs)
+    rng = MersenneTwister(seed + 20)
+    batch_infer = streaming ? infer_batch_rxinfer_streaming : infer_batch_rxinfer
+
+    println("RxInfer priors-only MNIST $digit0 vs $digit1")
+    println("train=$(length(data.train_y)) F=$num_features bins=$num_spatial_bins patch_side=$patch_side overlap=$(overlap || patch_side != 2) smooth_precision=$smooth_precision batch=$batch_size epochs=$epochs site_scale=$(round(site_scale, digits=4))")
+
+    for epoch in 1:epochs
+        order = shuffle(rng, collect(1:length(data.train_y)))
+        for (batch_idx, start_idx) in enumerate(1:batch_size:length(order))
+            inds = order[start_idx:min(start_idx + batch_size - 1, end)]
+            priors, stats = batch_infer(priors, data.train_x[:, :, inds], data.train_y[inds];
+                                        num_features, num_spatial_bins,
+                                        alpha, global_site_scale = site_scale,
+                                        smooth_precision, max_inner)
+            if log_every > 0 && (batch_idx == 1 || batch_idx % log_every == 0)
+                println("epoch=$epoch batch=$batch_idx mse=$(round(stats.mse, digits=5)) delta=$(round(stats.delta, sigdigits=3))")
+            end
+        end
+    end
+
+    return (priors = priors, data = data)
+end
+
 function train_rxinfer_demo(; digit0 = 0, digit1 = 1,
                             ntrain = 64, nval = 32, ntest = 32,
                             num_features = 4, num_spatial_bins = 49,
                             batch_size = 8, epochs = 3,
                             seed = 1, alpha = 0.08,
-                            streaming = false)
-    data = select_binary_mnist(; digit0, digit1, ntrain, nval, ntest, seed)
-    priors = init_priors(num_features, num_spatial_bins; seed = seed + 10)
+                            streaming = false,
+                            patch_side = 2, overlap = false,
+                            smooth_precision = 0.0,
+                            max_inner = 12)
+    data = overlap || patch_side != 2 ?
+        select_binary_mnist_overlap(; digit0, digit1, ntrain, nval, ntest, seed, patch_side) :
+        select_binary_mnist(; digit0, digit1, ntrain, nval, ntest, seed)
+    priors = init_priors(num_features, num_spatial_bins;
+                         r_count = size(data.train_x, 2), seed = seed + 10)
     site_scale = inv(epochs)
     rng = MersenneTwister(seed + 20)
     batch_infer = streaming ? infer_batch_rxinfer_streaming : infer_batch_rxinfer
 
     mode = streaming ? "streaming" : "static"
     println("RxInfer surrogate MNIST $digit0 vs $digit1 ($mode)")
-    println("train=$(length(data.train_y)) val=$(length(data.val_y)) test=$(length(data.test_y)) F=$num_features bins=$num_spatial_bins batch=$batch_size epochs=$epochs site_scale=$(round(site_scale, digits=4))")
+    println("train=$(length(data.train_y)) val=$(length(data.val_y)) test=$(length(data.test_y)) F=$num_features bins=$num_spatial_bins patch_side=$patch_side overlap=$(overlap || patch_side != 2) smooth_precision=$smooth_precision batch=$batch_size epochs=$epochs site_scale=$(round(site_scale, digits=4))")
 
     history = NamedTuple[]
     best_val_acc = -Inf
@@ -580,7 +1055,8 @@ function train_rxinfer_demo(; digit0 = 0, digit1 = 1,
             inds = order[start_idx:min(start_idx + batch_size - 1, end)]
             priors, stats = batch_infer(priors, data.train_x[:, :, inds], data.train_y[inds];
                                         num_features, num_spatial_bins,
-                                        alpha, global_site_scale = site_scale)
+                                        alpha, global_site_scale = site_scale,
+                                        smooth_precision, max_inner)
             println("epoch=$epoch batch=$batch_idx mse=$(round(stats.mse, digits=5)) delta=$(round(stats.delta, sigdigits=3))")
         end
         train_acc = evaluate_rx(priors, data.train_x, data.train_y; max_images = min(64, length(data.train_y)), num_spatial_bins)
@@ -599,14 +1075,6 @@ function train_rxinfer_demo(; digit0 = 0, digit1 = 1,
     return (priors = best_priors, history = history, data = data, test_acc = test_acc)
 end
 
-
-train_rxinfer_demo(
-    digit0=0, digit1=1,
-    ntrain=1000, nval=16, ntest=16,
-    epochs=1,
-    batch_size=4,
-    num_features=4,
-    num_spatial_bins=49,
-    seed=7,
-    streaming=true,
-)
+if abspath(PROGRAM_FILE) == @__FILE__
+    train_rxinfer_demo()
+end
