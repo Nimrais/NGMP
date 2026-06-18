@@ -13,6 +13,14 @@ using SpecialFunctions: loggamma
 import BayesBase
 import RxInfer: @node, @rule, @average_energy
 
+# Closed-form projection support. Loading `ClosedFormExpectations` alongside
+# `ExponentialFamilyProjection` activates the latter's `ClosedFormStrategy`
+# extension; the `PoissonExpression` hooks for it live in `nodes/poisson_exp.jl`.
+import ExponentialFamilyProjection
+import ClosedFormExpectations
+import ClosedFormExpectations: LogGamma
+import ExponentialFamily: GaussianDistributionsFamily
+
 include("datasets/sunspots.jl")
 export Sunspots
 

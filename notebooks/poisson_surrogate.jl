@@ -14,8 +14,12 @@ end
 begin
 	using RxInfer
 	using ExponentialFamilyProjection
+	using ClosedFormExpectations
 	using SurrogateModelling
 end
+
+# ╔═╡ aa8a3f00-8551-485a-86a2-cde2973be07d
+using Plots
 
 # ╔═╡ 587a9f91-1091-4e11-8daa-6b1b8f49d435
 sunspot_dataset = Sunspots()
@@ -59,7 +63,12 @@ poisson_model = poisson_state_space(σ = 0.1, m0 = 0.0, v0 = 10.0) | (y = counts
 begin
 	@constraints function mean_field_form_constraints()
 		q(z) = MeanField()
-		q(z) :: ProjectedTo(NormalMeanVariance)
+		q(z) :: ProjectedTo(
+						NormalMeanVariance, 
+						parameters = ProjectionParameters(
+							strategy = ClosedFormStrategy(),
+						)
+				)
 	end
 	
 	@initialization function mean_field_init()
@@ -71,12 +80,16 @@ begin
 		constraints = mean_field_form_constraints(),
 		data = ( y = counts,),
 		initialization=mean_field_init(),
-		options=(limit_stack_depth=100,)
+		options=(limit_stack_depth=100,),
+		iterations = 10,
 	)
 end 
 
 # ╔═╡ f5c554bc-7def-4580-8199-d6d71bd3a580
-result.posteriors[:z]
+plot(
+	sunspot_dataset.features[!, :year], 
+	 mean.(result.posteriors[:z][end])
+)
 
 # ╔═╡ Cell order:
 # ╠═7cd03948-6b0f-11f1-315c-87a678136b72
@@ -87,4 +100,5 @@ result.posteriors[:z]
 # ╠═6f0a9b34-2d71-4e58-9c12-7b3f5a8e6d04
 # ╠═2a7c8e15-3b69-4d02-8f51-9e4a6c1b7f38
 # ╠═a4d91587-22c6-4ee7-ae8d-2d20c95d3223
+# ╠═aa8a3f00-8551-485a-86a2-cde2973be07d
 # ╠═f5c554bc-7def-4580-8199-d6d71bd3a580

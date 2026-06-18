@@ -53,16 +53,16 @@ struct PoissonExpression{T<:Real, F<:Real}
     loggamma_y::F
 end
 
-function PoissonExpression(y::T) where {T <: Real}
-    return PoissonExpression(y, loggamma(y))
-end 
+# loggamma(y + 1) = log y!  — the Poisson normaliser. `y + 1` keeps it finite at
+# y = 0 (log 0! = 0), unlike loggamma(0) = ∞.
+PoissonExpression(y::Real) = PoissonExpression(y, loggamma(y + 1))
 
 function BayesBase.insupport(::PoissonExpression, ::Float64)
     return true
 end 
 
 # Evaluate ℓ(z) directly: `ℓ = PoissonExpression(y); ℓ(z)`.
-(ℓ::PoissonExpression)(z) = ℓ.y * z - exp(z) - l.loggamma_y
+(ℓ::PoissonExpression)(z) = ℓ.y * z - exp(z) - ℓ.loggamma_y
 
 # ...and expose it through the BayesBase message interface so downstream code
 # (projection, plotting, sampling) can treat it like any other log-density.
@@ -94,4 +94,63 @@ end
     m, v = mean_var(q_in)
     Eexp = exp(m + v / 2)                  # ρ = E_q[exp(z)]
     return Eexp - y * m + loggamma(y + 1)
+end
+
+# ---------------------------------------------------------------------------
+# (5) Closed-form projection via ExponentialFamilyProjection's `ClosedFormStrategy`.
+#
+#     The default projection estimates the cross-entropy gradient by Monte-Carlo
+#     (control variates). `ClosedFormStrategy` instead asks
+#     ClosedFormExpectations.jl for the *exact*, zero-variance value and gradient
+#     of E_q[ℓ(z)] — faster, deterministic convergence. To opt in:
+#
+#         q(z) :: ProjectedTo(NormalMeanVariance,
+#                             parameters = ProjectionParameters(
+#                                 strategy = ClosedFormStrategy()))
+#
+#     We get this essentially for free, because PoissonExpression(y) IS the
+#     LogGamma(α = 1, β = y) log-density that ClosedFormExpectations.jl already
+#     supports. Term for term,
+#
+#         log LogGamma(z | α, β) = β·z − eᶻ/α − β·log α − log Γ(β)
+#                  ℓ(z)          = y·z − eᶻ              − log y!
+#
+#     so with α = 1, β = y they coincide except for the normaliser
+#     (log Γ(y) vs log y! = log Γ(y+1), an additive `log y`). An additive
+#     constant in a log-density shifts the cross-entropy but NOT its gradient,
+#     so the projected Gaussian is identical — we simply reuse the library's
+#     LogGamma rules for both the cost E_q[ℓ] and its natural gradient (the
+#     Williams product) rather than re-deriving the Gaussian moments here.
+#
+#     RxInfer projects the *product* of the messages into z, i.e.
+#     Logpdf(ProductOf(gaussian messages …, PoissonExpression)); the library
+#     recurses that product into leaves, handles the Gaussian factors itself,
+#     and hits the two methods below for the PoissonExpression leaf.
+# ---------------------------------------------------------------------------
+
+# PoissonExpression(y) ↦ the equivalent LogGamma message. `check_args = false`
+# admits the zero counts (β = y = 0) that occur in real count data.
+_as_loggamma(ℓ::PoissonExpression) = LogGamma(one(ℓ.y), ℓ.y; check_args = false)
+
+# Cost term:  E_q[ ℓ(z) ]  with q a Gaussian belief on the log-rate z.
+function ClosedFormExpectations.mean(
+    e::ClosedFormExpectations.ClosedFormExpectation,
+    f::ClosedFormExpectations.Logpdf{<:PoissonExpression},
+    q::GaussianDistributionsFamily,
+)
+    return ClosedFormExpectations.mean(
+        e, ClosedFormExpectations.Logpdf(_as_loggamma(f.dist)), q
+    )
+end
+
+# Williams product:  ∇_{(μ,σ)} E_q[ ℓ(z) ], chain-ruled by the library into the
+# natural-parameter gradient the projection's manifold optimiser consumes.
+function ClosedFormExpectations.mean(
+    e::ClosedFormExpectations.ClosedWilliamsProduct,
+    f::ClosedFormExpectations.Logpdf{<:PoissonExpression},
+    q::Normal,
+)
+    return ClosedFormExpectations.mean(
+        e, ClosedFormExpectations.Logpdf(_as_loggamma(f.dist)), q
+    )
 end
