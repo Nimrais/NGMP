@@ -1,0 +1,26 @@
+module SurrogateModelling
+
+using DataDeps
+import CSV
+import DataFrames
+
+# RxInfer custom factor nodes. We pull the modelling macros / distributions
+# from RxInfer (which re-exports ReactiveMP, ExponentialFamily and BayesBase)
+# so the nodes live with the rest of the package rather than in a notebook.
+using RxInfer
+using Distributions
+using SpecialFunctions: loggamma
+import BayesBase
+import RxInfer: @node, @rule, @average_energy
+
+include("datasets/sunspots.jl")
+export Sunspots
+
+include("nodes/poisson_exp.jl")
+export PoissonExp, PoissonExpression
+
+function __init__()
+    __init__sunspots()
+end
+
+end # module
