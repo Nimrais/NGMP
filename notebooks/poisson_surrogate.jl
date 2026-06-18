@@ -76,14 +76,18 @@ begin
 		initialization=mean_field_init(),
 		options=(limit_stack_depth=100,),
 		iterations = 10,
+		free_energy=true
 	)
 end 
 
 # ╔═╡ f5c554bc-7def-4580-8199-d6d71bd3a580
 plot(
-	sunspot_dataset.features[!, :year], 
+	 sunspot_dataset.features[!, :year], 
 	 mean.(result.posteriors[:z][end])
 )
+
+# ╔═╡ ffdf6c8e-6cf8-497c-a4f5-d285b110be9e
+plot(1:length(result.free_energy), result.free_energy)
 
 # ╔═╡ cb0918a8-8f86-45c1-aa1f-ddb26848a97e
 md"""
@@ -102,7 +106,11 @@ end
 
 # ╔═╡ 0b00d09a-0422-4ac4-af57-1c4d7e278d8f
 function poisson_surrogate(y::Real, m::Real, v::Real)
-    ∂m, ∂σ = mean(ClosedWilliamsProduct(), Logpdf(PoissonExpression(y)), Normal(m, sqrt(v)))
+    ∂m, ∂σ = mean(
+        ClosedWilliamsProduct(), 
+        Logpdf(PoissonExpression(y)), 
+        Normal(m, sqrt(v))
+    )
     Λ = -∂σ / sqrt(v)
     ξ = ∂m + m * Λ
     return ξ, Λ
@@ -110,21 +118,33 @@ end
 
 # ╔═╡ 11bded3d-294b-47c7-a29e-3a89b0c8bb76
 function ngmp_poisson_smoother(y; σ = 0.1, m0 = 0.0, v0 = 10.0,
-                               iters = 10, α = 0.25, β = 0.5)
+                               iters = 20, α = 0.5, β = 0.2)
     N = length(y)
     m = log.(y .+ 1.0); v = fill(1.0, N)          # initial edge marginals
     ξ = zeros(N); Λ = zeros(N)                     # surrogate message state η
     vξ = zeros(N); vΛ = zeros(N)                   # momentum buffers
+    surrogate_free_energy = Float64[]              # Bethe FE of each frozen surrogate
+    update_norm = Float64[]                        # fixed-point residual ‖Φ(λ)-λ‖∞
+    local inference                                 # last inner BP result, kept below
     for _ in 1:iters
-        ηstar = poisson_surrogate.(y, m, v)        # project every leaf at q_k
-        @. vξ = β * vξ + α * (first(ηstar) - ξ); @. ξ += vξ
-        @. vΛ = β * vΛ + α * (last(ηstar)  - Λ); @. Λ += vΛ
-        post = infer(model = lg_chain(σ = σ, m0 = m0, v0 = v0),
+        s = poisson_surrogate.(y, m, v)            # project every leaf at q_k
+        ηξ = first.(s); ηΛ = last.(s)
+        @. vξ = β * vξ + α * (ηξ - ξ); @. ξ += vξ
+        @. vΛ = β * vΛ + α * (ηΛ - Λ); @. Λ += vΛ
+        inference = infer(
+                     model = lg_chain(σ = σ, m0 = m0, v0 = v0),
                      data = (y = ξ ./ Λ, R = 1.0 ./ Λ),
-                     options = (limit_stack_depth = 100,)).posteriors[:x]
-        m = mean.(post); v = var.(post)
+                     options = (limit_stack_depth = 100,),
+                     free_energy = true,
+        )
+        post = inference.posteriors[:x]
+        mnew = mean.(post); vnew = var.(post)
+        push!(surrogate_free_energy, inference.free_energy[end])
+        push!(update_norm, max(maximum(abs.(mnew .- m)), maximum(abs.(vnew .- v))))
+        m, v = mnew, vnew
     end
-    return (means = m, variances = v)
+    return (inference = inference, means = m, variances = v,
+            surrogate_free_energy = surrogate_free_energy, update_norm = update_norm)
 end
 
 # ╔═╡ af2b5341-66fe-4ff5-ad4b-bb7c4ab9b309
@@ -142,6 +162,15 @@ begin
 	)
 end
 
+# ╔═╡ e2a7b3c1-5d64-4f08-9b12-7c3e8a1f6d29
+# Surrogate Bethe free energy. NOTE: each outer iteration freezes a *different*
+# Gaussian surrogate, so this is a diagnostic, not a single objective being
+# minimized — it need not decrease monotonically (see §Damping and Momentum).
+# However it converges anyway :ballon:
+plot(1:length(ngmp_result.surrogate_free_energy), ngmp_result.surrogate_free_energy,
+     xlabel = "outer iteration", ylabel = "surrogate Bethe free energy",
+     legend = false)
+
 # ╔═╡ Cell order:
 # ╠═7cd03948-6b0f-11f1-315c-87a678136b72
 # ╠═65ea2958-e50a-4942-a884-f76622160004
@@ -152,9 +181,11 @@ end
 # ╠═a4d91587-22c6-4ee7-ae8d-2d20c95d3223
 # ╠═aa8a3f00-8551-485a-86a2-cde2973be07d
 # ╠═f5c554bc-7def-4580-8199-d6d71bd3a580
+# ╠═ffdf6c8e-6cf8-497c-a4f5-d285b110be9e
 # ╠═cb0918a8-8f86-45c1-aa1f-ddb26848a97e
 # ╠═2d3634c4-1b1b-42ab-bba9-0e0731f38af5
 # ╠═0b00d09a-0422-4ac4-af57-1c4d7e278d8f
 # ╠═11bded3d-294b-47c7-a29e-3a89b0c8bb76
 # ╠═af2b5341-66fe-4ff5-ad4b-bb7c4ab9b309
 # ╠═b7150c92-698e-4410-9fff-62b5652071ff
+# ╠═e2a7b3c1-5d64-4f08-9b12-7c3e8a1f6d29
