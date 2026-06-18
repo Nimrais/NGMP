@@ -48,16 +48,21 @@ struct PoissonExp end
 #     space. The −log y! constant is kept so it integrates against a Gaussian
 #     cavity to the correct evidence.
 # ---------------------------------------------------------------------------
-struct PoissonExpression{T<:Real}
+struct PoissonExpression{T<:Real, F<:Real}
     y::T
+    loggamma_y::F
 end
+
+function PoissonExpression(y::T) where {T <: Real}
+    return PoissonExpression(y, loggamma(y))
+end 
 
 function BayesBase.insupport(::PoissonExpression, ::Float64)
     return true
 end 
 
 # Evaluate ℓ(z) directly: `ℓ = PoissonExpression(y); ℓ(z)`.
-(ℓ::PoissonExpression)(z) = ℓ.y * z - exp(z) - loggamma(ℓ.y + 1)
+(ℓ::PoissonExpression)(z) = ℓ.y * z - exp(z) - l.loggamma_y
 
 # ...and expose it through the BayesBase message interface so downstream code
 # (projection, plotting, sampling) can treat it like any other log-density.
