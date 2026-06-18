@@ -53,12 +53,6 @@ y_k \sim \mathrm{PoissonExp}(z_k) \equiv \mathrm{Poisson}(e^{z_k}).
 	end
 end
 
-# ╔═╡ 2a7c8e15-3b69-4d02-8f51-9e4a6c1b7f38
-# Condition the model on the observed counts. This declares the full factor
-# graph (Gaussian chain + PoissonExp leaves); inference on the non-conjugate
-# PoissonExp message is the surrogate-projection step that comes next.
-poisson_model = poisson_state_space(σ = 0.1, m0 = 0.0, v0 = 10.0) | (y = counts,)
-
 # ╔═╡ a4d91587-22c6-4ee7-ae8d-2d20c95d3223
 begin
 	@constraints function mean_field_form_constraints()
@@ -91,14 +85,76 @@ plot(
 	 mean.(result.posteriors[:z][end])
 )
 
+# ╔═╡ cb0918a8-8f86-45c1-aa1f-ddb26848a97e
+md"""
+Here we need to explain how surrogate inference works
+"""
+
+# ╔═╡ 2d3634c4-1b1b-42ab-bba9-0e0731f38af5
+@model function lg_chain(y, R, σ, m0, v0)
+    x[1] ~ Normal(mean = m0, variance = v0)
+    y[1] ~ Normal(mean = x[1], variance = R[1])
+    for k in 2:length(y)
+        x[k] ~ Normal(mean = x[k-1], variance = σ)
+        y[k] ~ Normal(mean = x[k],   variance = R[k])
+    end
+end
+
+# ╔═╡ 0b00d09a-0422-4ac4-af57-1c4d7e278d8f
+function poisson_surrogate(y::Real, m::Real, v::Real)
+    ∂m, ∂σ = mean(ClosedWilliamsProduct(), Logpdf(PoissonExpression(y)), Normal(m, sqrt(v)))
+    Λ = -∂σ / sqrt(v)
+    ξ = ∂m + m * Λ
+    return ξ, Λ
+end
+
+# ╔═╡ 11bded3d-294b-47c7-a29e-3a89b0c8bb76
+function ngmp_poisson_smoother(y; σ = 0.1, m0 = 0.0, v0 = 10.0,
+                               iters = 10, α = 0.25, β = 0.5)
+    N = length(y)
+    m = log.(y .+ 1.0); v = fill(1.0, N)          # initial edge marginals
+    ξ = zeros(N); Λ = zeros(N)                     # surrogate message state η
+    vξ = zeros(N); vΛ = zeros(N)                   # momentum buffers
+    for _ in 1:iters
+        ηstar = poisson_surrogate.(y, m, v)        # project every leaf at q_k
+        @. vξ = β * vξ + α * (first(ηstar) - ξ); @. ξ += vξ
+        @. vΛ = β * vΛ + α * (last(ηstar)  - Λ); @. Λ += vΛ
+        post = infer(model = lg_chain(σ = σ, m0 = m0, v0 = v0),
+                     data = (y = ξ ./ Λ, R = 1.0 ./ Λ),
+                     options = (limit_stack_depth = 100,)).posteriors[:x]
+        m = mean.(post); v = var.(post)
+    end
+    return (means = m, variances = v)
+end
+
+# ╔═╡ af2b5341-66fe-4ff5-ad4b-bb7c4ab9b309
+ngmp_result = ngmp_poisson_smoother(counts)
+
+# ╔═╡ b7150c92-698e-4410-9fff-62b5652071ff
+begin
+	plot(
+		 sunspot_dataset.features[!, :year], 
+		 ngmp_result[:means]
+	)
+	plot!(
+		 sunspot_dataset.features[!, :year], 
+		 mean.(result.posteriors[:z][end])
+	)
+end
+
 # ╔═╡ Cell order:
 # ╠═7cd03948-6b0f-11f1-315c-87a678136b72
 # ╠═65ea2958-e50a-4942-a884-f76622160004
 # ╠═587a9f91-1091-4e11-8daa-6b1b8f49d435
 # ╠═c3b8e6a2-44d9-4f17-8aa5-1d9e7c0f2b41
-# ╟─9d2e1f70-5c83-4a0e-b6f4-8e72a1c5d930
+# ╠═9d2e1f70-5c83-4a0e-b6f4-8e72a1c5d930
 # ╠═6f0a9b34-2d71-4e58-9c12-7b3f5a8e6d04
-# ╠═2a7c8e15-3b69-4d02-8f51-9e4a6c1b7f38
 # ╠═a4d91587-22c6-4ee7-ae8d-2d20c95d3223
 # ╠═aa8a3f00-8551-485a-86a2-cde2973be07d
 # ╠═f5c554bc-7def-4580-8199-d6d71bd3a580
+# ╠═cb0918a8-8f86-45c1-aa1f-ddb26848a97e
+# ╠═2d3634c4-1b1b-42ab-bba9-0e0731f38af5
+# ╠═0b00d09a-0422-4ac4-af57-1c4d7e278d8f
+# ╠═11bded3d-294b-47c7-a29e-3a89b0c8bb76
+# ╠═af2b5341-66fe-4ff5-ad4b-bb7c4ab9b309
+# ╠═b7150c92-698e-4410-9fff-62b5652071ff
