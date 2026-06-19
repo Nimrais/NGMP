@@ -396,7 +396,7 @@ ngmp_delta_result = ngmp_delta_smoother(counts)
 
 # ╔═╡ d1e2f3a4-0006-4b1c-9d2e-5f6a7b8c9d06
 md"""
-### True Laplace propagation — mode of (incoming message × Poisson energy)
+### Laplace propagation — mode of (incoming message × Poisson energy)
 
 `poisson_belief_mode` Newton-solves $P_-(m_- - z) + y - e^{z} = 0$ for the mode
 $\hat z$ of the local belief (Gaussian cavity × Poisson energy). The belief is
