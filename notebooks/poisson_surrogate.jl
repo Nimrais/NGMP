@@ -47,15 +47,24 @@ each month, and how sure are we?
 **Why it isn't trivial — and what this notebook shows.** The random walk is
 Gaussian and easy; the trouble is the Poisson observation, which is **not
 conjugate** to the Gaussian state, so ordinary Gaussian message passing stalls at
-each observation. We solve the *same model* two different ways:
+each observation. We solve the *same model* **four** ways and compare them:
 
-1. **Automatic (RxInfer, mean-field).** Declare the model, add a mean-field +
-   projection constraint, and let `infer` run.
-2. **By hand (the NGMP surrogate model).** Replace each Poisson observation with a
-   tailored Gaussian stand-in — built from a closed-form natural-gradient message
-   — then run ordinary exact Gaussian smoothing and iterate.
+1. **CVI with mean-field (RxInfer, automatic).** Declare the model, add a
+   mean-field + projection constraint, and let `infer` run conjugate-computation
+   variational inference.
+2. **NGMP (by hand).** Replace each Poisson leaf with a tailored Gaussian
+   stand-in built from the closed-form **natural-gradient** message — the
+   curvature averaged over the cavity, $\rho = e^{m+v/2}$ — then run exact
+   Gaussian smoothing and iterate.
+3. **NGMP delta-approximation (by hand).** The same loop, expanding at the mean
+   but with the *pointwise* curvature $e^{m}$ — NGMP with the $e^{v/2}$ Fisher
+   correction dropped.
+4. **Laplace propagation (by hand).** The classical Laplace approximation as
+   message passing: find the **mode** of each leaf's local belief
+   (incoming message × Poisson energy) and expand the pointwise curvature
+   $e^{\hat z}$ *there*.
 
-The two agree on the trend but differ in the **uncertainty** they report, which
+The four agree on the trend but differ in the **uncertainty** they report, which
 is the lesson of the comparison.
 """
 
@@ -273,41 +282,239 @@ end
 # ╔═╡ af2b5341-66fe-4ff5-ad4b-bb7c4ab9b309
 ngmp_result = ngmp_poisson_smoother(counts)
 
+# ╔═╡ d1e2f3a4-0001-4b1c-9d2e-5f6a7b8c9d01
+md"""
+## Two more surrogates: the NGMP delta approximation and Laplace propagation
+
+NGMP builds each leaf's Gaussian message from the **variance-aware** curvature
+$-\mathbb E_q[\ell''] = e^{m+v/2}$ — the expected (Fisher) information, *averaged*
+over the marginal $q=\mathcal N(m,v)$. Two classical surrogates are obtained by
+peeling that apart along **two independent axes**: (i) *expected* vs *pointwise*
+(observed) curvature, and (ii) expand at the **marginal mean** $m$ vs at the
+**belief mode** $\hat z$.
+
+| method | expand at | curvature | $\rho$ |
+|:--|:--|:--|:--|
+| **NGMP** | marginal mean $m$ | expected (Fisher) $-\mathbb E_q[\ell'']$ | $e^{m+v/2}$ |
+| **NGMP delta-approx** | marginal mean $m$ | observed $-\ell''(m)$ | $e^{m}$ |
+| **Laplace propagation** | belief **mode** $\hat z$ | observed $-\ell''(\hat z)$ | $e^{\hat z}$ |
+
+**NGMP delta-approx.** Apply the quadratic delta approximation to $\ell$ about the
+marginal *mean*: $\mathbb E_q[\ell'']\to\ell''(m)$, dropping the $e^{v/2}$ Fisher
+factor. Same expansion point as NGMP, just the pointwise curvature. We read it off
+the **same** `ClosedWilliamsProduct` evaluated at the deterministic point $z=m$
+(zero variance), so the score collapses to $\partial_m=\ell'(m)=y-e^{m}$ and
+$\Lambda=-\ell''(m)=y-\partial_m=e^{m}$.
+
+**Laplace propagation** (Smola–Vishwanathan–Eskin, 2003) is the message-passing
+form of the classical Laplace approximation: pin a Gaussian at the **mode of the
+local belief** and read its width off the **pointwise Hessian** there. At edge
+$z_k$ the recipe is literally:
+
+1. Take the **incoming message** $\mu_{-}(z)=\mathcal N(z; m_-, 1/P_-)$ — the
+   cavity, everything the chain sends *into* $z_k$ *except* the Poisson leaf.
+2. Add the exact Poisson energy and find the **mode of the product**,
+   ```math
+   \hat z = \arg\max_z \Big[ -\tfrac{P_-}{2}(z-m_-)^2 \;+\; \underbrace{y\,z - e^{z}}_{\ell(z)} \Big],
+   \qquad\text{i.e. solve}\quad P_-(m_- - z) + y - e^{z} = 0 .
+   ```
+3. Expand the leaf at that mode: precision $\Lambda=-\ell''(\hat z)=e^{\hat z}$,
+   natural mean $\xi=\ell'(\hat z)+\hat z\,\Lambda$. Read off the **same**
+   `ClosedWilliamsProduct` at the deterministic point $z=\hat z$.
+
+The delta-approx is a *Laplace–Fisher hybrid* — observed curvature but expanded at
+the **mean**, not the mode. It coincides with true Laplace only at a fixed point
+where $m=\hat z$; the mode solve makes Laplace expand where the belief actually
+peaks at every sweep.
+"""
+
+# ╔═╡ d1e2f3a4-0002-4b1c-9d2e-5f6a7b8c9d02
+function ngmp_delta_surrogate(y::Real, m::Real, ::Real)  # third arg (variance) unused: delta uses the mean only
+    # NGMP delta approximation: quadratic-delta of ℓ about the marginal MEAN m,
+    # which drops the eᵛ/² Fisher factor (E_q[ℓ''] → ℓ''(m)). Same expansion point
+    # as NGMP, observed curvature instead of expected. Evaluate the SAME Williams
+    # product at the deterministic point z = m (zero variance): ∂m = ℓ'(m) = y−eᵐ.
+    # (∂σ = −σ·eᵐ → 0 here, so NGMP's Λ = −∂σ/√v is 0/0 — recover Λ from the score.)
+    ∂m, _ = mean(
+        ClosedWilliamsProduct(),
+        Logpdf(PoissonExpression(y)),
+        Normal(m, 0.0),
+    )
+    Λ = y - ∂m            # −ℓ''(m) = eᵐ   (NGMP's ρ = eᵐ⁺ᵛ/² with the v/2 dropped)
+    ξ = ∂m + m * Λ        # natural-mean parameter, exactly as in `poisson_surrogate`
+    return ξ, Λ
+end
+
+# ╔═╡ d1e2f3a4-0003-4b1c-9d2e-5f6a7b8c9d03
+function ngmp_delta_smoother(y; σ = 0.1, m0 = 0.0, v0 = 10.0,
+                             iters = 10, α = 0.5, β = 0.2)
+    N = length(y)
+    m = log.(y .+ 1.0); v = fill(1.0, N)          # initial edge marginals
+    ξ = zeros(N); Λ = zeros(N)                     # surrogate message state η
+    vξ = zeros(N); vΛ = zeros(N)                   # momentum buffers
+    surrogate_free_energy = Float64[]              # Bethe FE of each frozen surrogate
+    update_norm = Float64[]                        # fixed-point residual ‖Φ(λ)-λ‖∞
+    local inference                                 # last inner BP result, kept below
+    for _ in 1:iters
+        s = ngmp_delta_surrogate.(y, m, v)         # expand every leaf at the mean
+        ηξ = first.(s); ηΛ = last.(s)
+        @. vξ = β * vξ + α * (ηξ - ξ); @. ξ += vξ
+        @. vΛ = β * vΛ + α * (ηΛ - Λ); @. Λ += vΛ
+        inference = infer(
+                     model = lg_chain(σ = σ, m0 = m0, v0 = v0),
+                     data = (y = ξ ./ Λ, R = 1.0 ./ Λ),
+                     options = (limit_stack_depth = 100,),
+                     free_energy = true,
+        )
+        post = inference.posteriors[:x]
+        mnew = mean.(post); vnew = var.(post)
+        push!(surrogate_free_energy, inference.free_energy[end])
+        push!(update_norm, max(maximum(abs.(mnew .- m)), maximum(abs.(vnew .- v))))
+        m, v = mnew, vnew
+    end
+    return (inference = inference, means = m, variances = v,
+            surrogate_free_energy = surrogate_free_energy, update_norm = update_norm)
+end
+
+# ╔═╡ d1e2f3a4-0004-4b1c-9d2e-5f6a7b8c9d04
+ngmp_delta_result = ngmp_delta_smoother(counts)
+
+# ╔═╡ d1e2f3a4-0006-4b1c-9d2e-5f6a7b8c9d06
+md"""
+### True Laplace propagation — mode of (incoming message × Poisson energy)
+
+`poisson_belief_mode` Newton-solves $P_-(m_- - z) + y - e^{z} = 0$ for the mode
+$\hat z$ of the local belief (Gaussian cavity × Poisson energy). The belief is
+strictly log-concave ($\ell'' = -e^{z} < 0$), so Newton converges quadratically
+from the cavity mean. `laplace_surrogate` then expands the leaf at $\hat z$ and the
+`laplace_smoother` reconstructs the cavity $(m_-, P_-)$ each sweep as
+*marginal ÷ current leaf* before relinearising.
+"""
+
+# ╔═╡ d1e2f3a4-0007-4b1c-9d2e-5f6a7b8c9d07
+function poisson_belief_mode(y::Real, m₋::Real, P₋::Real; newton_iters = 8)
+    # mode of  −½ P₋ (z − m₋)² + (y·z − eᶻ):  solve  P₋(m₋ − z) + y − eᶻ = 0
+    z = m₋                                   # warm start at the cavity mean
+    for _ in 1:newton_iters
+        ez = exp(z)
+        g  = P₋ * (m₋ - z) + y - ez          # ∂z log-belief
+        h  = -P₋ - ez                        # ∂²z log-belief  (< 0, concave)
+        z -= g / h
+    end
+    return z
+end
+
+# ╔═╡ d1e2f3a4-0008-4b1c-9d2e-5f6a7b8c9d08
+function laplace_surrogate(y::Real, m₋::Real, P₋::Real)
+    # Laplace propagation: expand ℓ at the mode ẑ of the belief (cavity × leaf),
+    # NOT at the marginal mean. Read the surrogate off the SAME Williams product at
+    # the deterministic point z = ẑ: ∂m = ℓ'(ẑ) = y − eᶻ̂, Λ = −ℓ''(ẑ) = y − ∂m = eᶻ̂.
+    ẑ = poisson_belief_mode(y, m₋, P₋)
+    ∂m, _ = mean(
+        ClosedWilliamsProduct(),
+        Logpdf(PoissonExpression(y)),
+        Normal(ẑ, 0.0),
+    )
+    Λ = y - ∂m            # −ℓ''(ẑ) = eᶻ̂  (observed information at the belief mode)
+    ξ = ∂m + ẑ * Λ        # natural-mean parameter, expanded at the mode
+    return ξ, Λ
+end
+
+# ╔═╡ d1e2f3a4-0009-4b1c-9d2e-5f6a7b8c9d09
+function laplace_smoother(y; σ = 0.1, m0 = 0.0, v0 = 10.0,
+                          iters = 10, α = 0.5, β = 0.2)
+    N = length(y)
+    m = log.(y .+ 1.0); v = fill(1.0, N)          # initial edge marginals
+    ξ = zeros(N); Λ = zeros(N)                     # surrogate message state η
+    vξ = zeros(N); vΛ = zeros(N)                   # momentum buffers
+    surrogate_free_energy = Float64[]              # Bethe FE of each frozen surrogate
+    update_norm = Float64[]                        # fixed-point residual ‖Φ(λ)-λ‖∞
+    local inference                                 # last inner BP result, kept below
+    for _ in 1:iters
+        # incoming (cavity) message on each edge = current marginal ÷ current leaf
+        P₋ = max.(1.0 ./ v .- Λ, 1e-8)             # cavity precision (guard > 0)
+        m₋ = (m ./ v .- ξ) ./ P₋                   # cavity mean
+        s = laplace_surrogate.(y, m₋, P₋)          # expand each leaf at the belief mode
+        ηξ = first.(s); ηΛ = last.(s)
+        @. vξ = β * vξ + α * (ηξ - ξ); @. ξ += vξ
+        @. vΛ = β * vΛ + α * (ηΛ - Λ); @. Λ += vΛ
+        inference = infer(
+                     model = lg_chain(σ = σ, m0 = m0, v0 = v0),
+                     data = (y = ξ ./ Λ, R = 1.0 ./ Λ),
+                     options = (limit_stack_depth = 100,),
+                     free_energy = true,
+        )
+        post = inference.posteriors[:x]
+        mnew = mean.(post); vnew = var.(post)
+        push!(surrogate_free_energy, inference.free_energy[end])
+        push!(update_norm, max(maximum(abs.(mnew .- m)), maximum(abs.(vnew .- v))))
+        m, v = mnew, vnew
+    end
+    return (inference = inference, means = m, variances = v,
+            surrogate_free_energy = surrogate_free_energy, update_norm = update_norm)
+end
+
+# ╔═╡ d1e2f3a4-0005-4b1c-9d2e-5f6a7b8c9d05
+laplace_result = laplace_smoother(counts)
+
 # ╔═╡ b7150c92-698e-4410-9fff-62b5652071ff
 begin
 	years = sunspot_dataset.features[!, :year]
 	rxi   = result.posteriors[:z][end]
 
-	# 95% credible bands (±1.96σ) for both posteriors.
+	# 95% credible bands (±1.96σ) for all four posteriors.
 	plot(years, ngmp_result.means;
-	     ribbon = 1.96 .* sqrt.(ngmp_result.variances), fillalpha = 0.2,
-	     lw = 2, color = :dodgerblue, label = "surrogate BP (chain exact)",
+	     ribbon = 1.96 .* sqrt.(ngmp_result.variances), fillalpha = 0.15,
+	     lw = 2, color = :dodgerblue, label = "NGMP (expected info, mean)",
 	     xlabel = "year", ylabel = "log-rate  z_k",
 	     title = "Posterior log-rate ± 95% credible band")
+	plot!(years, ngmp_delta_result.means;
+	      ribbon = 1.96 .* sqrt.(ngmp_delta_result.variances), fillalpha = 0.15,
+	      lw = 2, color = :purple, label = "NGMP delta-approx (observed info, mean)")
+	plot!(years, laplace_result.means;
+	      ribbon = 1.96 .* sqrt.(laplace_result.variances), fillalpha = 0.15,
+	      lw = 2, color = :seagreen, label = "Laplace propagation (observed info, mode)")
 	plot!(years, mean.(rxi);
-	      ribbon = 1.96 .* sqrt.(var.(rxi)), fillalpha = 0.2,
-	      lw = 2, color = :darkorange, label = "RxInfer mean-field + projection")
+	      ribbon = 1.96 .* sqrt.(var.(rxi)), fillalpha = 0.15,
+	      lw = 2, color = :darkorange, label = "CVI + mean-field")
 end
 
 # ╔═╡ 6f2e8b91-4d05-42c7-a8e1-9b3c7f1a6d50
 md"""
-**Reading the comparison.** Blue is the by-hand NGMP surrogate model (chain kept
-exact); orange is the automatic RxInfer mean-field (VMP) run. The posterior
-**means** track each other closely and both follow the ~11-year solar cycle. The
-shaded bands are 95% credible intervals ($\pm 1.96\sigma$), and this is where the
-two methods part ways: mean-field assumes the states are independent, so it does
-**not** get the variance right, whereas the surrogate model keeps the chain exact
-and reports the correct smoothed uncertainty. The gap is largest in the deep
-solar minima (long runs of near-zero counts), where the data constrain $z_k$
-least and the missing correlations matter most.
+**Reading the comparison.** Four methods on the *same* model: **blue** NGMP
+(expected/Fisher info at the mean, $\rho = e^{m+v/2}$), **purple** the NGMP
+delta-approx (observed info at the mean, $\rho_0 = e^{m}$), **green** true Laplace
+propagation (observed info at the belief *mode*, $\rho_0 = e^{\hat z}$), and
+**orange** the automatic CVI + mean-field run. All four posterior **means** track
+each other closely and follow the ~11-year solar cycle. The shaded bands are 95%
+credible intervals ($\pm 1.96\sigma$), and that is where they part ways:
+
+- **CVI + mean-field** factorises $q(z)=\prod_k q(z_k)$, throwing away the temporal
+  correlations, so it does **not** report the right variance.
+- The three surrogate methods all keep the chain **exact** and report the correct
+  *smoothed* uncertainty. They differ only in how each leaf's pseudo-precision is
+  built:
+    - **NGMP vs delta-approx** isolate the **Fisher correction**: same expansion
+      point (the mean), $\rho = e^{m+v/2}$ vs $\rho_0 = e^{m}$. NGMP's curvature is
+      always the larger, so its bands are marginally **tighter** wherever $v$ is
+      large.
+    - **delta-approx vs Laplace** isolate the **expansion point**: same observed
+      curvature, but evaluated at the mean $m$ vs the belief mode $\hat z$. They
+      agree exactly at a fixed point (where $m=\hat z$) and differ only on the
+      transient / where the belief is skewed.
+
+The gaps are largest in the deep solar minima (long runs of near-zero counts),
+where the data constrain $z_k$ least, $v$ is largest, and the skew between mean
+and mode is most pronounced.
 """
 
 # ╔═╡ 8c4d2a16-9b73-41e8-b5f2-0a6e3d9c1f84
 md"""
-### Free energy of the two methods — both converge
+### Free energy of the surrogate loops — they converge
 
 We benchmark against a **converged** reference (Method 1's variational free
-energy flattened), so we want the surrogate model to converge too — but read its
+energy flattened), so we want the surrogate loops (NGMP shown here; the
+delta-approx and Laplace loops behave the same way) to converge too — but read the
 free energy carefully. The curve below is the Bethe free energy of the surrogate
 built at each sweep, and **every sweep freezes a different Gaussian surrogate**.
 So, unlike Method 1, it is **not a single objective** and need not decrease
@@ -349,6 +556,15 @@ plot(1:length(ngmp_result.surrogate_free_energy), ngmp_result.surrogate_free_ene
 # ╠═0b00d09a-0422-4ac4-af57-1c4d7e278d8f
 # ╠═11bded3d-294b-47c7-a29e-3a89b0c8bb76
 # ╠═af2b5341-66fe-4ff5-ad4b-bb7c4ab9b309
+# ╟─d1e2f3a4-0001-4b1c-9d2e-5f6a7b8c9d01
+# ╠═d1e2f3a4-0002-4b1c-9d2e-5f6a7b8c9d02
+# ╠═d1e2f3a4-0003-4b1c-9d2e-5f6a7b8c9d03
+# ╠═d1e2f3a4-0004-4b1c-9d2e-5f6a7b8c9d04
+# ╟─d1e2f3a4-0006-4b1c-9d2e-5f6a7b8c9d06
+# ╠═d1e2f3a4-0007-4b1c-9d2e-5f6a7b8c9d07
+# ╠═d1e2f3a4-0008-4b1c-9d2e-5f6a7b8c9d08
+# ╠═d1e2f3a4-0009-4b1c-9d2e-5f6a7b8c9d09
+# ╠═d1e2f3a4-0005-4b1c-9d2e-5f6a7b8c9d05
 # ╠═b7150c92-698e-4410-9fff-62b5652071ff
 # ╟─6f2e8b91-4d05-42c7-a8e1-9b3c7f1a6d50
 # ╟─8c4d2a16-9b73-41e8-b5f2-0a6e3d9c1f84
