@@ -19,10 +19,10 @@ include("mnist_softplus_ngmp_demo.jl")
 #
 # The honest model underneath is:
 #
-#   a[n,p,f]      ~ Normal(0, sigma_a^2)
-#   x[n,p,f]      ~= softplus(a[n,p,f])
-#   image[n,p,r]  ~ Normal(sum_f b[f,r] * x[n,p,f], sigma_y^2)
-#   label[n]      ~ Bernoulli(sigmoid(c + sum_k u[k] * pooled_x[n,k]))
+#   feature_preactivation[n,p,f] ~ Normal(0, sigma_a^2)
+#   feature_strength[n,p,f]     := softplus(feature_preactivation[n,p,f])
+#   image_patch_pixels[n,p,r]   ~ softdot(feature_strength[n,p,:], local_kernel[:,r], image_noise_precision)
+#   digit_label[n]              ~ Bernoulli(sigmoid(classifier_bias + dot(classifier_weight, pooled_feature_strength[n,:])))
 #
 # The approximate model below contains none of the non-conjugate factors. It
 # only contains their current Gaussian surrogate leaves. This is the same
@@ -56,6 +56,50 @@ function positive_softplus_to_a_site(ma, mx_cav, vx_cav, sigma_sp2)
     return xi, lambda
 end
 
+# True non-conjugate model sketch, written with the same variable names as the
+# runnable surrogate below. This is explanatory pseudocode, not a runnable
+# RxInfer model: `softplus`, `softdot`, `sigmoid`, and deterministic pooling
+# are the non-conjugate pieces that the surrogate replaces by Gaussian sites.
+#
+# The pooling operation should be understood as a fixed linear map, not as a
+# generator expression inside `@model`. Precompute:
+#
+#   pooling_weight[classifier_feature, patch, feature]
+#
+# where each row averages one feature over one spatial bin. Then:
+#
+#   classifier_input[n, classifier_feature] =
+#       sum(pooling_weight[classifier_feature, p, f] *
+#           feature_strength[n, p, f]
+#           for p in 1:p_count, f in 1:f_count)
+#
+# Conceptual true model:
+#
+#   local_kernel[feature, patch_pixel] ~ Normal(0, kernel_precision)
+#   classifier_weight[classifier_feature] ~ Normal(0, classifier_weight_precision)
+#   classifier_bias ~ Normal(0, classifier_bias_precision)
+#
+#   feature_preactivation[image, patch, feature] ~ Normal(0, inv(sigma_a2))
+#   feature_strength[image, patch, feature] :=
+#       softplus(feature_preactivation[image, patch, feature])
+#
+#   image_patch_pixels[image, patch, patch_pixel] ~
+#       softdot(
+#           feature_strength[image, patch, :],
+#           local_kernel[:, patch_pixel],
+#           image_noise_precision
+#       )
+#
+#   classifier_input[image, classifier_feature] :=
+#       fixed_pooling_dot(pooling_weight[classifier_feature, :, :],
+#                         feature_strength[image, :, :])
+#
+#   digit_logit[image] :=
+#       classifier_bias + dot(classifier_weight, classifier_input[image, :])
+#
+#   digit_label[image] ~ Bernoulli(sigmoid(digit_logit[image]))
+
+
 @model function softplus_mnist_surrogate(
     a_site_y, a_site_Λ,
     x_sp_y, x_sp_Λ,
@@ -76,42 +120,42 @@ end
     r_count,
     u_count,
 )
-    local b
-    local u
-    local a
-    local x
-    local c
+    local local_kernel
+    local classifier_weight
+    local feature_preactivation
+    local feature_strength
+    local classifier_bias
 
     for f in 1:f_count, r in 1:r_count
-        b[f, r] ~ Normal(mean = b_prior_m[f, r], precision = b_prior_Λ[f, r])
+        local_kernel[f, r] ~ Normal(mean = b_prior_m[f, r], precision = b_prior_Λ[f, r])
     end
 
     for k in 1:u_count
-        u[k] ~ Normal(mean = u_prior_m[k], precision = u_prior_Λ[k])
+        classifier_weight[k] ~ Normal(mean = u_prior_m[k], precision = u_prior_Λ[k])
     end
-    c ~ Normal(mean = c_prior_m, precision = c_prior_Λ)
+    classifier_bias ~ Normal(mean = c_prior_m, precision = c_prior_Λ)
 
     for n in 1:n_count, p in 1:p_count, f in 1:f_count
-        a[n, p, f] ~ Normal(mean = 0.0, precision = inv(sigma_a2))
-        a_site_y[n, p, f] ~ Normal(mean = a[n, p, f], precision = a_site_Λ[n, p, f])
+        feature_preactivation[n, p, f] ~ Normal(mean = 0.0, precision = inv(sigma_a2))
+        a_site_y[n, p, f] ~ Normal(mean = feature_preactivation[n, p, f], precision = a_site_Λ[n, p, f])
 
-        x[n, p, f] ~ Normal(mean = 0.0, precision = x_weak_precision)
-        x_sp_y[n, p, f] ~ Normal(mean = x[n, p, f], precision = x_sp_Λ[n, p, f])
-        x_cls_y[n, p, f] ~ Normal(mean = x[n, p, f], precision = x_cls_Λ[n, p, f])
-        x_smooth_y[n, p, f] ~ Normal(mean = x[n, p, f], precision = x_smooth_Λ[n, p, f])
+        feature_strength[n, p, f] ~ Normal(mean = 0.0, precision = x_weak_precision)
+        x_sp_y[n, p, f] ~ Normal(mean = feature_strength[n, p, f], precision = x_sp_Λ[n, p, f])
+        x_cls_y[n, p, f] ~ Normal(mean = feature_strength[n, p, f], precision = x_cls_Λ[n, p, f])
+        x_smooth_y[n, p, f] ~ Normal(mean = feature_strength[n, p, f], precision = x_smooth_Λ[n, p, f])
 
         for r in 1:r_count
-            x_img_y[n, p, f, r] ~ Normal(mean = x[n, p, f], precision = x_img_Λ[n, p, f, r])
-            b_img_y[n, p, f, r] ~ Normal(mean = b[f, r], precision = b_img_Λ[n, p, f, r])
+            x_img_y[n, p, f, r] ~ Normal(mean = feature_strength[n, p, f], precision = x_img_Λ[n, p, f, r])
+            b_img_y[n, p, f, r] ~ Normal(mean = local_kernel[f, r], precision = b_img_Λ[n, p, f, r])
         end
     end
 
     for n in 1:n_count, k in 1:u_count
-        u_cls_y[n, k] ~ Normal(mean = u[k], precision = u_cls_Λ[n, k])
+        u_cls_y[n, k] ~ Normal(mean = classifier_weight[k], precision = u_cls_Λ[n, k])
     end
 
     for n in 1:n_count
-        c_cls_y[n] ~ Normal(mean = c, precision = c_cls_Λ[n])
+        c_cls_y[n] ~ Normal(mean = classifier_bias, precision = c_cls_Λ[n])
     end
 end
 
@@ -176,18 +220,18 @@ function start_surrogate_stream(site, priors; sigma_a2 = 1.0, global_site_scale 
                                          dims...),
         datastream = stream,
         autoupdates = RxInfer.EmptyAutoUpdateSpecification,
-        returnvars = (:a, :x, :b, :u, :c),
+        returnvars = (:feature_preactivation, :feature_strength, :local_kernel, :classifier_weight, :classifier_bias),
         autostart = false,
         options = (limit_stack_depth = 500,),
     )
 
     latest = Dict{Symbol, Any}()
     subscriptions = Any[
-        subscribe!(engine.posteriors[:a], qs -> (latest[:a] = qs)),
-        subscribe!(engine.posteriors[:x], qs -> (latest[:x] = qs)),
-        subscribe!(engine.posteriors[:b], qs -> (latest[:b] = qs)),
-        subscribe!(engine.posteriors[:u], qs -> (latest[:u] = qs)),
-        subscribe!(engine.posteriors[:c], qs -> (latest[:c] = qs)),
+        subscribe!(engine.posteriors[:feature_preactivation], qs -> (latest[:feature_preactivation] = qs)),
+        subscribe!(engine.posteriors[:feature_strength], qs -> (latest[:feature_strength] = qs)),
+        subscribe!(engine.posteriors[:local_kernel], qs -> (latest[:local_kernel] = qs)),
+        subscribe!(engine.posteriors[:classifier_weight], qs -> (latest[:classifier_weight] = qs)),
+        subscribe!(engine.posteriors[:classifier_bias], qs -> (latest[:classifier_bias] = qs)),
     ]
     RxInfer.start(engine)
     return SurrogateStream(stream, engine, latest, subscriptions)
@@ -203,7 +247,7 @@ end
 function run_surrogate_bp!(state::SurrogateStream, site, priors; global_site_scale = 1.0)
     empty!(state.latest)
     next!(state.stream, surrogate_observation(site, priors; global_site_scale))
-    missing_keys = setdiff((:a, :x, :b, :u, :c), keys(state.latest))
+    missing_keys = setdiff((:feature_preactivation, :feature_strength, :local_kernel, :classifier_weight, :classifier_bias), keys(state.latest))
     isempty(missing_keys) || error("streaming inference did not emit posteriors for $(missing_keys)")
     return extract_marginals_from_posteriors(state.latest)
 end
@@ -213,11 +257,11 @@ function array_mean_var(qs)
 end
 
 function extract_marginals_from_posteriors(posteriors)
-    ma, va = array_mean_var(posteriors[:a])
-    mx, vx = array_mean_var(posteriors[:x])
-    mb, vb = array_mean_var(posteriors[:b])
-    mu, vu = array_mean_var(posteriors[:u])
-    mc, vc = mean(posteriors[:c]), var(posteriors[:c])
+    ma, va = array_mean_var(posteriors[:feature_preactivation])
+    mx, vx = array_mean_var(posteriors[:feature_strength])
+    mb, vb = array_mean_var(posteriors[:local_kernel])
+    mu, vu = array_mean_var(posteriors[:classifier_weight])
+    mc, vc = mean(posteriors[:classifier_bias]), var(posteriors[:classifier_bias])
     return (ma = ma, va = va, mx = mx, vx = vx, mb = mb, vb = vb,
             mu = mu, vu = vu, mc = mc, vc = vc)
 end
