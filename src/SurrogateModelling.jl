@@ -30,6 +30,8 @@ export PoissonExp, PoissonExpression
 include("expressions/normal_precision_message.jl")
 export NormalPrecisionMessage
 
+include("tangent_projections/gamma.jl")
+
 function __init__()
     __init__sunspots()
 end
