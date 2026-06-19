@@ -27,6 +27,9 @@ export Sunspots
 include("nodes/poisson_exp.jl")
 export PoissonExp, PoissonExpression
 
+include("expressions/normal_precision_message.jl")
+export NormalPrecisionMessage
+
 function __init__()
     __init__sunspots()
 end
