@@ -1,62 +1,8 @@
-export SecondOrderClosedWilliamsProduct, DerivativeEnhancedFunction, project_to_gamma
+export project_to_gamma
 
 using SpecialFunctions: trigamma
 import ExponentialFamily: ExponentialFamilyDistribution, getnaturalparameters
 import ClosedFormExpectations: Logpdf
-
-"""
-    SecondOrderClosedWilliamsProduct()
-
-Strategy for the **second-order, quadrature-free** Williams product against a
-Gamma belief — the Gamma-edge analogue of
-`ClosedFormExpectations.ClosedWilliamsProduct`.
-
-`ClosedWilliamsProduct` returns the exact `∇_θ E_q[ℓ]` for a Gaussian edge; this
-strategy returns the *second-order* value for a Gamma edge by expanding the
-target to second order about its `expansion_point`, so the expectations become
-closed-form Gamma moments instead of a Gauss–Legendre / Laguerre quadrature.
-
-Following the ClosedFormExpectations convention, the coordinate system of the
-returned gradient is fixed by the type of `q`: passing an
-`ExponentialFamilyDistribution{Gamma}` returns the gradient with respect to the
-**natural parameters** `η = (a-1, -b)` (a `Distributions.Gamma` would instead ask
-for the gradient with respect to the Gamma parameters). It consumes a
-[`DerivativeEnhancedFunction`](@ref); see [`mean`](@ref) for the returned quantity
-and [`project_to_gamma`](@ref) for the natural gradient / projected message.
-"""
-struct SecondOrderClosedWilliamsProduct end
-
-"""
-    DerivativeEnhancedFunction(true_function, expansion_point, first_derivative, second_derivative)
-
-A function bundled with everything needed for its second-order Taylor expansion
-about `expansion_point`: the function itself and its first and second derivatives
-(each a callable of one argument). This is the universal input to the Gamma
-tangent projection — the projection only ever touches the two derivatives at the
-expansion point, so any function that can supply them is accepted, regardless of
-what it represents.
-
-!!! note "Choosing the expansion point"
-    The projection is computed exactly for the quadratic that touches the
-    function at `expansion_point`, for *any* point — so the result is always a
-    valid second-order projection. But that quadratic only resembles the true
-    function near `expansion_point`, weighted by where `q` has mass, so the Gamma
-    mean `a/b` is the default and most accurate choice; expanding far from where
-    `q` concentrates stays valid but loses accuracy.
-
-# Fields
-- `true_function`: the function being expanded (informational; the projection
-  uses only the derivatives below).
-- `expansion_point`: the point to expand about — set it to the Gamma mean `a/b`.
-- `first_derivative`: `f′`, a callable of one argument.
-- `second_derivative`: `f″`, a callable of one argument.
-"""
-struct DerivativeEnhancedFunction{F, P, F1, F2}
-    true_function::F
-    expansion_point::P
-    first_derivative::F1
-    second_derivative::F2
-end
 
 """
     DerivativeEnhancedFunction(p::Logpdf{<:NormalPrecisionMessage}, expansion_point)
