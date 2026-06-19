@@ -21,6 +21,9 @@ end
 # ╔═╡ aa8a3f00-8551-485a-86a2-cde2973be07d
 using Plots
 
+# ╔═╡ c3213561-87b6-4223-8f5d-533fbfee0574
+using Printf
+
 # ╔═╡ 1c0ffee0-da7a-4b1d-9e55-5e7a0b1c2d3e
 md"""
 # Inferring a hidden rate from count data
@@ -236,6 +239,14 @@ but the **uncertainty bands differ** — and that difference is the point.
     end
 end
 
+# ╔═╡ d1e2f3a4-0010-4b1c-9d2e-5f6a7b8c9d10
+# Inner-chain data from the surrogate messages. At held-out points (observed = false)
+# the leaf carries no evidence (ξ = Λ = 0), so we feed a *flat* observation
+# (R = 1e12); `ifelse` discards the NaN/Inf that ξ./Λ and 1/Λ produce there.
+_chain_data(ξ, Λ, observed) =
+    (y = ifelse.(observed, ξ ./ Λ, 0.0),
+     R = ifelse.(observed, 1.0 ./ Λ, 1e12))
+
 # ╔═╡ 0b00d09a-0422-4ac4-af57-1c4d7e278d8f
 function poisson_surrogate(y::Real, m::Real, v::Real)
     ∂m, ∂σ = mean(
@@ -250,7 +261,8 @@ end
 
 # ╔═╡ 11bded3d-294b-47c7-a29e-3a89b0c8bb76
 function ngmp_poisson_smoother(y; σ = 0.1, m0 = 0.0, v0 = 10.0,
-                               iters = 10, α = 0.5, β = 0.2)
+                               iters = 10, α = 0.5, β = 0.2,
+                               observed = trues(length(y)))
     N = length(y)
     m = log.(y .+ 1.0); v = fill(1.0, N)          # initial edge marginals
     ξ = zeros(N); Λ = zeros(N)                     # surrogate message state η
@@ -261,11 +273,12 @@ function ngmp_poisson_smoother(y; σ = 0.1, m0 = 0.0, v0 = 10.0,
     for _ in 1:iters
         s = poisson_surrogate.(y, m, v)            # project every leaf at q_k
         ηξ = first.(s); ηΛ = last.(s)
+        ηξ[.!observed] .= 0; ηΛ[.!observed] .= 0   # held-out leaves: no Poisson evidence
         @. vξ = β * vξ + α * (ηξ - ξ); @. ξ += vξ
         @. vΛ = β * vΛ + α * (ηΛ - Λ); @. Λ += vΛ
         inference = infer(
                      model = lg_chain(σ = σ, m0 = m0, v0 = v0),
-                     data = (y = ξ ./ Λ, R = 1.0 ./ Λ),
+                     data = _chain_data(ξ, Λ, observed),
                      options = (limit_stack_depth = 100,),
                      free_energy = true,
         )
@@ -347,7 +360,8 @@ end
 
 # ╔═╡ d1e2f3a4-0003-4b1c-9d2e-5f6a7b8c9d03
 function ngmp_delta_smoother(y; σ = 0.1, m0 = 0.0, v0 = 10.0,
-                             iters = 10, α = 0.5, β = 0.2)
+                             iters = 10, α = 0.5, β = 0.2,
+                             observed = trues(length(y)))
     N = length(y)
     m = log.(y .+ 1.0); v = fill(1.0, N)          # initial edge marginals
     ξ = zeros(N); Λ = zeros(N)                     # surrogate message state η
@@ -358,11 +372,12 @@ function ngmp_delta_smoother(y; σ = 0.1, m0 = 0.0, v0 = 10.0,
     for _ in 1:iters
         s = ngmp_delta_surrogate.(y, m, v)         # expand every leaf at the mean
         ηξ = first.(s); ηΛ = last.(s)
+        ηξ[.!observed] .= 0; ηΛ[.!observed] .= 0   # held-out leaves: no Poisson evidence
         @. vξ = β * vξ + α * (ηξ - ξ); @. ξ += vξ
         @. vΛ = β * vΛ + α * (ηΛ - Λ); @. Λ += vΛ
         inference = infer(
                      model = lg_chain(σ = σ, m0 = m0, v0 = v0),
-                     data = (y = ξ ./ Λ, R = 1.0 ./ Λ),
+                     data = _chain_data(ξ, Λ, observed),
                      options = (limit_stack_depth = 100,),
                      free_energy = true,
         )
@@ -422,7 +437,8 @@ end
 
 # ╔═╡ d1e2f3a4-0009-4b1c-9d2e-5f6a7b8c9d09
 function laplace_smoother(y; σ = 0.1, m0 = 0.0, v0 = 10.0,
-                          iters = 10, α = 0.5, β = 0.2)
+                          iters = 10, α = 0.5, β = 0.2,
+                          observed = trues(length(y)))
     N = length(y)
     m = log.(y .+ 1.0); v = fill(1.0, N)          # initial edge marginals
     ξ = zeros(N); Λ = zeros(N)                     # surrogate message state η
@@ -436,11 +452,12 @@ function laplace_smoother(y; σ = 0.1, m0 = 0.0, v0 = 10.0,
         m₋ = (m ./ v .- ξ) ./ P₋                   # cavity mean
         s = laplace_surrogate.(y, m₋, P₋)          # expand each leaf at the belief mode
         ηξ = first.(s); ηΛ = last.(s)
+        ηξ[.!observed] .= 0; ηΛ[.!observed] .= 0   # held-out leaves: no Poisson evidence
         @. vξ = β * vξ + α * (ηξ - ξ); @. ξ += vξ
         @. vΛ = β * vΛ + α * (ηΛ - Λ); @. Λ += vΛ
         inference = infer(
                      model = lg_chain(σ = σ, m0 = m0, v0 = v0),
-                     data = (y = ξ ./ Λ, R = 1.0 ./ Λ),
+                     data = _chain_data(ξ, Λ, observed),
                      options = (limit_stack_depth = 100,),
                      free_energy = true,
         )
@@ -538,6 +555,210 @@ plot(1:length(ngmp_result.surrogate_free_energy), ngmp_result.surrogate_free_ene
      xlabel = "outer iteration", ylabel = "surrogate Bethe free energy",
      legend = false)
 
+# ╔═╡ d1e2f3a4-0011-4b1c-9d2e-5f6a7b8c9d11
+md"""
+## Which method predicts best? A held-out NLL test
+
+We now score the four methods *quantitatively*. Hold out a growing fraction
+(**5 → 50%**) of the counts, infer the latent log-rate $z_k$ at those points
+**from the rest of the chain only**, and turn each posterior into a predictive
+Poisson at the plug-in rate $\rho_k = \mathbb E_{q}[e^{z}] = e^{m_k + v_k/2}$. The
+score is the **average held-out negative log-likelihood**
+
+```math
+\text{NLL} = \frac{1}{|D|}\sum_{k\in D} -\log \mathrm{Poisson}\!\big(y_k \mid e^{m_k+v_k/2}\big),
+\qquad \text{lower is better.}
+```
+
+Since the score is a **mean over $|D|$ points**, the CLT gives it a standard error
+$s/\sqrt{|D|}$; we report the **95% CI** $\text{mean}\pm 1.96\,s/\sqrt{|D|}$ and,
+because one method (CVI) has very fat tails, also the **median** as a robust
+companion.
+
+Dropping a point means **removing its Poisson observation factor**. For the
+surrogate methods that is just *not projecting* the held-out leaf (its message
+$\eta=0$) and feeding the inner chain a flat pseudo-observation — handled by the
+`observed` mask already wired into the three smoothers. For **CVI** we mark those
+counts `missing`; the one prediction rule below lets `infer` both run and return
+the predictive Poisson directly. The same dropped index set (fixed seed) is fed to
+all four methods so the comparison is apples-to-apples.
+"""
+
+# ╔═╡ d1e2f3a4-0012-4b1c-9d2e-5f6a7b8c9d12
+begin
+    import Random
+    import Distributions
+    import Statistics
+end
+
+# ╔═╡ d1e2f3a4-0013-4b1c-9d2e-5f6a7b8c9d13
+# Prediction message toward a *missing* count: the held-out predictive Poisson at
+# rate ρ = E_q[eᶻ] = exp(m + v/2). This both lets `infer` run with `missing` data
+# and emits exactly the rate every method is scored on. (The package ships only the
+# `:in` rule, so missing-count prediction would otherwise error.)
+@rule PoissonExp(:out, Marginalisation) (q_in::NormalMeanVariance,) = begin
+    m, v = mean(q_in), var(q_in)
+    return Distributions.Poisson(exp(m + v / 2))
+end
+
+# ╔═╡ d1e2f3a4-0014-4b1c-9d2e-5f6a7b8c9d14
+begin
+    # reproducible held-out indices (same set fed to all four methods)
+    holdout(N, frac; seed = 20240618) =
+        sort!(Random.randperm(Random.MersenneTwister(seed), N)[1:round(Int, frac * N)])
+
+    # per-point held-out Poisson NLL under the plug-in rate ρ_k = exp(m_k + v_k/2)
+    pointwise_nll(means, variances, counts, drop) =
+        [-Distributions.logpdf(Distributions.Poisson(exp(means[k] + variances[k] / 2)), counts[k])
+         for k in drop]
+
+    # summary of the held-out NLLs: sample mean with a CLT 95% CI (mean ± 1.96·SE,
+    # SE = s/√n) plus the median (robust to the fat tails CVI produces).
+    function nll_stats(means, variances, counts, drop)
+        x = pointwise_nll(means, variances, counts, drop); n = length(x)
+        (; mean = Statistics.mean(x),
+           ci95 = 1.96 * Statistics.std(x) / sqrt(n),
+           median = Statistics.median(x))
+    end
+
+    # CVI + mean-field marginals with the held-out counts marked `missing`
+    function cvi_marginals(counts, drop; σ = 0.1, m0 = 0.0, v0 = 10.0, iters = 10)
+        y = Vector{Union{Int,Missing}}(counts); y[drop] .= missing
+        res = infer(model = poisson_state_space(σ = σ, m0 = m0, v0 = v0),
+                    constraints = mean_field_form_constraints(),
+                    data = (y = y,), initialization = mean_field_init(),
+                    options = (limit_stack_depth = 100,), iterations = iters)
+        post = res.posteriors[:z][end]
+        return mean.(post), var.(post)
+    end
+end
+
+# ╔═╡ d1e2f3a4-0015-4b1c-9d2e-5f6a7b8c9d15
+nll_table = mapreduce(vcat, [0.05, 0.10, 0.20, 0.30, 0.40, 0.50]) do frac
+    drop = holdout(length(counts), frac)
+    obs  = trues(length(counts)); obs[drop] .= false
+    ng = ngmp_poisson_smoother(counts; observed = obs)
+    de = ngmp_delta_smoother(counts;   observed = obs)
+    lp = laplace_smoother(counts;      observed = obs)
+    cm, cv = cvi_marginals(counts, drop)
+    marginals = ("NGMP"    => (ng.means, ng.variances),
+                 "delta"   => (de.means, de.variances),
+                 "Laplace" => (lp.means, lp.variances),
+                 "CVI"     => (cm,       cv))
+    map(marginals) do (name, (m, v))
+        s = nll_stats(m, v, counts, drop)
+        (; pct = Int(round(100frac)), method = name, n = length(drop),
+           mean = round(s.mean, digits = 2), ci95 = round(s.ci95, digits = 2),
+           median = round(s.median, digits = 2))
+    end |> collect
+end
+
+# ╔═╡ 30529f14-f215-4748-b9b8-68bf31ef7f5a
+begin
+    function nll_md(tbl; bold_best = true)
+          pcts    = sort(unique(getfield.(tbl, :pct)))
+          methods = unique(getfield.(tbl, :method))            # preserves NGMP, delta, Laplace, CVI
+          cell(r) = @sprintf("%.2f ± %.2f", r.mean, r.ci95)
+    
+          io = IOBuffer()
+          println(io, "| % held out | ", join(methods, " | "), " |")
+          println(io, "|:--:|", repeat(":--:|", length(methods)))
+          for p in pcts
+              rows = filter(t -> t.pct == p, tbl)
+              best = bold_best ? argmin(getfield.(rows, :mean)) : 0     # winner per row
+              cells = map(enumerate(methods)) do (i, m)
+                  r = only(filter(t -> t.method == m, rows))
+                  s = cell(r)
+                  (bold_best && rows[best].method == m) ? "**$s**" : s
+              end
+              println(io, "| **$p%** | ", join(cells, " | "), " |")
+          end
+          Markdown.parse(String(take!(io)))
+      end
+    
+      nll_md(nll_table)
+end
+
+# ╔═╡ d1e2f3a4-0016-4b1c-9d2e-5f6a7b8c9d16
+let
+    # table keeps all four methods; the plot shows only NGMP vs CVI (delta and
+    # Laplace track NGMP to ~0.01 nat — see the table).
+    series = [("NGMP", :dodgerblue), ("CVI", :darkorange)]
+    p = plot(xlabel = "% of counts held out", ylabel = "avg held-out Poisson NLL",
+             title = "Predictive NLL ± 95% CI on dropped counts (lower = better)",
+             yscale = :log10, legend = :topright,
+             xticks = unique([r.pct for r in nll_table]))
+    for (name, col) in series
+        rows = filter(r -> r.method == name, nll_table)
+        x  = [r.pct  for r in rows]
+        μ  = [r.mean for r in rows]
+        ci = [r.ci95 for r in rows]
+        lower = min.(ci, μ .* 0.999)        # keep μ − lower > 0 so the log axis is valid
+        plot!(p, x, μ; yerror = (lower, ci), marker = :circle, lw = 2, color = col, label = name)
+    end
+    p
+end
+
+# ╔═╡ d1e2f3a4-0017-4b1c-9d2e-5f6a7b8c9d17
+md"""
+**Reading the held-out test.** `nll_table` reports, per fraction and method, the
+mean held-out NLL with its 95% CI and the median. All four methods see the
+*identical* held-out set and predict with the *identical* rate $e^{m+v/2}$, so the
+comparison isolates the inferred posterior $(m_k, v_k)$ at the gaps.
+
+- The three **chain-exact surrogates** sit low with **tight CIs** — the CLT works
+  cleanly because their per-point NLLs are well-behaved. **NGMP is slightly best**;
+  the delta-approx and Laplace are essentially tied (their fixed points coincide).
+- **CVI + mean-field is worse and statistically unstable.** Its **median** is only
+  modestly above the surrogates (typical points are fine), but its **mean and CI
+  are huge and erratic** — because mean-field occasionally leaves a held-out node
+  at a *confidently wrong* posterior mean (e.g. one gap inferred at log-rate ≈ 9.6,
+  predicting rate ≈ 1.5×10⁴ against a true count of 114, an NLL of ~14 000). One
+  such point dominates the average over hundreds of points, and the fat tail makes
+  the CLT CI enormous. Which node blows up depends on the missing pattern, so the
+  mean does **not** vary smoothly with the held-out fraction — it is an
+  outlier-driven artifact, not a "more data is worse" effect.
+
+The lesson: severing the temporal correlations ($q(z)=\prod_k q(z_k)$) leaves the
+gaps under-determined, and mean-field then sometimes commits hard to a wrong value
+— exactly the unreliable uncertainty the variance plot hinted at, now quantified
+with error bars.
+"""
+
+# ╔═╡ d1e2f3a4-0018-4b1c-9d2e-5f6a7b8c9d18
+md"""
+## NGMP vs CVI in log-rate space, as the gaps grow
+
+NGMP, its delta-approximation and Laplace land within ~0.01 nat of each other (the
+table above), so there is nothing to gain from plotting all three — we contrast the
+representative surrogate **NGMP** against **CVI + mean-field**. Each panel holds out
+a larger fraction (**5 → 50%**) and shows the inferred **log-rate** $z_k \pm 95\%$
+band over time — the latent itself, *not* the count predictions. Where the data are
+dense the two agree; in the deep solar minima and at the held-out gaps CVI's
+mean-field factorisation detaches and undershoots, and at 5–10% it even produces a
+**confidently-wrong spike** to $z \approx 14$ ($\rho = e^{z} \approx 10^{6}$) — the
+visual face of the catastrophic NLL points in the table.
+"""
+
+# ╔═╡ d1e2f3a4-0019-4b1c-9d2e-5f6a7b8c9d19
+let
+    yr = sunspot_dataset.features[!, :year]
+    panel = function (frac)
+        drop = holdout(length(counts), frac); obs = trues(length(counts)); obs[drop] .= false
+        ng = ngmp_poisson_smoother(counts; observed = obs)
+        cm, cv = cvi_marginals(counts, drop)
+        pl = plot(yr, ng.means; ribbon = 1.96 .* sqrt.(ng.variances), fillalpha = 0.25,
+                  lw = 1.2, color = :dodgerblue, label = "NGMP",
+                  title = "$(Int(round(100frac)))% held out")
+        plot!(pl, yr, cm; ribbon = 1.96 .* sqrt.(cv), fillalpha = 0.25,
+              lw = 1.2, color = :darkorange, label = "CVI + mean-field")
+        pl
+    end
+    plot(panel(0.05), panel(0.10), panel(0.20), panel(0.50);
+         layout = (2, 2), size = (950, 680),
+         xlabel = "year", ylabel = "log-rate  z_k", legend = :topright)
+end
+
 # ╔═╡ Cell order:
 # ╟─1c0ffee0-da7a-4b1d-9e55-5e7a0b1c2d3e
 # ╠═7cd03948-6b0f-11f1-315c-87a678136b72
@@ -553,6 +774,7 @@ plot(1:length(ngmp_result.surrogate_free_energy), ngmp_result.surrogate_free_ene
 # ╟─3a9c1d52-7e84-4b16-9f23-1c8a5d0e2b47
 # ╟─cb0918a8-8f86-45c1-aa1f-ddb26848a97e
 # ╠═2d3634c4-1b1b-42ab-bba9-0e0731f38af5
+# ╠═d1e2f3a4-0010-4b1c-9d2e-5f6a7b8c9d10
 # ╠═0b00d09a-0422-4ac4-af57-1c4d7e278d8f
 # ╠═11bded3d-294b-47c7-a29e-3a89b0c8bb76
 # ╠═af2b5341-66fe-4ff5-ad4b-bb7c4ab9b309
@@ -569,3 +791,14 @@ plot(1:length(ngmp_result.surrogate_free_energy), ngmp_result.surrogate_free_ene
 # ╟─6f2e8b91-4d05-42c7-a8e1-9b3c7f1a6d50
 # ╟─8c4d2a16-9b73-41e8-b5f2-0a6e3d9c1f84
 # ╠═e2a7b3c1-5d64-4f08-9b12-7c3e8a1f6d29
+# ╟─d1e2f3a4-0011-4b1c-9d2e-5f6a7b8c9d11
+# ╠═d1e2f3a4-0012-4b1c-9d2e-5f6a7b8c9d12
+# ╠═d1e2f3a4-0013-4b1c-9d2e-5f6a7b8c9d13
+# ╠═d1e2f3a4-0014-4b1c-9d2e-5f6a7b8c9d14
+# ╠═d1e2f3a4-0015-4b1c-9d2e-5f6a7b8c9d15
+# ╠═c3213561-87b6-4223-8f5d-533fbfee0574
+# ╠═30529f14-f215-4748-b9b8-68bf31ef7f5a
+# ╠═d1e2f3a4-0016-4b1c-9d2e-5f6a7b8c9d16
+# ╟─d1e2f3a4-0017-4b1c-9d2e-5f6a7b8c9d17
+# ╟─d1e2f3a4-0018-4b1c-9d2e-5f6a7b8c9d18
+# ╠═d1e2f3a4-0019-4b1c-9d2e-5f6a7b8c9d19
