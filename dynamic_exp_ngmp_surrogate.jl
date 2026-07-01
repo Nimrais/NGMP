@@ -69,7 +69,7 @@ end
     end
     for j in 1:n_obs
         for i in 1:n_forecasters
-            z[i, j] ~ softdot(features[j], w[i], τ[i])
+            z[i, j] ~ softdot(features[j], w[i], τ[i]) where {meta = LowRankMeta()}
             obsz[i, j] ~ NormalMeanVariance(z[i, j], Rz[i, j])
         end
     end
@@ -106,7 +106,7 @@ end
 # step → one inline infer → repeat), with LogGamma leaves instead of Poisson.
 # No zforward_gamma, no β, no clamps, no anti-windup: damping α + momentum β only.
 function ngmp_train(features, predictions, y, w_priors0, τ_priors0;
-                    outer = 40, inner = 10, α = 0.5, β = 0.2, update_priors = false, verbose = true)
+                    outer = 2, inner = 2, α = 0.5, β = 0.2, update_priors = false, verbose = true)
     nf, no = size(predictions)
     μz = form_loggamma_messages(predictions, y)     # fixed LogGamma(α=1/rate, β=3/2) leaves, built once
     # first-iteration init at each leaf's mode z*=log(β·α)=log(β/rate): linearize the
@@ -151,8 +151,8 @@ w0 = [MvNormalMeanScalePrecision(zeros(nfeat), cfg["params"]["priors"]["w"]["sca
 τ0 = [GammaShapeRate(cfg["params"]["priors"]["τ"]["shape"], cfg["params"]["priors"]["τ"]["rate"]) for _ in 1:nf]
 
 nsub  = parse(Int, get(ENV, "NGMP_NSUB",  string(length(y_val))))
-outer = parse(Int, get(ENV, "NGMP_OUTER", "40"))
-inner = parse(Int, get(ENV, "NGMP_INNER", "10"))
+outer = 2
+inner = 2
 sub   = 1:min(nsub, length(y_val))
 fsub, psub, ysub = features_val[sub], predictions_val[:, sub], y_val[sub]
 @printf("== training on %d/%d val obs, outer=%d inner=%d ==\n", length(sub), length(y_val), outer, inner)
