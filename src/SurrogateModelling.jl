@@ -22,7 +22,8 @@ import ClosedFormExpectations: LogGamma
 import ExponentialFamily: GaussianDistributionsFamily
 
 include("datasets/sunspots.jl")
-export Sunspots
+include("datasets/etth1.jl")
+export Sunspots, ETTh1
 
 include("nodes/poisson_exp.jl")
 export PoissonExp, PoissonExpression
@@ -39,8 +40,19 @@ include("tangent_projections/gamma.jl")
 
 include("tangent_projections/normal.jl")
 
+# ---------------------------------------------------------------------------
+# model_zoo — NGMP surrogate models that plug into ProbabilisticEnsembling's YAML
+# `run_experiment` pipeline by extending its model-type hooks. (Template stage:
+# inner model + projections are real; the outer-loop driver in pipeline.jl is a
+# stub to be ported from the repo-root dynamic_exp_ngmp_surrogate.jl.)
+# ---------------------------------------------------------------------------
+import ProbabilisticEnsembling
+include("model_zoo/dynamic_exp_ngmp/model_type.jl")
+
+
 function __init__()
     __init__sunspots()
+    __init__etth1()
 end
 
 end # module
