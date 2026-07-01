@@ -31,6 +31,7 @@ using ProbabilisticEnsembling
 import ClosedFormExpectations: ClosedWilliamsProduct, Logpdf, LogGamma
 import ExponentialFamily: ExponentialFamilyDistribution, getnaturalparameters
 import SpecialFunctions: trigamma, digamma
+using ProgressMeter
 using YAML
 
 
@@ -40,10 +41,13 @@ spec = ProbabilisticEnsembling._parse_spec(cfg)
 y_val, y_test, predictions_val, predictions_test, features_val, features_test =
     ProbabilisticEnsembling.before_rxinfer(spec);
 
-function project_loggamma_to_normal(α, β, m, σ)
-    ∂μ, ∂σ = mean(ClosedWilliamsProduct(), Logpdf(LogGamma(α, β; check_args = false)), Normal(m, σ))
-    Λ = -∂σ / σ
-    ξ = ∂μ + m * Λ
+function project_loggamma_to_normal(μ, m, σ)      # NGMP delta: observed curvature at the point z=m
+    # deterministic (delta) projection: evaluate the Williams product at Normal(m, 0),
+    # i.e. z=m with zero variance. ∂m = ℓ'(m); Λ = -ℓ''(m) = β - ∂m (drops the e^{v/2}
+    # Fisher factor of the expected form, avoiding NGMP's 0/0 for Λ = -∂σ/σ at σ=0). σ unused.
+    ∂m, _ = mean(ClosedWilliamsProduct(), Logpdf(μ), Normal(m, 0.0))
+    Λ = μ.β - ∂m
+    ξ = ∂m + m * Λ
     return ξ, Λ
 end
 
@@ -81,50 +85,82 @@ inner_init(w_priors, τ_priors) = @initialization begin
     q(z) = NormalMeanVariance(0.0, 1.0)
 end
 
-function form_loggamma_messages(predictions, ys)
-    nf, n = size(predictions_val)[1], length(y_val)
-    q_prediction_val = [PointMass(prediction) for prediction in predictions];
-    q_y_val = [PointMass(y) for y in ys];
-    μ_likelihood_γ = [
-        @call_rule NormalMeanPrecision(:τ, Marginalisation) (q_out = q_y_val[i], q_μ = q_prediction_val[i, j])
+function form_loggamma_messages(predictions, ys; αmax = 1e6)
+    nf, n = size(predictions, 1), length(ys)
+    q_prediction = PointMass.(predictions)              # nf × n
+    q_y = [PointMass(y) for y in ys]                    # n
+    μ_likelihood_γ = [                                  # nf × n  Gamma(3/2, (y-pred)^2/2)
+        @call_rule NormalMeanPrecision(:τ, Marginalisation) (q_out = q_y[j], q_μ = q_prediction[i, j])
         for i in 1:nf, j in 1:n
-    ];
-    return [@call_rule Exp(:in, Marginalisation) (m_out = μ_γ,) for μ_γ in μ_likelihood_γ]
+    ]
+    μz = [                                              # nf × n  LogGamma(α=1/rate, β=3/2) toward z
+        @call_rule Exp(:in, Marginalisation) (m_out = μ_likelihood_γ[i, j],)
+        for i in 1:nf, j in 1:n
+    ]
+    # perfect forecast (residual→0) ⇒ rate→0 ⇒ α=1/rate=Inf; cap it to a big finite number
+    capα(m) = LogGamma(min(m.α, αmax), m.β; check_args = false)
+    return capα.(μz)
 end
 
-# function ngmp_train(features, predictions, y, w_priors0, τ_priors0;
-#                     outer = 40, α_d = 0.3, β_m = 0.7, verbose = true)
-#     nf = length(w_priors0)
-#     no = length(features)
-#     gy_shape = 1.5
+# NGMP training loop — mimics notebooks/poisson_surrogate.jl (project → damped
+# step → one inline infer → repeat), with LogGamma leaves instead of Poisson.
+# No zforward_gamma, no β, no clamps, no anti-windup: damping α + momentum β only.
+function ngmp_train(features, predictions, y, w_priors0, τ_priors0;
+                    outer = 40, inner = 10, α = 0.5, β = 0.2, update_priors = false, verbose = true)
+    nf, no = size(predictions)
+    μz = form_loggamma_messages(predictions, y)     # fixed LogGamma(α=1/rate, β=3/2) leaves, built once
+    # first-iteration init at each leaf's mode z*=log(β·α)=log(β/rate): linearize the
+    # exp link AT its operating point (Λ=β there), not at 0 where the tangent overshoots
+    # to obsz≈β/rate. Only the warm-start; from iter 2 q(z) is the coupled infer marginal.
+    m = [log(μz[i, j].β * μz[i, j].α) for i in 1:nf, j in 1:no]
+    v = ones(nf, no)
+    ξ = zeros(nf, no); Λ = zeros(nf, no)
+    vξ = zeros(nf, no); vΛ = zeros(nf, no)
+    wpri, τpri = w_priors0, τ_priors0               # priors used this outer
+    local res
+    @showprogress for t in 1:outer
+        ηξ = similar(ξ); ηΛ = similar(Λ)
+        for j in 1:no, i in 1:nf                    # project each leaf at the current q(z)
+            ηξ[i, j], ηΛ[i, j] = project_loggamma_to_normal(μz[i, j], m[i, j], sqrt(v[i, j]))
+        end
+        @. vξ = β * vξ + α * (ηξ - ξ); @. ξ += vξ   # damped NG step — NO clamps
+        @. vΛ = β * vΛ + α * (ηΛ - Λ); @. Λ += vΛ
+        res = infer(model = inner_exp_ensemble(n_forecasters = nf, n_obs = no,
+                        w_priors = wpri, τ_priors = τpri),
+                    data = (features = features, obsz = ξ ./ Λ, Rz = 1 ./ Λ),
+                    constraints = inner_constraints(),
+                    initialization = inner_init(wpri, τpri),
+                    iterations = inner, free_energy = false,
+                    options = (limit_stack_depth = 200,))
+        qz = res.posteriors[:z][end]; m = map(mean, qz); v = map(var, qz)
+        if update_priors                            # carry posteriors forward as next outer's prior
+            wpri = res.posteriors[:w][end]; τpri = res.posteriors[:τ][end]
+        end
+        verbose && (@printf("  outer %2d  meanΛ=%.3f  meanE[z]=%.3f\n", t, mean(Λ), mean(m)); flush(stdout))
+    end
+    return res.posteriors[:w][end], res.posteriors[:τ][end]
+end
 
-#     q_predictions = [for prediction in predictions]
-    
-#     vξ = zeros(nf, no); vΛ = zeros(nf, no)
-#     local res
-#     for t in 1:outer
-#         res, mz, vz = infer_qz(features, w_priors0, τ_priors0, obsz, Rz; iters = inner)
-#         ηξ = similar(ξ); ηΛ = similar(Λ)
-#         for j in 1:no, i in 1:nf
-#             mc = clamp(mz[i, j], -30.0, 30.0)
-#             vc = clamp(vz[i, j], 1e-6, 8.0)
-#             ξt, Λt = project_loggamma_to_normal(α_lg[i, j], gy_shape, mc, sqrt(vc))
-#             ηξ[i, j] = ξt; ηΛ[i, j] = clamp(Λt, 1e-6, 1e3)
-#         end
-#         @. vξ = β_m * vξ + α_d * (ηξ - ξ); @. ξ += vξ
-#         @. vΛ = β_m * vΛ + α_d * (ηΛ - Λ); @. Λ += vΛ
-#         # Anti-windup: z = log-precision is physically bounded, so clamp the z-target
-#         # and RE-SYNC the momentum state (ξ,Λ) to the clamped pseudo-obs. Without this
-#         # a few near-perfect-forecast points (rate→0) drive Λ to the floor and obsz→∞,
-#         # corrupting the w fit; the bulk already converges (mean Λ→3/2).
-#         Λc = clamp.(Λ, 1e-3, 1e3)
-#         nobsz = clamp.(ξ ./ Λc, -25.0, 25.0)
-#         Δ = maximum(abs.(obsz .- nobsz))
-#         ξ .= nobsz .* Λc; Λ .= Λc                     # re-sync state to clamped values
-#         obsz .= nobsz; Rz .= 1 ./ Λc
-#         verbose && (@printf("  outer %2d  ‖Δz-target‖∞=%.4e  mean Λ=%.3f\n", t, Δ, mean(Λc)); flush(stdout))
-#     end
-#     return res.posteriors[:w][end], res.posteriors[:τ][end]
-# end
+# -----------------------------------------------------------------------------
+# Driver: build priors from the YAML, train BOTH prior-update modes on val.
+# Subset / iteration counts are ENV-overridable for tuning inner vs outer.
+# -----------------------------------------------------------------------------
+nf    = size(predictions_val, 1)
+nfeat = cfg["params"]["priors"]["w"]["n_features"]
+w0 = [MvNormalMeanScalePrecision(zeros(nfeat), cfg["params"]["priors"]["w"]["scale"]) for _ in 1:nf]
+τ0 = [GammaShapeRate(cfg["params"]["priors"]["τ"]["shape"], cfg["params"]["priors"]["τ"]["rate"]) for _ in 1:nf]
 
+nsub  = parse(Int, get(ENV, "NGMP_NSUB",  string(length(y_val))))
+outer = parse(Int, get(ENV, "NGMP_OUTER", "40"))
+inner = parse(Int, get(ENV, "NGMP_INNER", "10"))
+sub   = 1:min(nsub, length(y_val))
+fsub, psub, ysub = features_val[sub], predictions_val[:, sub], y_val[sub]
+@printf("== training on %d/%d val obs, outer=%d inner=%d ==\n", length(sub), length(y_val), outer, inner)
 
+println("-- fixed prior (update_priors = false) --")
+wb_fix, τb_fix = ngmp_train(fsub, psub, ysub, w0, τ0; outer, inner, update_priors = false)
+println("-- carry-forward prior (update_priors = true) --")
+wb_upd, τb_upd = ngmp_train(fsub, psub, ysub, w0, τ0; outer, inner, update_priors = true)
+
+println("\nmean(τ) fixed : ", round.(mean.(τb_fix), sigdigits = 3))
+println("mean(τ) carry : ", round.(mean.(τb_upd), sigdigits = 3))
