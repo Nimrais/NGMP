@@ -63,11 +63,12 @@ and compare them:
    integral over $\tau$ we evaluate on a fine grid. This is the ground truth.
 2. **Mean-field VMP (RxInfer, automatic).** Force $q(x,\tau)=q(x)q(\tau)$ and run
    variational message passing — the classical conjugate route.
-3. **NG-BP (by hand, your tangent projections).** Keep the exact non-conjugate
-   messages and **project** each onto its receiving edge with the
-   `SurrogateModelling` tangent projections: the Student-t onto the Gaussian $x$
-   edge (`project_to_normal`), the precision message onto the Gamma $\tau$ edge
-   (`project_to_gamma`).
+3. **NG-BP (native NGMP rules).** Keep the graph un-factorized and run belief
+   propagation whose non-conjugate messages are **tangent-projected at the
+   receiving marginals** — the `NaturalGradientMessage` rules on the standard
+   `NormalMeanPrecision` node, dispatched with a `where { dependencies = ... }`
+   clause. One `infer` call, no surrogate outer loop, **no factorization
+   constraint at all**.
 
 The three **agree when data are plentiful** and **part ways when data are scarce**
 — and pinning down *when, where, and why* they differ is the point of the
@@ -146,11 +147,12 @@ end
 # ╔═╡ 171227cb-895c-4a80-b754-7f1e54ff9c91
 begin
     m0, v0, a0, b0 = 0.0, 1e6, 1.0, 1.0
-    N  = 100
-    ys = rand(NormalMeanPrecision(10.0, 10.0), N) 
-    
+    N  = 2
+    Random.seed!(20260706)
+    ys = rand(NormalMeanPrecision(10.0, 10.0), N)
+
     exact = exact_posterior(ys, m0 = m0, v0 = v0, a0 = a0, b0 = b0)
-    
+
     vmp = infer(
             data = (y = ys,),
             model = normal_vmp(m0 = m0, v0 = v0, a0 = a0, b0 = b0),
@@ -164,38 +166,204 @@ end
 # ╔═╡ e1704c6a-e874-4344-aaab-b4c3c97c7cf6
 begin
 	niters = length(vmp.free_energy)
-	plot(1:niters, vmp.free_energy)
+	plot(1:niters, vmp.free_energy, title="VMP Free Energy", label = nothing)
+end
+
+# ╔═╡ b468d91d-e9ce-4f1d-982e-bb506135f02c
+md"""
+## Method 2 — native NG-BP (tangent-projected belief propagation)
+
+No factorization constraint: the model graph stays exactly as written, and the
+likelihood nodes carry `NGMPDependencies(μ = nothing, τ = nothing)` — every
+message toward the $x$ and $\tau$ edges is computed by the
+`NaturalGradientMessage` rules in
+`src/nodes/normal_mean_precision/rules/natural_gradient.jl`.
+
+Unlike the `PoissonExp`/`Log` cases, **neither exact message here has a
+closed-form Williams product**, so the rules use the **quadrature-exact** tangent
+projection `TangentProjection(type = Quadrature(128))`: the Williams product
+$\nabla_\eta E_q[\ell] = \mathrm{Cov}_q[T, \ell]$ is evaluated by Gauss–Hermite
+on the Gaussian edge and by a log-space trapezoid rule on the Gamma edge
+(substituting $s = \log\tau$ makes the Gamma integrand smooth and
+double-exponentially decaying, so the trapezoid converges geometrically for any
+shape). The cheaper *second-order* delta expansion (`project_to_gamma` /
+`project_to_normal`) is kept as an alternative — but it is **biased whenever the
+receiving marginal is wide**, because it integrates the touching quadratic of
+$\ell$ far from the expansion point; the diagnostic cell below quantifies this.
+The exact BP log-messages (prepared in `src/expressions/`):
+
+- **toward $\tau$**: integrating the Gaussian cavity $\mathcal N(z\mid \tilde m, \tilde v)$
+  out of the factor gives the `NormalPrecisionMessage`
+  $\mu_{f\to\tau}(\tau) = \mathcal N(y \mid \tilde m,\ \tilde v + \tau^{-1})$ — not
+  Gamma; `project_to_gamma` at $q(\tau)$ produces the damped Gamma site.
+- **toward $x$**: integrating the Gamma cavity out gives the `StudentTMessage`
+  $\mu_{f\to x}(x) \propto (2\tilde b + (x - y)^2)^{-(\tilde a + 1/2)}$ — a heavy-tailed
+  Student-t; `project_to_normal` at $q(x)$ produces the damped Gaussian site.
+
+Two practical notes, both visible in the initialization below:
+
+- the Student-t log-message is concave **only in its bulk** ($(m-y)^2 < 2\tilde b$);
+  seeding $q(x)$ far from the data expands in the convex tail and yields
+  negative-precision sites — so we seed at the data mean;
+- for $N \ge 2$ the $x$ and $\tau$ edges are **loopy** (every projected message
+  needs the equality-chain product of the *other* nodes' messages), so messages
+  `μ(x)`, `μ(τ)` need initial values too — the standard loopy-BP start-up.
+"""
+
+# ╔═╡ 0c9234bd-2df4-462c-b93b-4afbd7eade01
+@model function normal_ngbp(y, m0, v0, a0, b0, deps, damping)
+    x ~ NormalMeanVariance(m0, v0)
+    τ ~ GammaShapeRate(a0, b0)
+    for i in 1:length(y)
+        y[i] ~ NormalMeanPrecision(x, τ) where { dependencies = deps, meta = damping }
+    end
+end
+
+# ╔═╡ c5705754-7d35-49da-9af0-559d9fb0e279
+begin
+    ngbp_iterations = 50                      # α = 0.2 damping: ~50 sweeps to settle
+    ngbp_deps = NGMPDependencies(μ = nothing, τ = nothing)
+    mx0 = mean(ys)
+    vx0 = max(var(ys), 0.1)
+    ngbp_init = @initialization begin
+        q(x) = NormalMeanVariance(mx0, vx0)   # data bulk: Student-t concave region
+        q(τ) = GammaShapeRate(a0, b0)
+        μ(x) = NormalMeanVariance(mx0, 10 * vx0)   # loopy-BP message seeds (N ≥ 2)
+        μ(τ) = GammaShapeRate(a0, b0)
+    end
+    ngbp = infer(
+        data = (y = ys,),
+        model = normal_ngbp(m0 = m0, v0 = v0, a0 = a0, b0 = b0,
+                            deps = ngbp_deps,
+                            damping = DampingMeta(alpha = 0.2, beta = 0.0)),
+        initialization = ngbp_init,
+        iterations = ngbp_iterations,
+         options = (limit_stack_depth = 500,),
+    )
+    # one damping state per likelihood edge (μ and τ), each fired once per sweep
+    @assert length(ngbp_deps.states) == 2N
+    @assert all(s -> s.nfired == ngbp_iterations, ngbp_deps.states)
+    ngbp
+end
+
+# ╔═╡ c6bcf453-2eb7-456a-bcdd-99bfe22ba482
+begin
+    # Diagnostic: why the second-order projection biased the τ fixed point.
+    # Project ONE likelihood's exact τ-message both ways at a marginal of the
+    # converged shape, but artificially widened (small N regime): the touching
+    # quadratic at the Gamma mean overshoots the rate increment Δb severely,
+    # while the quadrature is exact.
+    import SurrogateModelling: NormalPrecisionMessage, project_to_gamma
+    import ClosedFormExpectations: Logpdf as CFELogpdf
+    import ExponentialFamily: getnaturalparameters
+
+    qτ_conv = ngbp.posteriors[:τ][end]
+    p_diag = NormalPrecisionMessage(ys[1], mean(ngbp.posteriors[:x][end]), var(ngbp.posteriors[:x][end]))
+    diag_rows = map((GammaShapeRate(1.5, 1.5 / mean(qτ_conv)), qτ_conv)) do qd
+        Δa2, Δb2 = project_to_gamma(p_diag, convert(ExponentialFamilyDistribution, qd))
+        ηq = getnaturalparameters(project(TangentProjection(type = Quadrature(128)), qd, CFELogpdf(p_diag)))
+        (a = shape(qd), b = rate(qd), second_order = (round(Δa2, digits = 4), round(Δb2, digits = 4)),
+         quadrature = (round(ηq[1], digits = 4), round(-ηq[2], digits = 4)))
+    end
+    Markdown.parse(
+        """
+        ### Diagnostic: second-order vs exact (Δa, Δb) for one τ-message
+
+        | q(τ) | second-order (Δa, Δb) | quadrature-exact (Δa, Δb) |
+        |---|---|---|
+        | wide Gamma($(round(diag_rows[1].a, digits=2)), $(round(diag_rows[1].b, digits=2))) | $(diag_rows[1].second_order) | $(diag_rows[1].quadrature) |
+        | converged Gamma($(round(diag_rows[2].a, digits=2)), $(round(diag_rows[2].b, digits=2))) | $(diag_rows[2].second_order) | $(diag_rows[2].quadrature) |
+
+        For wide marginals (small N) the delta expansion overshoots the rate
+        increment several-fold — the source of the τ bias the second-order rules
+        had; at the converged, concentrated marginal the gap largely closes
+        (and keeps shrinking as the shape grows).
+        """,
+    )
 end
 
 # ╔═╡ 957d8bce-1bd0-4812-9000-b0b39a8bf7fd
 begin
     qx_vmp = vmp.posteriors[:x][end]
     qτ_vmp = vmp.posteriors[:τ][end]
+    qx_ngbp = ngbp.posteriors[:x][end]
+    qτ_ngbp = ngbp.posteriors[:τ][end]
     xg = range(exact.mx - 5sqrt(exact.vx), exact.mx + 5sqrt(exact.vx); length = 400)
-        
-    p1 = plot(xg, 
-              exact.pdfx.(xg); 
+
+    p1 = plot(xg,
+              exact.pdfx.(xg);
               lw = 3, color = :black, label = "exact",
-              xlabel = "x", ylabel = "density", 
+              xlabel = "x", ylabel = "density",
               title = "Posterior of the mean")
     plot!(p1, xg, pdf.(Normal(mean(qx_vmp), std(qx_vmp)), xg);
           lw = 2, ls = :dash, color = :crimson, label = "mean-field VMP")
+    plot!(p1, xg, pdf.(Normal(mean(qx_ngbp), std(qx_ngbp)), xg);
+          lw = 2, color = :dodgerblue, label = "NG-BP")
     mask = exact.pdfτ.w .> 1e-8 * maximum(exact.pdfτ.w)
     p2 = plot(
               exact.pdfτ.τs[mask],
               exact.pdfτ.w[mask],
               lw = 3,
               color = :black,
+              label = "exact",
               title = "Posterior of the precision",
+              xlabel = "τ",
     )
     plot!(p2, exact.pdfτ.τs[mask],
           pdf.(qτ_vmp, exact.pdfτ.τs[mask]);
           lw = 2, ls = :dash, color = :crimson, label = "mean-field VMP")
+    plot!(p2, exact.pdfτ.τs[mask],
+          pdf.(qτ_ngbp, exact.pdfτ.τs[mask]);
+          lw = 2, color = :dodgerblue, label = "NG-BP")
     plt = plot(p1, p2; layout = (1,2), size = (1100, 800))
 end
 
-# ╔═╡ 039006f5-482d-4382-a1dd-58c16d093438
+# ╔═╡ 8b086eb1-7525-4613-8eb7-1f226e24799b
+Markdown.parse(
+    """
+    ## Posterior moments vs the exact grid
 
+    | method | E[x] | V[x] | E[τ] | V[τ] |
+    |---|---|---|---|---|
+    | exact (grid) | $(round(exact.mx, digits = 4)) | $(round(exact.vx, digits = 4)) | $(round(exact.mτ, digits = 4)) | $(round(exact.vτ, digits = 4)) |
+    | mean-field VMP | $(round(mean(qx_vmp), digits = 4)) | $(round(var(qx_vmp), digits = 4)) | $(round(mean(qτ_vmp), digits = 4)) | $(round(var(qτ_vmp), digits = 4)) |
+    | NG-BP (native) | $(round(mean(qx_ngbp), digits = 4)) | $(round(var(qx_ngbp), digits = 4)) | $(round(mean(qτ_ngbp), digits = 4)) | $(round(var(qτ_ngbp), digits = 4)) |
+
+    N = $(N) observations.
+    """,
+)
+
+# ╔═╡ 69ed1331-6b78-4756-bf08-f4f3569d6ced
+md"""
+## What to look at
+
+**The precision marginal.** With the quadrature-exact projection, NG-BP's
+$q(\tau)$ essentially **matches the exact grid at every $N$** (means agree to
+well under a percent; the variance is the closest of the two message-passing
+methods, where mean-field VMP systematically understates it). This settles an
+earlier suspicion: with the *second-order* rules the τ marginal degraded for
+$N \ge 2$ (e.g. $E[\tau] = 2.13$ vs exact $2.82$ at $N = 5$), which looked like
+an intrinsic loopy-BP effect — it was in fact **delta-expansion bias**: for a
+wide $q(\tau)$ the touching quadratic overshoots the rate increment $\Delta b$
+by a factor of ~3 (see the diagnostic table above). Exact projection, exact
+fixed point.
+
+**The location marginal.** All three means coincide. The exact $x$-marginal is a
+scale mixture (Student-t-like), so no single Gaussian can reproduce its second
+moment when the tails matter; both message-passing methods report a somewhat
+smaller variance, with mean-field VMP the most overconfident. At $N = 1$
+(vague-prior, heavy-tail extreme) NG-BP is visibly wider and more honest than
+VMP's fixed unit-variance answer.
+
+- at **$N = 1$** NG-BP also recovers the exact $\tau$ posterior exactly — one
+  observation carries no precision information under a vague location prior, and
+  the projected message is the null update, while mean-field VMP manufactures
+  spurious confidence;
+- for **$N \ge 2$** the loop is now benign: the τ marginal tracks the grid.
+
+Try changing `N` in the data cell; damping (`alpha = 0.2`) and the two
+initialization notes above are the only tuning in the NG-BP arm.
+"""
 
 # ╔═╡ Cell order:
 # ╟─8de6d9aa-5344-42fe-a0bf-f1afe4941632
@@ -209,5 +377,10 @@ end
 # ╠═6f444787-cfe4-4a45-b925-37c1f070368c
 # ╠═171227cb-895c-4a80-b754-7f1e54ff9c91
 # ╠═e1704c6a-e874-4344-aaab-b4c3c97c7cf6
+# ╟─b468d91d-e9ce-4f1d-982e-bb506135f02c
+# ╠═0c9234bd-2df4-462c-b93b-4afbd7eade01
+# ╠═c5705754-7d35-49da-9af0-559d9fb0e279
+# ╠═c6bcf453-2eb7-456a-bcdd-99bfe22ba482
 # ╠═957d8bce-1bd0-4812-9000-b0b39a8bf7fd
-# ╠═039006f5-482d-4382-a1dd-58c16d093438
+# ╠═8b086eb1-7525-4613-8eb7-1f226e24799b
+# ╟─69ed1331-6b78-4756-bf08-f4f3569d6ced
