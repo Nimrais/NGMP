@@ -84,7 +84,9 @@ end
     @testset "τ rule matches the quadrature projection of NormalPrecisionMessage" begin
         for (y, m̃, ṽ) in ((9.7, 10.1, 0.3), (0.5, 0.0, 2.0)), (a, b) in ((2.0, 1.5), (1.0, 1.0))
             state = NGMPEdgeState(DampingMeta(alpha = 1.0, beta = 0.0))
-            msg = @call_rule NormalMeanPrecision(:τ, NaturalGradientMessage) (
+            # the projection strategy now travels inside the NaturalGradientMessage
+            # (self-callable instance — the default would be the ClosedForm/delta path)
+            msg = @call_rule NormalMeanPrecision(:τ, NaturalGradientMessage(TangentProjection(type = Quadrature(128)))) (
                 m_μ = NormalMeanVariance(m̃, ṽ), q_out = PointMass(y),
                 q_τ = GammaShapeRate(a, b), meta = state
             )
@@ -103,7 +105,7 @@ end
     @testset "μ rule matches the quadrature projection of StudentTMessage" begin
         for (y, ã, b̃) in ((9.7, 3.0, 0.5), (1.0, 1.5, 2.0)), (m, v) in ((9.5, 0.8), (0.0, 3.0))
             state = NGMPEdgeState(DampingMeta(alpha = 1.0, beta = 0.0))
-            msg = @call_rule NormalMeanPrecision(:μ, NaturalGradientMessage) (
+            msg = @call_rule NormalMeanPrecision(:μ, NaturalGradientMessage(TangentProjection(type = Quadrature(128)))) (
                 m_τ = GammaShapeRate(ã, b̃), q_out = PointMass(y),
                 q_μ = NormalMeanVariance(m, v), meta = state
             )
@@ -125,7 +127,7 @@ end
         mom = [0.0, 0.0]
         y = 9.7
         for (m̃, ṽ, a, b) in ((10.1, 0.3, 2.0, 1.5), (9.9, 0.2, 2.4, 1.4), (9.8, 0.15, 2.7, 1.3))
-            msg = @call_rule NormalMeanPrecision(:τ, NaturalGradientMessage) (
+            msg = @call_rule NormalMeanPrecision(:τ, NaturalGradientMessage(TangentProjection(type = Quadrature(128)))) (
                 m_μ = NormalMeanVariance(m̃, ṽ), q_out = PointMass(y),
                 q_τ = GammaShapeRate(a, b), meta = state
             )
@@ -146,7 +148,7 @@ end
         m0, v0, a0, b0 = 0.0, 1e6, 1.0, 1.0
         iters = 50
 
-        deps = NGMPDependencies(μ = nothing, τ = nothing)
+        deps = NGMPDependencies(μ = nothing, τ = nothing, projection = TangentProjection(type = Quadrature(128)))
         mx0, vx0 = mean(ys), max(var(ys), 0.1)
         # message inits break the loopy-BP deadlock (N ≥ 2: every NGMP message waits
         # on the equality-chain product of the other nodes' messages)

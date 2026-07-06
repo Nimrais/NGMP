@@ -63,4 +63,5 @@ end
     include("ngmp/log_rule_tests.jl")
     include("ngmp/normal_mean_precision_rule_tests.jl")
     include("ngmp/softdot_info_form_tests.jl")
+    include("ngmp/unscented_tests.jl")
 end
