@@ -11,7 +11,7 @@ using RxInfer
 using Distributions
 using SpecialFunctions: loggamma
 import BayesBase
-import RxInfer: @node, @rule, @average_energy
+import RxInfer: @node, @rule, @average_energy, @marginalrule
 
 # Closed-form projection support. Loading `ClosedFormExpectations` alongside
 # `ExponentialFamilyProjection` activates the latter's `ClosedFormStrategy`
@@ -51,6 +51,8 @@ include("tangent_projections/gamma.jl")
 include("tangent_projections/normal.jl")
 
 include("nodes/log/rules/natural_gradient.jl")
+include("nodes/normal_mean_precision/rules/natural_gradient.jl")
+include("nodes/softdot/rules/structured_info_form.jl")
 
 include("moment_form.jl")
 

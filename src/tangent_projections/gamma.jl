@@ -1,6 +1,8 @@
 export project_to_gamma
 
 using SpecialFunctions: trigamma
+import SpecialFunctions
+import FastGaussQuadrature
 import ExponentialFamily: ExponentialFamilyDistribution, getnaturalparameters
 import ClosedFormExpectations: Logpdf
 
@@ -146,6 +148,47 @@ function project(::TangentProjection{<:ClosedForm}, q::_GammaProjectionPoint, f:
     q_ef = q isa ExponentialFamilyDistribution ? q : convert(ExponentialFamilyDistribution, q)
     c1, c2 = ClosedFormExpectations.mean(ClosedWilliamsProduct(), f, q_ef)
     Δa, Δb = _increments_from_williams(c1, c2, _shape_rate(q_ef)...)
+    η = promote(Δa, -Δb)
+    return ExponentialFamilyDistribution(Distributions.Gamma, collect(η), nothing, nothing)
+end
+
+"""
+    project(TangentProjection(type = Quadrature(n)), q::GammaDistributionsFamily, f::Logpdf)
+
+Quadrature-exact tangent projection onto the Gamma edge: the Williams product
+`∇_η E_q[ℓ] = (Cov_q[log τ, ℓ], Cov_q[τ, ℓ])` is evaluated on a **log-space
+trapezoid grid**. Substituting `s = log τ`, the Gamma(a, b) expectation becomes
+`∫ f(eˢ) exp(a·s − b·eˢ) ds` (up to normalization) — a smooth, unimodal integrand
+decaying (double-)exponentially in both directions, for which the trapezoid rule
+converges geometrically for **any** shape `a` (generalized Gauss–Laguerre, by
+contrast, converges only algebraically against the `log τ` statistic and its
+weights overflow for large `a`). The grid spans ±12 log-space standard deviations
+(`√ψ₁(a)`) around `E[log τ] = ψ(a) − log b`; weights are self-normalized and both
+covariances use the discrete means, so normalization errors cancel exactly.
+
+Unlike the second-order `project_to_gamma`, this is exact for any width of `q` —
+the delta expansion is only trustworthy when `q` is concentrated. Returns the same
+unchecked `ExponentialFamilyDistribution{Gamma}` site `(Δa, -Δb)` as the
+`ClosedForm` method.
+"""
+function project(::TangentProjection{Quadrature{n}}, q::_GammaProjectionPoint, f::Logpdf) where {n}
+    q_ef = q isa ExponentialFamilyDistribution ? q : convert(ExponentialFamilyDistribution, q)
+    a, b = _shape_rate(q_ef)
+    sμ = SpecialFunctions.digamma(a) - log(b)
+    sσ = sqrt(trigamma(a))
+    s = range(sμ - 12 * sσ, sμ + 12 * sσ; length = n)
+    τ = exp.(s)
+    logw = a .* s .- b .* τ                  # τ^{a-1} e^{-bτ} dτ = e^{as - be^s} ds
+    logw .-= maximum(logw)
+    w̃ = exp.(logw)
+    w̃ ./= sum(w̃)
+    ℓ = map(τk -> _eval_logmessage(f, τk), τ)
+    Eℓ = sum(w̃ .* ℓ)
+    Es = sum(w̃ .* s)
+    Eτ = sum(w̃ .* τ)
+    c1 = sum(w̃ .* (s .- Es) .* (ℓ .- Eℓ))   # Cov_q[log τ, ℓ]
+    c2 = sum(w̃ .* (τ .- Eτ) .* (ℓ .- Eℓ))   # Cov_q[τ, ℓ]
+    Δa, Δb = _increments_from_williams(c1, c2, a, b)
     η = promote(Δa, -Δb)
     return ExponentialFamilyDistribution(Distributions.Gamma, collect(η), nothing, nothing)
 end

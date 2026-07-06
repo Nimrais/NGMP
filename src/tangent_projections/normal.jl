@@ -1,5 +1,6 @@
 export project_to_normal
 
+import FastGaussQuadrature
 import ExponentialFamily: ExponentialFamilyDistribution, getnaturalparameters, NormalMeanVariance
 import ClosedFormExpectations: Logpdf
 
@@ -102,6 +103,32 @@ Gauss–Hermite `project_to_x`.
 function project_to_normal(p::StudentTMessage, q::ExponentialFamilyDistribution{NormalMeanVariance})
     m, _ = _mean_var(q)
     return project_to_normal(DerivativeEnhancedFunction(Logpdf(p), m), q)
+end
+
+"""
+    project(TangentProjection(type = Quadrature(n)), q::UnivariateGaussianDistributionsFamily, f::Logpdf)
+
+Quadrature-exact tangent projection onto the Gaussian edge: the Williams product
+`∇_η E_q[ℓ] = (Cov_q[x, ℓ], Cov_q[x², ℓ])` is evaluated by **Gauss–Hermite**
+(`x = m + √(2v)·u`, weights `w/√π`), with the sufficient statistics centered at
+their analytic means (`E[x] = m`, `E[x²] = m² + v`). Exact for any width of `q`,
+unlike the second-order `project_to_normal`. Returns the same unchecked
+`ExponentialFamilyDistribution{NormalMeanVariance}` site `(ξ, -Λ/2)` as the
+`ClosedForm` method.
+"""
+function project(::TangentProjection{Quadrature{n}}, q::_GaussianProjectionPoint, f::Logpdf) where {n}
+    normal_q = convert(Distributions.Normal, q)
+    m = Distributions.mean(normal_q)
+    v = Distributions.var(normal_q)
+    u, w = FastGaussQuadrature.gausshermite(n)
+    x = m .+ sqrt(2 * v) .* u
+    w̃ = w ./ sqrt(π)
+    ℓ = map(xk -> _eval_logmessage(f, xk), x)
+    c1 = sum(w̃ .* (x .- m) .* ℓ)                    # Cov_q[x, ℓ]
+    c2 = sum(w̃ .* (x .^ 2 .- (m^2 + v)) .* ℓ)       # Cov_q[x², ℓ]
+    ξ, Λ = _increments_from_williams_normal(c1, c2, m, v)
+    η = promote(ξ, -Λ / 2)
+    return ExponentialFamilyDistribution(NormalMeanVariance, collect(η), nothing, nothing)
 end
 
 """
