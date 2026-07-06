@@ -477,7 +477,7 @@ Markdown.parse(
 
 # ╔═╡ be739f8e-3195-4c53-8578-faa9bb89525e
 begin
-    window = 260:300
+    window = 250:300
     plot(
         window, μ_vmp[window];
         ribbon = 1.96 .* σ_vmp[window], fillalpha = 0.18, lw = 2, color = :darkorange,
