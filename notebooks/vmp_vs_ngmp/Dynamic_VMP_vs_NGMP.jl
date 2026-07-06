@@ -4,6 +4,32 @@
 using Markdown
 using InteractiveUtils
 
+# ╔═╡ 44ae68ef-3429-4942-aaa5-a4decaab2cd5
+begin
+    using Pkg
+    Pkg.activate(joinpath(@__DIR__, "..", ".."))
+end
+
+# ╔═╡ 053f43e5-dc03-46d4-a50b-8bed3748e130
+begin
+    using RxInfer
+    using ExponentialFamily
+    using ExponentialFamilyProjection
+    using ClosedFormExpectations
+    using SurrogateModelling
+    using ProbabilisticEnsembling
+    using YAML
+    using JLD2
+end
+
+# ╔═╡ c10f10ea-13b9-439c-8762-72cf3179be5b
+begin
+    using Plots
+    using Statistics
+    using Distributions
+    using Printf
+end
+
 # ╔═╡ 8bf2d1e2-8403-47f7-b21a-cc793969197c
 md"""
 # VMP vs NGMP for the dynamic β-ensemble (ETTh1, h96)
@@ -36,32 +62,6 @@ and differ only in how the non-conjugate `Log` link is handled:
    family-generic (the damping state stores the previous message as a
    distribution and combines messages in natural-parameter space).
 """
-
-# ╔═╡ 44ae68ef-3429-4942-aaa5-a4decaab2cd5
-begin
-    using Pkg
-    Pkg.activate(joinpath(@__DIR__, "..", ".."))
-end
-
-# ╔═╡ 053f43e5-dc03-46d4-a50b-8bed3748e130
-begin
-    using RxInfer
-    using ExponentialFamily
-    using ExponentialFamilyProjection
-    using ClosedFormExpectations
-    using SurrogateModelling
-    using ProbabilisticEnsembling
-    using YAML
-    using JLD2
-end
-
-# ╔═╡ c10f10ea-13b9-439c-8762-72cf3179be5b
-begin
-    using Plots
-    using Statistics
-    using Distributions
-    using Printf
-end
 
 # ╔═╡ 48eaeab6-f543-42ad-be90-253faaf07760
 begin
@@ -388,7 +388,7 @@ Markdown.parse(
 
 # ╔═╡ be739f8e-3195-4c53-8578-faa9bb89525e
 begin
-    window = 1:min(200, length(y_test))
+    window = 260:300
     plot(
         window, μ_vmp[window];
         ribbon = 1.96 .* σ_vmp[window], fillalpha = 0.18, lw = 2, color = :darkorange,
