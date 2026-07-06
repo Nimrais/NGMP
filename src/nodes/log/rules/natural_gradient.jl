@@ -20,13 +20,13 @@ import ProbabilisticEnsembling: Log
 
 @rule Log(:out, NaturalGradientMessage) (m_in::GammaDistributionsFamily, q_out::UnivariateNormalDistributionsFamily, meta::NGMPEdgeState) = begin
     exact = Logpdf(LogGamma(scale(m_in), shape(m_in); check_args = false))
-    site = project(TangentProjection(type = ClosedForm), q_out, exact)
+    site = project(resolve_projection(getprojection(vconstraint)), q_out, exact)
     return NaturalGradientMP.apply_damping!(meta, site)
 end
 
 @rule Log(:in, NaturalGradientMessage) (m_out::UnivariateGaussianDistributionsFamily, q_in::GammaDistributionsFamily, meta::NGMPEdgeState) = begin
     m, v = mean_var(m_out)
     exact = Logpdf(LogNormal(m, sqrt(v)))
-    site = project(TangentProjection(type = ClosedForm), q_in, exact)
+    site = project(resolve_projection(getprojection(vconstraint)), q_in, exact)
     return NaturalGradientMP.apply_damping!(meta, site)
 end

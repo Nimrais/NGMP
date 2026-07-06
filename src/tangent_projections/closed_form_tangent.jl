@@ -1,4 +1,4 @@
-export TangentProjection, ClosedForm, Quadrature, project
+export TangentProjection, ClosedForm, DeltaApproximation, Quadrature, project, resolve_projection
 
 import ClosedFormExpectations: ClosedWilliamsProduct, Logpdf
 import ExponentialFamily:
@@ -6,7 +6,36 @@ import ExponentialFamily:
     NormalMeanVariance,
     UnivariateGaussianDistributionsFamily
 
+"""
+    ClosedForm
+
+Tangent-projection strategy computing the Williams product with an **exact**
+`ClosedFormExpectations.ClosedWilliamsProduct` — available only for messages
+whose expectations against the receiving family are closed-form (the Poisson
+`LogGamma`, the `Log` node's `LogGamma`/`LogNormal`, ...). For messages WITHOUT
+a closed-form product (`StudentTMessage`, `NormalPrecisionMessage`) this
+strategy raises an informative error — pick an approximation explicitly:
+[`DeltaApproximation`](@ref) (2 analytic derivatives, biased for wide marginals),
+`Unscented` (3 sigma points), or [`Quadrature`](@ref) (exact to quadrature
+precision).
+"""
 struct ClosedForm end
+
+"""
+    DeltaApproximation
+
+Tangent-projection strategy computing the Williams product from the
+**second-order (delta-method) expansion** of the log-message at the mean of the
+receiving marginal: 2 analytic derivative evaluations per message
+(`project_to_gamma` / `project_to_normal` with the `DerivativeEnhancedFunction`
+bundles). Exact when ℓ is quadratic in the sufficient statistics and cheap
+everywhere — but **biased when the receiving marginal is wide** (the touching
+quadratic is integrated far from the expansion point); prefer `Unscented` or
+`Quadrature` in that regime. Available for the messages with registered analytic
+derivatives: `NormalPrecisionMessage` (Gamma edge), `StudentTMessage`
+(Gaussian edge).
+"""
+struct DeltaApproximation end
 
 """
     Quadrature(n = 64)
@@ -29,6 +58,17 @@ struct TangentProjection{S} end
 TangentProjection(::Type{S}) where {S} = TangentProjection{S}()
 TangentProjection(::S) where {S} = TangentProjection{S}()
 TangentProjection(; type = ClosedForm) = TangentProjection(type)
+
+"""
+    resolve_projection(projection) -> TangentProjection
+
+Resolve the `projection` field of a [`NaturalGradientMessage`](@ref) inside a
+rule body: the [`NaturalGradientMP.ClosedFormDefault`](@ref) sentinel (the
+submodule cannot see the strategy types defined here) becomes
+`TangentProjection(type = ClosedForm)`; anything else passes through unchanged.
+"""
+resolve_projection(::NaturalGradientMP.ClosedFormDefault) = TangentProjection(type = ClosedForm)
+resolve_projection(projection) = projection
 
 # Uniform evaluation of a log-message at a point: SurrogateModelling expressions
 # (`NormalPrecisionMessage`, `StudentTMessage`, ...) subtype

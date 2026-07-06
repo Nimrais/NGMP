@@ -209,3 +209,29 @@ function _normal_precision_second_derivative(p::Logpdf{<:NormalPrecisionMessage}
     t2 = τ^2
     return (s - 2r) / (2 * s^3 * t2^2) + (r - s) / (s^2 * τ * t2)  # ℓ″(τ)
 end
+
+"""
+    project(TangentProjection(type = DeltaApproximation), q::GammaDistributionsFamily, f::Logpdf{<:NormalPrecisionMessage})
+
+Second-order (delta-method) tangent projection of a `NormalPrecisionMessage` —
+a message with NO exact Williams product — via its analytic τ-derivatives
+([`project_to_gamma`](@ref)). Trustworthy only when `q` is concentrated; for
+wide `q` prefer `Unscented`/`Quadrature`.
+"""
+function project(::TangentProjection{<:DeltaApproximation}, q::_GammaProjectionPoint, f::Logpdf{<:NormalPrecisionMessage})
+    q_ef = q isa ExponentialFamilyDistribution ? q : convert(ExponentialFamilyDistribution, q)
+    Δa, Δb = project_to_gamma(f.dist, q_ef)
+    η = promote(Δa, -Δb)
+    return ExponentialFamilyDistribution(Distributions.Gamma, collect(η), nothing, nothing)
+end
+
+# `ClosedForm` means an EXACT Williams product — which this message does not have.
+function project(::TangentProjection{<:ClosedForm}, q::_GammaProjectionPoint, f::Logpdf{<:NormalPrecisionMessage})
+    return error(
+        "`NormalPrecisionMessage` has no closed-form Williams product against a Gamma belief. ",
+        "Choose the approximation explicitly via `NGMPDependencies(...; projection = ...)`: ",
+        "`TangentProjection(type = DeltaApproximation)` (2 analytic derivatives, biased for wide q), ",
+        "`TangentProjection(type = Unscented)` (3 sigma points), or ",
+        "`TangentProjection(type = Quadrature(n))` (exact to quadrature precision)."
+    )
+end

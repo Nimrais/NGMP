@@ -161,3 +161,29 @@ function _student_t_second_derivative(p::Logpdf{<:StudentTMessage}, x)
     d = x - msg.y
     return -(2 * msg.ã + 1) * (2 * msg.b̃ - d^2) / (2 * msg.b̃ + d^2)^2  # ℓ″(x)
 end
+
+"""
+    project(TangentProjection(type = DeltaApproximation), q::UnivariateGaussianDistributionsFamily, f::Logpdf{<:StudentTMessage})
+
+Second-order (delta-method) tangent projection of a `StudentTMessage` — a
+message with NO exact Williams product — via its analytic x-derivatives
+([`project_to_normal`](@ref)). Trustworthy only when `q` is concentrated; for
+wide `q` prefer `Unscented`/`Quadrature`.
+"""
+function project(::TangentProjection{<:DeltaApproximation}, q::_GaussianProjectionPoint, f::Logpdf{<:StudentTMessage})
+    q_ef = q isa ExponentialFamilyDistribution ? q : convert(ExponentialFamilyDistribution, q)
+    ξ, Λ = project_to_normal(f.dist, q_ef)
+    η = promote(ξ, -Λ / 2)
+    return ExponentialFamilyDistribution(NormalMeanVariance, collect(η), nothing, nothing)
+end
+
+# `ClosedForm` means an EXACT Williams product — which this message does not have.
+function project(::TangentProjection{<:ClosedForm}, q::_GaussianProjectionPoint, f::Logpdf{<:StudentTMessage})
+    return error(
+        "`StudentTMessage` has no closed-form Williams product against a Gaussian belief. ",
+        "Choose the approximation explicitly via `NGMPDependencies(...; projection = ...)`: ",
+        "`TangentProjection(type = DeltaApproximation)` (2 analytic derivatives, biased for wide q), ",
+        "`TangentProjection(type = Unscented)` (3 sigma points), or ",
+        "`TangentProjection(type = Quadrature(n))` (exact to quadrature precision)."
+    )
+end

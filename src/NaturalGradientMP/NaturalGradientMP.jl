@@ -13,7 +13,7 @@ using ExponentialFamily:
     UnivariateNormalDistributionsFamily,
     GammaDistributionsFamily
 
-export NaturalGradientMessage, NGMPDependencies, DampingMeta, NGMPEdgeState
+export NaturalGradientMessage, NGMPDependencies, DampingMeta, NGMPEdgeState, ClosedFormDefault, getprojection
 
 include("constraint.jl")
 include("damping.jl")

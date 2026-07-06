@@ -23,16 +23,22 @@ initial marginals used to break the message ↔ marginal cycle (pass `nothing` a
 y[k] ~ PoissonExp(z[k]) where { dependencies = NGMPDependencies(in = nothing), meta = DampingMeta(0.5, 0.2) }
 ```
 """
-struct NGMPDependencies{S <: NamedTuple} <: ReactiveMP.FunctionalDependencies
+struct NGMPDependencies{S <: NamedTuple, P} <: ReactiveMP.FunctionalDependencies
     specification::S
+    # Tangent-projection strategy carried into every `NaturalGradientMessage` this
+    # policy dispatches (rules resolve it via `resolve_projection`); the sentinel
+    # default resolves to `TangentProjection(type = ClosedForm)`.
+    projection::P
     # Diagnostic registry of the per-edge states created at activation (one per
     # constrained interface per node); lets tests and users inspect damping state
     # and firing counts after inference.
     states::Vector{NGMPEdgeState}
 end
 
-NGMPDependencies(specification::NamedTuple) = NGMPDependencies(specification, NGMPEdgeState[])
-NGMPDependencies(; kwargs...) = NGMPDependencies((; kwargs...))
+NGMPDependencies(specification::NamedTuple; projection = ClosedFormDefault()) =
+    NGMPDependencies(specification, projection, NGMPEdgeState[])
+NGMPDependencies(; projection = ClosedFormDefault(), kwargs...) =
+    NGMPDependencies((; kwargs...); projection = projection)
 
 is_ngmp_interface(dependencies::NGMPDependencies, iname::Symbol) = iname ∈ keys(dependencies.specification)
 
@@ -98,7 +104,7 @@ function ReactiveMP.activate!(dependencies::NGMPDependencies, factornode, option
 
                 vtag        = ReactiveMP.tag(interface)
                 constrained = is_ngmp_interface(dependencies, ReactiveMP.name(interface))
-                vconstraint = constrained ? NaturalGradientMessage() : ReactiveMP.Marginalisation()
+                vconstraint = constrained ? NaturalGradientMessage(dependencies.projection) : ReactiveMP.Marginalisation()
                 mappingmeta = constrained ? NGMPEdgeState(meta) : meta
                 constrained && push!(dependencies.states, mappingmeta)
 

@@ -26,8 +26,19 @@ import ExponentialFamily: GaussianDistributionsFamily
 import ProbabilisticEnsembling
 
 include("NaturalGradientMP/NaturalGradientMP.jl")
-using .NaturalGradientMP: NaturalGradientMessage, NGMPDependencies, DampingMeta, NGMPEdgeState
-export NaturalGradientMP, NaturalGradientMessage, NGMPDependencies, DampingMeta, NGMPEdgeState
+using .NaturalGradientMP: NaturalGradientMessage, NGMPDependencies, DampingMeta, NGMPEdgeState, ClosedFormDefault, getprojection
+export NaturalGradientMP, NaturalGradientMessage, NGMPDependencies, DampingMeta, NGMPEdgeState, getprojection
+
+# NOTE: the strategy struct `UnscentedTransforms.UnscentedTransform` is deliberately
+# NOT re-exported — ReactiveMP already exports `Unscented`/`UnscentedTransform` for
+# its Delta-node approximations and re-exporting ours would make the name ambiguous.
+# Users select the strategy through ReactiveMP's familiar type instead:
+# `TangentProjection(type = Unscented)` (our GH(3) defaults α=1, β=0, κ=2) or
+# `TangentProjection(type = Unscented(alpha = ..., beta = ..., kappa = ...))`
+# (bridged verbatim in tangent_projections/unscented.jl).
+include("UnscentedTransforms/UnscentedTransforms.jl")
+using .UnscentedTransforms: UnscentedTransform
+export UnscentedTransforms
 
 include("datasets/sunspots.jl")
 include("datasets/etth1.jl")
@@ -49,6 +60,8 @@ include("tangent_projections/closed_form_tangent.jl")
 include("tangent_projections/gamma.jl")
 
 include("tangent_projections/normal.jl")
+
+include("tangent_projections/unscented.jl")
 
 include("nodes/log/rules/natural_gradient.jl")
 include("nodes/normal_mean_precision/rules/natural_gradient.jl")
