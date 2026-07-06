@@ -3,10 +3,17 @@ using Test
 using ClosedFormExpectations
 using Distributions
 using ExponentialFamily
+using RxInfer
+using ReactiveMP
 using SurrogateModelling
+using BayesBase
+using Random
+using SpecialFunctions
+using Statistics
 
 import ClosedFormExpectations: ClosedWilliamsProduct, Logpdf
 import ExponentialFamily: ExponentialFamilyDistribution, NormalMeanVariance, getnaturalparameters
+import ReactiveMP: @call_rule, Marginal
 
 struct ConvexLogMessage <: ClosedFormExpectations.Expression end
 
@@ -46,4 +53,10 @@ end
     @test improper_site isa ExponentialFamilyDistribution{NormalMeanVariance}
     @test improper_η[1] ≈ -m
     @test improper_η[2] ≈ 0.5
+end
+
+@testset "NaturalGradientMP integration" begin
+    include("ngmp/reference.jl")
+    include("ngmp/rule_tests.jl")
+    include("ngmp/integration_tests.jl")
 end
