@@ -15,40 +15,38 @@ import RxInfer: @node, @rule, @average_energy
 
 # Closed-form projection support. Loading `ClosedFormExpectations` alongside
 # `ExponentialFamilyProjection` activates the latter's `ClosedFormStrategy`
-# extension; the `PoissonExpression` hooks for it live in `nodes/poisson_exp.jl`.
+# extension; the `PoissonExpression` hooks for it live in `nodes/poisson/expression.jl`.
 import ExponentialFamilyProjection
 import ClosedFormExpectations
 import ClosedFormExpectations: LogGamma
 import ExponentialFamily: GaussianDistributionsFamily
 
+include("NaturalGradientMP/NaturalGradientMP.jl")
+using .NaturalGradientMP: NaturalGradientMessage, NGMPDependencies, DampingMeta, NGMPEdgeState
+export NaturalGradientMP, NaturalGradientMessage, NGMPDependencies, DampingMeta, NGMPEdgeState
+
 include("datasets/sunspots.jl")
 include("datasets/etth1.jl")
 export Sunspots, ETTh1
 
-include("nodes/poisson_exp.jl")
-export PoissonExp, PoissonExpression
+include("nodes/poisson/poisson_exp.jl")
+include("nodes/poisson/expression.jl")
+include("nodes/poisson/rules/marginal.jl")
+include("nodes/poisson/rules/natural_gradient.jl")
 
 include("expressions/normal_precision_message.jl")
-export NormalPrecisionMessage
 
 include("expressions/student_t_message.jl")
-export StudentTMessage
 
 include("tangent_projections/common.jl")
+
+include("tangent_projections/closed_form_tangent.jl")
 
 include("tangent_projections/gamma.jl")
 
 include("tangent_projections/normal.jl")
 
-# ---------------------------------------------------------------------------
-# model_zoo — NGMP surrogate models that plug into ProbabilisticEnsembling's YAML
-# `run_experiment` pipeline by extending its model-type hooks. (Template stage:
-# inner model + projections are real; the outer-loop driver in pipeline.jl is a
-# stub to be ported from the repo-root dynamic_exp_ngmp_surrogate.jl.)
-# ---------------------------------------------------------------------------
-import ProbabilisticEnsembling
-include("model_zoo/dynamic_exp_ngmp/model_type.jl")
-
+include("moment_form.jl")
 
 function __init__()
     __init__sunspots()

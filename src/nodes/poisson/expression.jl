@@ -1,3 +1,4 @@
+export PoissonExpression
 
 """
 The energy object. PoissonExpression(y) represents the exact log-message

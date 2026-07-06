@@ -1,3 +1,4 @@
+export PoissonExp
 # ============================================================================
 # PoissonExp — a Poisson observation node in the *exponentiated* state.
 #
