@@ -57,6 +57,8 @@ end
 
 @testset "NaturalGradientMP integration" begin
     include("ngmp/reference.jl")
+    include("ngmp/damping_tests.jl")
     include("ngmp/rule_tests.jl")
     include("ngmp/integration_tests.jl")
+    include("ngmp/log_rule_tests.jl")
 end

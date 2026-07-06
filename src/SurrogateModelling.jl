@@ -21,6 +21,10 @@ import ClosedFormExpectations
 import ClosedFormExpectations: LogGamma
 import ExponentialFamily: GaussianDistributionsFamily
 
+# ProbabilisticEnsembling supplies the `Log` node (z = log γ) of the dynamic
+# ensemble model; the natural-gradient rules for it live in nodes/log/.
+import ProbabilisticEnsembling
+
 include("NaturalGradientMP/NaturalGradientMP.jl")
 using .NaturalGradientMP: NaturalGradientMessage, NGMPDependencies, DampingMeta, NGMPEdgeState
 export NaturalGradientMP, NaturalGradientMessage, NGMPDependencies, DampingMeta, NGMPEdgeState
@@ -45,6 +49,8 @@ include("tangent_projections/closed_form_tangent.jl")
 include("tangent_projections/gamma.jl")
 
 include("tangent_projections/normal.jl")
+
+include("nodes/log/rules/natural_gradient.jl")
 
 include("moment_form.jl")
 

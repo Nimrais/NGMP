@@ -121,6 +121,35 @@ function project_to_gamma(p::NormalPrecisionMessage, q::ExponentialFamilyDistrib
     return project_to_gamma(DerivativeEnhancedFunction(Logpdf(p), a / b), q)
 end
 
+const _GammaProjectionPoint = Union{
+    GammaDistributionsFamily,
+    ExponentialFamilyDistribution{Distributions.Gamma},
+}
+
+"""
+    project(TangentProjection(type = ClosedForm), q::GammaDistributionsFamily, f::Logpdf)
+
+Exact tangent projection of the log-message `f` onto the Gamma edge at the
+receiving marginal `q` — the Gamma analogue of the Gaussian `project` method in
+`closed_form_tangent.jl`. The `ClosedWilliamsProduct` against the
+`ExponentialFamilyDistribution{Gamma}` form of `q` yields the natural-coordinate
+gradient `∇_η E_q[ℓ] = (Cov_q[log τ, ℓ], Cov_q[τ, ℓ])`; the inverse-Fisher map
+turns it into the natural-gradient increments `(Δa, Δb)` of the projected site
+
+    μ̂(τ) ∝ τ^{Δa} exp(-Δb τ),
+
+returned as an unchecked `ExponentialFamilyDistribution{Gamma}` with natural
+parameters `(Δa, -Δb)` — sites may be improper during damping, so properness is
+deliberately not validated.
+"""
+function project(::TangentProjection{<:ClosedForm}, q::_GammaProjectionPoint, f::Logpdf)
+    q_ef = q isa ExponentialFamilyDistribution ? q : convert(ExponentialFamilyDistribution, q)
+    c1, c2 = ClosedFormExpectations.mean(ClosedWilliamsProduct(), f, q_ef)
+    Δa, Δb = _increments_from_williams(c1, c2, _shape_rate(q_ef)...)
+    η = promote(Δa, -Δb)
+    return ExponentialFamilyDistribution(Distributions.Gamma, collect(η), nothing, nothing)
+end
+
 # Analytic τ-derivatives of  log μ_{f→τ}(τ) = -½ log(ṽ + τ⁻¹) - (y - m̃)²/(2(ṽ + τ⁻¹))
 # (the τ-independent -½ log 2π drops out). With s = ṽ + τ⁻¹ and r = (y - m̃)²:
 function _normal_precision_first_derivative(p::Logpdf{<:NormalPrecisionMessage}, τ)

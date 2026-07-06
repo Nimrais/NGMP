@@ -6,6 +6,5 @@
     y    = mean(q_out)
     m, v = mean_var(q_in)
     rho  = exp(m + v / 2)
-    xi, Lambda = NaturalGradientMP.apply_damping!(meta, y + (m - 1) * rho, rho)
-    return NormalWeightedMeanPrecision(xi, Lambda)
+    return NaturalGradientMP.apply_damping!(meta, y + (m - 1) * rho, rho)
 end
