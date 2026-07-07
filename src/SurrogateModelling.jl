@@ -51,6 +51,8 @@ include("nodes/poisson/rules/natural_gradient.jl")
 
 include("expressions/normal_precision_message.jl")
 
+include("expressions/mv_normal_precision_message.jl")
+
 include("expressions/student_t_message.jl")
 
 include("tangent_projections/common.jl")
@@ -65,6 +67,7 @@ include("tangent_projections/unscented.jl")
 
 include("nodes/log/rules/natural_gradient.jl")
 include("nodes/normal_mean_precision/rules/natural_gradient.jl")
+include("nodes/mv_normal_mean_scale_precision/rules/natural_gradient.jl")
 include("nodes/softdot/rules/structured_info_form.jl")
 
 include("moment_form.jl")

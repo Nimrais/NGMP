@@ -235,3 +235,25 @@ function project(::TangentProjection{<:ClosedForm}, q::_GammaProjectionPoint, f:
         "`TangentProjection(type = Quadrature(n))` (exact to quadrature precision)."
     )
 end
+
+# Same non-conjugacy in the multivariate case; additionally no analytic-derivative
+# bundle is provided, so `DeltaApproximation` must error informatively too instead
+# of falling through to a bare MethodError.
+const _MvGatePrecisionMessage = Union{MvNormalPrecisionMessage, MvNormalDeviationPrecisionMessage}
+
+function project(::TangentProjection{<:ClosedForm}, q::_GammaProjectionPoint, f::Logpdf{<:_MvGatePrecisionMessage})
+    return error(
+        "`$(nameof(typeof(f.dist)))` has no closed-form Williams product against a Gamma belief. ",
+        "Choose the approximation explicitly via `NGMPDependencies(...; projection = ...)`: ",
+        "`TangentProjection(type = Unscented)` (3 sigma points) or ",
+        "`TangentProjection(type = Quadrature(n))` (exact to quadrature precision)."
+    )
+end
+
+function project(::TangentProjection{<:DeltaApproximation}, q::_GammaProjectionPoint, f::Logpdf{<:_MvGatePrecisionMessage})
+    return error(
+        "`$(nameof(typeof(f.dist)))` has no analytic-derivative delta projection. ",
+        "Use `TangentProjection(type = Unscented)` (3 sigma points) or ",
+        "`TangentProjection(type = Quadrature(n))` (exact to quadrature precision)."
+    )
+end
