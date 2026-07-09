@@ -187,3 +187,24 @@ function project(::TangentProjection{<:ClosedForm}, q::_GaussianProjectionPoint,
         "`TangentProjection(type = Quadrature(n))` (exact to quadrature precision)."
     )
 end
+
+# Product-factor messages: no exact Williams product and no analytic-derivative
+# bundle — the strategy must be Unscented or Quadrature.
+const _ProductGaussianMessage = Union{ProductPartnerMessage, ProductOutMessage}
+
+function project(::TangentProjection{<:ClosedForm}, q::_GaussianProjectionPoint, f::Logpdf{<:_ProductGaussianMessage})
+    return error(
+        "`$(nameof(typeof(f.dist)))` has no closed-form Williams product against a Gaussian belief. ",
+        "Choose the approximation explicitly via `NGMPDependencies(...; projection = ...)`: ",
+        "`TangentProjection(type = Unscented)` (3 sigma points) or ",
+        "`TangentProjection(type = Quadrature(n))` (exact to quadrature precision)."
+    )
+end
+
+function project(::TangentProjection{<:DeltaApproximation}, q::_GaussianProjectionPoint, f::Logpdf{<:_ProductGaussianMessage})
+    return error(
+        "`$(nameof(typeof(f.dist)))` has no analytic-derivative delta projection. ",
+        "Use `TangentProjection(type = Unscented)` (3 sigma points) or ",
+        "`TangentProjection(type = Quadrature(n))` (exact to quadrature precision)."
+    )
+end

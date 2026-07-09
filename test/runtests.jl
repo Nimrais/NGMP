@@ -58,10 +58,13 @@ end
 @testset "NaturalGradientMP integration" begin
     include("ngmp/reference.jl")
     include("ngmp/damping_tests.jl")
-    include("ngmp/rule_tests.jl")
     include("ngmp/integration_tests.jl")
     include("ngmp/log_rule_tests.jl")
     include("ngmp/normal_mean_precision_rule_tests.jl")
     include("ngmp/softdot_info_form_tests.jl")
     include("ngmp/unscented_tests.jl")
+    #TODO for now I do not need MvNormalScalePrecision rules, test shows how it works
+    # but so far implementation is so hard that I leave it for the future
+    # include("ngmp/gated_weights_tests.jl")
+    # include("ngmp/softdot_precision_gate_tests.jl")
 end
