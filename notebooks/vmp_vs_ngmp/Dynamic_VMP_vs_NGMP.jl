@@ -28,6 +28,7 @@ begin
     using Statistics
     using Distributions
     using Printf
+    using LinearAlgebra: dot
 end
 
 # ╔═╡ 8bf2d1e2-8403-47f7-b21a-cc793969197c
@@ -48,7 +49,7 @@ y_j &\sim \mathcal N(\mathrm{pred}_{ij},\, \gamma_{ij}^{-1}).
 \end{aligned}
 ```
 
-Three arms:
+Four arms:
 
 1. **VMP** (the ProbabilisticEnsembling baseline), factorization
    ``q(w)\,q(z,\gamma)\,q(\tau)\,q(\beta)``: the `Log` node sends the exact
@@ -65,6 +66,11 @@ Three arms:
    NGMP keeps every message in-family, the mean-field split of ``w`` is no longer
    forced by tractability — the softdot node runs *structured* ``q(w, z)``,
    preserving the weight–log-precision correlation that both other arms discard.
+4. **NGMP gated (2-layer)**: local weights ``w_{ij} \sim \mathcal{MVN}(\bar w_i,
+   \kappa_{ij}^{-1} I)`` anchored to a shared profile, with the input-dependent
+   gate ``\kappa_{ij}`` from a second softdot → Gamma → Log layer deciding
+   **where** each forecaster may deviate locally — a learned function of the
+   features (details in its own section below).
 """
 
 # ╔═╡ 48eaeab6-f543-42ad-be90-253faaf07760
@@ -336,28 +342,6 @@ begin
     Eτ_rel = mean.(τ_rel);
 end
 
-# ╔═╡ 83497909-fbe2-4041-97c2-8469ea660210
-begin
-    idx = 1:n_forecasters
-    pβ = scatter(
-        idx .- 0.1, Eβ_vmp;
-        yscale = :log10, color = :darkorange, markersize = 6, label = "VMP",
-        xlabel = "forecaster", ylabel = "E[β]  (noise-variance floor)",
-        title = "Learned β per forecaster", xticks = idx,
-    )
-    scatter!(pβ, idx, Eβ_ngmp; color = :dodgerblue, markersize = 6, label = "NGMP")
-    scatter!(pβ, idx .+ 0.1, Eβ_rel; color = :seagreen, markersize = 6, label = "NGMP relaxed")
-    pτ = scatter(
-        idx .- 0.1, Eτ_vmp;
-        yscale = :log10, color = :darkorange, markersize = 6, label = "VMP",
-        xlabel = "forecaster", ylabel = "E[τ]  (softdot precision)",
-        title = "Learned τ per forecaster", xticks = idx,
-    )
-    scatter!(pτ, idx, Eτ_ngmp; color = :dodgerblue, markersize = 6, label = "NGMP")
-    scatter!(pτ, idx .+ 0.1, Eτ_rel; color = :seagreen, markersize = 6, label = "NGMP relaxed")
-    plot(pβ, pτ; layout = (1, 2), size = (900, 350))
-end
-
 # ╔═╡ d0f0204e-5f3b-414f-80a0-4317afb48913
 md"""
 ## Test-set predictive comparison
@@ -458,7 +442,9 @@ begin
     m_ngmp = predictive_metrics(μ_ngmp, σ_ngmp, y_test)
     μ_rel, σ_rel = dyn_predict(features_test, predictions_test, w_rel, τ_rel, Eβ_rel; κ = κ)
     m_rel = predictive_metrics(μ_rel, σ_rel, y_test)
-    @info "test-set predictive" VMP = m_vmp NGMP = m_ngmp NGMP_relaxed = m_rel
+    μ_g, σ_g = gated_predict(features_test, predictions_test, u_g, τu_g, wbar_g, τ_g, Eβ_g; κ = κ)
+    m_g = predictive_metrics(μ_g, σ_g, y_test)
+    @info "test-set predictive" VMP = m_vmp NGMP = m_ngmp NGMP_relaxed = m_rel NGMP_gated = m_g
 end
 
 # ╔═╡ 54be4609-e549-44e5-a873-880e87633ff6
@@ -469,7 +455,6 @@ Markdown.parse(
     | VMP (ProjectedTo) | $(@sprintf("%.4f", m_vmp.mae)) | $(@sprintf("%.4f", m_vmp.rmse)) | $(@sprintf("%.4f", m_vmp.ll)) | $(@sprintf("%.3f", m_vmp.ll_std)) | $(@sprintf("%.4f", m_vmp.cov95)) | $(@sprintf("%.4f", m_vmp.pinball)) |
     | NGMP (native) | $(@sprintf("%.4f", m_ngmp.mae)) | $(@sprintf("%.4f", m_ngmp.rmse)) | $(@sprintf("%.4f", m_ngmp.ll)) | $(@sprintf("%.3f", m_ngmp.ll_std)) | $(@sprintf("%.4f", m_ngmp.cov95)) | $(@sprintf("%.4f", m_ngmp.pinball)) |
     | NGMP relaxed q(w,z,γ) | $(@sprintf("%.4f", m_rel.mae)) | $(@sprintf("%.4f", m_rel.rmse)) | $(@sprintf("%.4f", m_rel.ll)) | $(@sprintf("%.3f", m_rel.ll_std)) | $(@sprintf("%.4f", m_rel.cov95)) | $(@sprintf("%.4f", m_rel.pinball)) |
-
     Test set: $(length(y_test)) observations, trained on $(n_obs) validation
     observations, $(iterations) iterations, damping α = $(damping.α), β = $(damping.β), κ = $(κ).
     """,
@@ -493,10 +478,6 @@ begin
         window, μ_rel[window];
         ribbon = 1.96 .* σ_rel[window], fillalpha = 0.18, lw = 2, color = :seagreen,
         label = "NGMP relaxed q(w,z,γ)",
-    )
-    scatter!(
-        window, y_test[window];
-        markersize = 2, markerstrokewidth = 0, alpha = 0.5, color = :black, label = "y",
     )
 end
 
@@ -551,7 +532,6 @@ step for scaling beyond batch.
 # ╠═9736862d-160c-40b5-9502-d9e9e2b09e6d
 # ╠═804a408c-0134-4fc8-9953-863015040e8d
 # ╠═163c4f31-3764-49c1-ba3d-51a813f564c2
-# ╠═83497909-fbe2-4041-97c2-8469ea660210
 # ╟─d0f0204e-5f3b-414f-80a0-4317afb48913
 # ╠═20a3a5ee-8d27-4be0-b39f-bb4c53a29fcb
 # ╠═2f784cf1-1b43-494c-8d69-6de4871110ca
