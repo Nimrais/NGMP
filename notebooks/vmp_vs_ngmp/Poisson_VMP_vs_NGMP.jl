@@ -7,7 +7,7 @@ using InteractiveUtils
 # ╔═╡ 9a56c2e0-4b5e-11f1-2b3c-6b9a6e90c111
 begin
     using Pkg
-    Pkg.activate(joinpath(@__DIR__, ".."))
+    Pkg.activate(joinpath(@__DIR__, "../.."))
 end
 
 # ╔═╡ 206512e7-b5d2-45f8-b07a-3db6173bb01c
