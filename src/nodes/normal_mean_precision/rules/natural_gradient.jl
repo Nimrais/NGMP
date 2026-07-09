@@ -34,3 +34,36 @@ end
     site = project(resolve_projection(getprojection(vconstraint)), q_μ, exact)
     return NaturalGradientMP.apply_damping!(meta, site)
 end
+
+# --- product-of-experts usage: ALL THREE edges latent (out in a structured cluster
+# --- with μ; τ mean-field apart) — the ReLU-diffusion model's gate consumer.
+#
+# toward τ: the dependency is the joint local marginal q(out, μ); the exact message
+# is NormalPrecisionMessage built from its moments with the cross-covariance
+# DELIBERATELY dropped — keeping it is the τ-trap cancellation (the joint hides the
+# misfit), the same diagonalization proven at the softdot hybrid gate.
+@rule NormalMeanPrecision(:τ, NaturalGradientMessage) (q_out_μ::MultivariateNormalDistributionsFamily, q_τ::GammaDistributionsFamily, meta::NGMPEdgeState) = begin
+    m, V = mean_cov(q_out_μ)
+    exact = Logpdf(NormalPrecisionMessage(m[1], m[2], V[1, 1] + V[2, 2]))
+    site = project(resolve_projection(getprojection(vconstraint)), q_τ, exact)
+    return NaturalGradientMP.apply_damping!(meta, site)
+end
+
+# DampingMeta-tolerant twins of the stock structured rules for the non-NGMP
+# interfaces of the same node (the recurring meta-unwrapping gotcha): the (out, μ)
+# cluster passes messages; τ enters through its mean-field marginal.
+@rule NormalMeanPrecision(:out, Marginalisation) (m_μ::UnivariateNormalDistributionsFamily, q_τ::Any, meta::DampingMeta) = begin
+    return NormalMeanVariance(mean(m_μ), var(m_μ) + inv(mean(q_τ)))
+end
+
+@rule NormalMeanPrecision(:μ, Marginalisation) (m_out::UnivariateNormalDistributionsFamily, q_τ::Any, meta::DampingMeta) = begin
+    return NormalMeanVariance(mean(m_out), var(m_out) + inv(mean(q_τ)))
+end
+
+@marginalrule NormalMeanPrecision(:out_μ) (m_out::UnivariateNormalDistributionsFamily, m_μ::UnivariateNormalDistributionsFamily, q_τ::Any, meta::DampingMeta) = begin
+    τ̄ = mean(q_τ)
+    ξo, po = weightedmean_precision(m_out)
+    ξμ, pμ = weightedmean_precision(m_μ)
+    W = [ (po + τ̄)  (-τ̄) ; (-τ̄)  (pμ + τ̄) ]
+    return MvNormalWeightedMeanPrecision([ξo; ξμ], W)
+end
