@@ -653,6 +653,78 @@ nll_table = mapreduce(vcat, [0.05, 0.10, 0.20, 0.30, 0.40, 0.50]) do frac
     end |> collect
 end
 
+# ╔═╡ d1e2f3a4-0016-4b1c-9d2e-5f6a7b8c9d16
+begin
+    using Plots.PlotMeasures
+    # table keeps all four methods; the plot shows only NGMP vs CVI
+    series = [("NGMP", :dodgerblue), ("CVI", :darkorange)]
+
+    function add_nll_series!(plt, rows; show_legend = false)
+        for (name, col) in series
+            method_rows = sort(filter(r -> r.method == name, rows), by = r -> r.pct)
+
+            x  = [r.pct  for r in method_rows]
+            μ  = [r.mean for r in method_rows]
+            ci = [r.ci95 for r in method_rows]
+
+            lower = min.(ci, μ .* 0.999) # keep μ - lower > 0 for log axis
+
+            plot!(
+                plt, x, μ;
+                yerror = (lower, ci),
+                marker = :circle,
+                lw = 2,
+                color = col,
+                label = show_legend ? name : false
+            )
+        end
+
+        plt
+    end
+
+    rows_with_5pct = filter(
+        r -> r.method in ("NGMP", "CVI"),
+        nll_table
+    )
+
+    rows_without_5pct = filter(
+        r -> r.method in ("NGMP", "CVI") && r.pct != 5,
+        nll_table
+    )
+
+    p = plot(
+        xlabel = "% of counts held out",
+        ylabel = "avg held-out Poisson NLL",
+        yscale = :log10,
+        legend = :topright,
+        xticks = sort(unique([r.pct for r in rows_with_5pct])),
+        title = "including 5% holdout"
+    )
+    add_nll_series!(p, rows_with_5pct; show_legend = true)
+
+    only_ngmp_plot = plot(
+        xlabel = "% of counts held out",
+        ylabel = "avg held-out Poisson NLL",
+        yscale = :log10,
+        legend = false,
+        xticks = sort(unique([r.pct for r in rows_without_5pct])),
+        title = "excluding 5% holdout"
+    )
+    add_nll_series!(only_ngmp_plot, rows_without_5pct; show_legend = false)
+
+    two_plots = plot(
+        p,
+        only_ngmp_plot;
+        layout = (1, 2),
+        size = (950, 420),
+        plot_title = "Predictive NLL",
+        plot_titlefontsize = 16,
+        top_margin = 8mm
+    )
+
+    two_plots
+end
+
 # ╔═╡ 30529f14-f215-4748-b9b8-68bf31ef7f5a
 begin
     function nll_md(tbl; bold_best = true)
@@ -677,26 +749,6 @@ begin
       end
     
       nll_md(nll_table)
-end
-
-# ╔═╡ d1e2f3a4-0016-4b1c-9d2e-5f6a7b8c9d16
-let
-    # table keeps all four methods; the plot shows only NGMP vs CVI (delta and
-    # Laplace track NGMP to ~0.01 nat — see the table).
-    series = [("NGMP", :dodgerblue), ("CVI", :darkorange)]
-    p = plot(xlabel = "% of counts held out", ylabel = "avg held-out Poisson NLL",
-             title = "Predictive NLL ± 95% CI on dropped counts (lower = better)",
-             yscale = :log10, legend = :topright,
-             xticks = unique([r.pct for r in nll_table]))
-    for (name, col) in series
-        rows = filter(r -> r.method == name, nll_table)
-        x  = [r.pct  for r in rows]
-        μ  = [r.mean for r in rows]
-        ci = [r.ci95 for r in rows]
-        lower = min.(ci, μ .* 0.999)        # keep μ − lower > 0 so the log axis is valid
-        plot!(p, x, μ; yerror = (lower, ci), marker = :circle, lw = 2, color = col, label = name)
-    end
-    p
 end
 
 # ╔═╡ d1e2f3a4-0017-4b1c-9d2e-5f6a7b8c9d17
