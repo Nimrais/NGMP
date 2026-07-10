@@ -26,11 +26,11 @@ end
 
 # ╔═╡ 59216211-1c24-4c40-957a-d671c3dde95b
 md"""
-# XOR Softplus UT NGMP
+# Checkerboard Softplus UT NGMP
 
-This notebook isolates the successful Softplus experiment from the activation
-comparison. The default run reproduces the **16-neuron, 20-iteration** setup
-that reached a test MSE of about **0.16346**.
+This notebook generalizes the successful XOR experiment to an ``N \times M``
+checkerboard. The `(2, 2)` special case is XOR; `checkboard_size` in `config`
+selects the active grid while keeping the inference model unchanged.
 
 The positive gate is
 
@@ -49,8 +49,8 @@ begin
     config = (
         n_samples =  1_600,
         n_neurons =  16,
-        iterations = 100,
-        train_fraction = 0.30,
+        iterations = 200,
+        train_fraction = 0.40,
         noise_std = 0.10,
         data_seed = 2_026,
         split_seed = 2_027,
@@ -60,9 +60,11 @@ begin
         ngmp_alpha = 0.2,
         ngmp_beta = 0.0,
         ngmp_max_step = 0.1,
+        gamma_rate_prior_shape = 10.0,
+        gamma_rate_prior_rate = 10.0,
         grid_size = 160,
         animation_fps = 5,
-        checkboard_size = (2, 2),
+        checkboard_size = (3, 3),
         output_dir = joinpath(@__DIR__, "..", "viz"),
     )
 end
@@ -71,10 +73,21 @@ end
 md"""
 ## Data
 
-The data and split seeds match the comparison script. Inputs are uniform on
-``[-2, 2]^2`` and the target is a clipped noisy XOR response. With the default
-configuration, 480 points are used for learning and 1,120 for evaluation.
+Inputs are uniform on ``[-2, 2]^2``. The clean target alternates between zero
+and one across the configured cells, then receives clipped Gaussian noise.
+The current relation is a **$(config.checkboard_size[1])x$(config.checkboard_size[2])
+checkerboard**.
 """
+
+# ╔═╡ bff85b72-63e8-4d31-a8db-6a84b7750985
+function checkerboard_label(x1, x2, checkerboard_size)
+    nx, ny = checkerboard_size
+    nx > 0 && ny > 0 ||
+        throw(ArgumentError("checkerboard dimensions must be positive"))
+    cell_x = clamp(floor(Int, nx * (x1 + 2) / 4), 0, nx - 1)
+    cell_y = clamp(floor(Int, ny * (x2 + 2) / 4), 0, ny - 1)
+    return Float64(isodd(cell_x + cell_y))
+end
 
 # ╔═╡ 33781fa0-d3f8-442f-a596-027d27e62660
 function make_checkerboard_dataset(
@@ -92,10 +105,7 @@ function make_checkerboard_dataset(
       x1 = 4 .* rand(rng, n) .- 2
       x2 = 4 .* rand(rng, n) .- 2
 
-      cell_x = clamp.(floor.(Int, nx .* (x1 .+ 2) ./ 4), 0, nx - 1)
-      cell_y = clamp.(floor.(Int, ny .* (x2 .+ 2) ./ 4), 0, ny - 1)
-
-      clean = Float64.(isodd.(cell_x .+ cell_y))
+      clean = checkerboard_label.(x1, x2, Ref(checkerboard_size))
       target = clamp.(clean .+ noise_std .* randn(rng, n), 0.0, 1.0)
 
       return DataFrame(x1 = x1, x2 = x2, OT = target)
@@ -142,7 +152,8 @@ scatter(
     markerstrokewidth = 0,
     xlabel = "x1",
     ylabel = "x2",
-    title = "Generated noisy XOR data",
+    title = "Noisy $(config.checkboard_size[1])x$(config.checkboard_size[2]) checkerboard data",
+    aspect_ratio = :equal,
     legend = false,
 )
 
@@ -154,6 +165,17 @@ Each neuron contributes a local linear mean and a positive input-dependent
 precision. The shared output is therefore a precision-weighted ensemble. The
 `NGMPDependencies` object below requests an unscented tangent projection on
 both Softplus message edges.
+
+Every local precision also has an exponential prior with one inferred global
+rate:
+
+```math
+\beta \sim \operatorname{Gamma}(10, 10), \qquad
+\gamma_{k,j} \sim \operatorname{Gamma}(1, \beta).
+```
+
+The shape-one factor contributes no extra `log(γ)` term, while its learned
+positive rate regularizes the absolute gate scale.
 """
 
 # ╔═╡ 222053f5-382d-418e-a649-045d59728513
@@ -165,11 +187,12 @@ both Softplus message edges.
     dependencies,
     damping,
 )
-    local w_mean, w_a, z_mean, za, γ, τ, out
+    local w_mean, w_a, z_mean, za, γ, τ, τ_mean, obs_noise, out, β
 
     τ ~ priors[:τ]
     τ_mean ~ priors[:τ_mean]
     obs_noise ~ priors[:obs_noise]
+    β ~ priors[:β]
 
     for neuron in 1:n_neurons
         w_mean[neuron] ~ priors[:w_mean][neuron]
@@ -184,6 +207,7 @@ both Softplus message edges.
                 softdot(features[observation], w_a[neuron], τ) where {
                     meta = LowRankMeta(),
                 }
+            γ[neuron, observation] ~ GammaShapeRate(1.0, β)
             γ[neuron, observation] ~ Softplus(za[neuron, observation]) where {
                 dependencies = dependencies,
                 meta = damping,
@@ -199,8 +223,8 @@ end
 
 # ╔═╡ 70d0a30d-54c8-4515-bfb5-3d470686bc99
 @constraints function xor_softplus_ut_constraints()
-    q(w_mean, w_a, z_mean, za, γ, τ, τ_mean, out, obs_noise) =
-        q(w_mean, z_mean, out)q(w_a)q(za, γ)q(τ)q(τ_mean)q(obs_noise)
+    q(w_mean, w_a, z_mean, za, γ, τ, τ_mean, out, obs_noise, β) =
+        q(w_mean, z_mean, out)q(w_a)q(za, γ)q(τ)q(τ_mean)q(obs_noise)q(β)
 
     # softdot repeatedly consumes the same weight means and covariances.
     q(w_mean)::MomentForm()
@@ -215,6 +239,7 @@ end
     q(τ) = priors[:τ]
     q(obs_noise) = priors[:obs_noise]
     q(τ_mean) = priors[:τ_mean]
+    q(β) = priors[:β]
     μ(w_mean) = deepcopy(priors[:w_mean])
 end
 
@@ -226,6 +251,8 @@ function make_softplus_priors(
     seed = 42,
     mean_prior_precision = 1e-4,
     gate_prior_precision = 1e-4,
+    gamma_rate_prior_shape = 10.0,
+    gamma_rate_prior_rate = 10.0,
 )
     rng = MersenneTwister(seed)
     mean_precision = Diagonal(fill(mean_prior_precision, n_features))
@@ -249,8 +276,12 @@ function make_softplus_priors(
         :w_mean => w_mean,
         :w_a => w_a,
         :τ => GammaShapeRate(1e3, 1.0),
-        :τ_mean => GammaShapeRate(1e3, 1.0),
-        :obs_noise => GammaShapeRate(1e6, 1.0)
+        :τ_mean => GammaShapeRate(1e4, 1.0),
+        :obs_noise => GammaShapeRate(1e6, 1.0),
+        :β => GammaShapeRate(
+            gamma_rate_prior_shape,
+            gamma_rate_prior_rate,
+        ),
     )
 end
 
@@ -263,6 +294,8 @@ function run_softplus_ut_ngmp(
     prior_seed,
     mean_prior_precision,
     gate_prior_precision,
+    gamma_rate_prior_shape,
+    gamma_rate_prior_rate,
     ngmp_alpha,
     ngmp_beta,
     ngmp_max_step,
@@ -273,6 +306,8 @@ function run_softplus_ut_ngmp(
         seed = prior_seed,
         mean_prior_precision = mean_prior_precision,
         gate_prior_precision = gate_prior_precision,
+        gamma_rate_prior_shape = gamma_rate_prior_shape,
+        gamma_rate_prior_rate = gamma_rate_prior_rate,
     )
 
     # These objects are deliberately fresh for every call. Their edge states
@@ -301,7 +336,7 @@ function run_softplus_ut_ngmp(
         initialization = xor_softplus_ut_initialization(priors),
         iterations = iterations,
         free_energy = true,
-        showprogress = true,
+        showprogress = showprogress,
         options = (limit_stack_depth = 100,),
         disable_inference_error_hint = true,
     )
@@ -320,6 +355,8 @@ fit = run_softplus_ut_ngmp(
         prior_seed = config.prior_seed,
         mean_prior_precision = config.mean_prior_precision,
         gate_prior_precision = config.gate_prior_precision,
+        gamma_rate_prior_shape = config.gamma_rate_prior_shape,
+        gamma_rate_prior_rate = config.gamma_rate_prior_rate,
         ngmp_alpha = config.ngmp_alpha,
         ngmp_beta = config.ngmp_beta,
         ngmp_max_step = config.ngmp_max_step,
@@ -372,6 +409,8 @@ begin
 # ╔═╡ 87f5a99a-6251-44b1-bcd2-bf562715a35f
 begin
     final_gamma = vec(fit.result.posteriors[:γ][end])
+    final_gamma_matrix = mean.(fit.result.posteriors[:γ][end])
+    final_total_gamma = vec(sum(final_gamma_matrix; dims = 1))
     run_summary = DataFrame(
         neurons = config.n_neurons,
         iterations = length(posterior_weights),
@@ -381,6 +420,11 @@ begin
         constant_mse = constant_mse,
         minimum_gamma_shape = minimum(shape, final_gamma),
         minimum_gamma_rate = minimum(rate, final_gamma),
+        maximum_total_gamma = maximum(final_total_gamma),
+        global_gamma_rate = mean(fit.result.posteriors[:β][end]),
+        gate_softdot_precision = mean(fit.result.posteriors[:τ][end]),
+        mean_softdot_precision = mean(fit.result.posteriors[:τ_mean][end]),
+        observation_precision = mean(fit.result.posteriors[:obs_noise][end]),
     )
 end
 
@@ -394,7 +438,7 @@ learning_curve = let
         color = :steelblue,
         xlabel = "Iteration",
         ylabel = "Test MSE",
-        title = "Softplus UT NGMP learning",
+        title = "Checkerboard Softplus UT NGMP learning",
         label = "Softplus",
         xlims = (0.5, length(mse_by_iteration) + 0.5),
     )
@@ -448,18 +492,12 @@ rendering step rather than another inference run.
 
 # ╔═╡ 429bd3a0-8c79-4376-a6b6-eb0c63cffb77
 grid = let
-    margin = 0.5
-    x = range(
-        minimum(test_data.x1) - margin,
-        maximum(test_data.x1) + margin;
-        length = config.grid_size,
-    )
-    y = range(
-        minimum(test_data.x2) - margin,
-        maximum(test_data.x2) + margin;
-        length = config.grid_size,
-    )
-    actual = [Float64(x_value * y_value < 0) for y_value in y, x_value in x]
+    x = range(-2.0, 2.0; length = config.grid_size)
+    y = range(-2.0, 2.0; length = config.grid_size)
+    actual = [
+        checkerboard_label(x_value, y_value, config.checkboard_size) for
+        y_value in y, x_value in x
+    ]
     (x = x, y = y, actual = actual)
 end
 
@@ -492,25 +530,25 @@ final_surface_plot = let
         ylabel = "x2",
         title = "Predicted",
         linewidth = 0,
+        aspect_ratio = :equal,
     )
-    actual_plot = contourf(
+    actual_plot = heatmap(
         grid.x,
         grid.y,
         grid.actual;
         color = :RdBu,
-        levels = 20,
         clims = (0, 1),
         xlabel = "x1",
         ylabel = "x2",
-        title = "Actual XOR",
-        linewidth = 0,
+        title = "Clean $(config.checkboard_size[1])x$(config.checkboard_size[2]) target",
+        aspect_ratio = :equal,
     )
     plot(
         predicted_plot,
         actual_plot;
         layout = (1, 2),
         size = (1_000, 400),
-        plot_title = "XOR Softplus UT NGMP - iteration $surface_iteration",
+        plot_title = "$(config.checkboard_size[1])x$(config.checkboard_size[2]) checkerboard - iteration $surface_iteration",
     )
 end
 
@@ -518,9 +556,8 @@ end
 md"""
 ## Learning animation
 
-The final cell shows the GIF inline in Pluto and writes it to
-`viz/xor_softplus_ut_ngmp_learning.gif`. Set `make_animation = false` while
-tuning model settings when you do not need the GIF rebuilt after every run.
+The final cell shows the GIF inline in Pluto and writes a file named for the
+current checkerboard dimensions into `viz`.
 """
 
 # ╔═╡ d8fa36a3-ac39-44e1-88e8-5adba1aa4ef1
@@ -537,18 +574,18 @@ animation_output = let
             ylabel = "x2",
             title = "Predicted (iteration $iteration)",
             linewidth = 0,
+            aspect_ratio = :equal,
         )
-        actual_panel = contourf(
+        actual_panel = heatmap(
             grid.x,
             grid.y,
             grid.actual;
             color = :RdBu,
-            levels = 20,
             clims = (0, 1),
             xlabel = "x1",
             ylabel = "x2",
-            title = "Actual XOR",
-            linewidth = 0,
+            title = "Clean $(config.checkboard_size[1])x$(config.checkboard_size[2]) target",
+            aspect_ratio = :equal,
         )
         mse_panel = plot(
             1:iteration,
@@ -579,14 +616,14 @@ animation_output = let
             mse_panel;
             layout = (1, 3),
             size = (1_350, 400),
-            plot_title = "XOR Softplus UT NGMP - iteration $iteration",
+            plot_title = "$(config.checkboard_size[1])x$(config.checkboard_size[2]) checkerboard - iteration $iteration",
         )
     end
 
     mkpath(config.output_dir)
     output_path = joinpath(
         config.output_dir,
-        "xor_softplus_ut_ngmp_learning.gif",
+        "checkerboard_$(config.checkboard_size[1])x$(config.checkboard_size[2])_softplus_ut_ngmp_learning.gif",
     )
     gif(animation, output_path; fps = config.animation_fps)
 end
@@ -597,6 +634,7 @@ end
 # ╟─59216211-1c24-4c40-957a-d671c3dde95b
 # ╠═ba670c90-a7db-4f2b-8067-cf3e3c9b58d4
 # ╟─c4b9483d-789c-44a7-955d-1a3a35babff9
+# ╠═bff85b72-63e8-4d31-a8db-6a84b7750985
 # ╠═33781fa0-d3f8-442f-a596-027d27e62660
 # ╠═923d3cc6-3db2-46d9-8948-390c7091451a
 # ╠═8b2279a7-3405-4518-af82-3bc3ddce721b
