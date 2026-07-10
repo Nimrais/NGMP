@@ -1,5 +1,5 @@
 """
-    DampingMeta(; alpha = 0.5, beta = 0.2)
+    DampingMeta(; alpha = 0.5, beta = 0.2, max_step = Inf)
 
 Parameters of the damped heavy-ball update applied to natural-gradient messages,
 in natural-parameter coordinates:
@@ -10,7 +10,9 @@ in natural-parameter coordinates:
 where `η⋆` is the undamped natural-gradient target and `η` the previously sent
 message. Equivalently, with `β = 0`, the sent message is the normalized product
 of powered messages `μ^(t) ∝ (μ^(t−1))^(1−α) · (μ⋆)^α`. Attach via the node
-`where` clause or `@meta`.
+`where` clause or `@meta`. A finite `max_step` bounds the Euclidean norm of each
+natural-parameter update after damping; the default `Inf` preserves the original
+unbounded recursion.
 
 `DampingMeta` is parameter-only by design: GraphPPL's `@meta` evaluates its
 right-hand side once and shares the resulting instance across all matched nodes,
@@ -27,9 +29,15 @@ so per-node mutable state cannot live here. The mutable state lives in
 struct DampingMeta{T <: Real}
     α::T
     β::T
+    max_step::T
 end
 
-DampingMeta(; alpha::Real = 0.5, beta::Real = 0.2) = DampingMeta(promote(alpha, beta)...)
+function DampingMeta(; alpha::Real = 0.5, beta::Real = 0.2, max_step::Real = Inf)
+    max_step > 0 || throw(ArgumentError("max_step must be positive"))
+    return DampingMeta(promote(alpha, beta, max_step)...)
+end
+
+DampingMeta(alpha::Real, beta::Real) = DampingMeta(; alpha = alpha, beta = beta)
 
 """
     NGMPEdgeState(usermeta)
@@ -58,6 +66,8 @@ NGMPEdgeState(usermeta) = NGMPEdgeState(usermeta, nothing, Float64[], Float64[],
 
 damping_parameters(state::NGMPEdgeState{<:DampingMeta}) = (state.usermeta.α, state.usermeta.β)
 damping_parameters(state::NGMPEdgeState) = (0.5, 0.2)
+damping_max_step(state::NGMPEdgeState{<:DampingMeta}) = state.usermeta.max_step
+damping_max_step(state::NGMPEdgeState) = Inf
 
 """
     natural_parameters(target) -> (family_tag, η::Vector{Float64})
@@ -116,6 +126,11 @@ function apply_damping!(state::NGMPEdgeState, target)
         state.momentum = zero(ηt)
     end
     @. state.momentum = β * state.momentum + α * (ηt - state.η)
+    max_step = damping_max_step(state)
+    step_norm = sqrt(sum(abs2, state.momentum))
+    if step_norm > max_step
+        state.momentum .*= max_step / step_norm
+    end
     @. state.η += state.momentum
     state.nfired += 1
     state.message = from_natural(T, state.η)
