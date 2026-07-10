@@ -67,6 +67,8 @@ include("tangent_projections/normal.jl")
 
 include("tangent_projections/unscented.jl")
 
+include("nodes/softplus/softplus.jl")
+include("nodes/exp/rules/natural_gradient.jl")
 include("nodes/log/rules/natural_gradient.jl")
 include("nodes/normal_mean_precision/rules/natural_gradient.jl")
 include("nodes/softdot/rules/structured_info_form.jl")

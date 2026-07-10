@@ -37,8 +37,9 @@ outer loop rebuilding surrogate pseudo-observations.
   local factorization clusters, this composes freely with BP / structured / mean-field
   factorization constraints.
 
-- **`DampingMeta(; alpha, beta)`** — heavy-ball damping in natural-parameter
-  coordinates, `v ← β·v + α·(η⋆ − η); η ← η + v`. Parameter-only by design:
+- **`DampingMeta(; alpha, beta, max_step=Inf)`** — heavy-ball damping in
+  natural-parameter coordinates, `v ← β·v + α·(η⋆ − η); η ← η + v`, optionally
+  bounding `‖v‖₂` by `max_step`. Parameter-only by design:
   GraphPPL's `@meta` evaluates its right-hand side once and shares the instance
   across all matched nodes. The mutable per-node-per-edge state
   (**`NGMPEdgeState`**: previous message, momentum buffers, firing counter) is
