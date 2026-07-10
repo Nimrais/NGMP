@@ -250,7 +250,7 @@ function make_softplus_priors(
         :w_a => w_a,
         :τ => GammaShapeRate(1e3, 1.0),
         :τ_mean => GammaShapeRate(1e3, 1.0),
-        :obs_noise => GammaShapeRate(1e12, 1.0)
+        :obs_noise => GammaShapeRate(1e6, 1.0)
     )
 end
 
