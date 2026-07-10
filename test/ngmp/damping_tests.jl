@@ -1,6 +1,19 @@
 import SurrogateModelling: NaturalGradientMP
 
 @testset "generic exponential-family damping" begin
+    @testset "optional natural-step bound" begin
+        state = NGMPEdgeState(
+            DampingMeta(alpha = 1.0, beta = 0.0, max_step = 0.25),
+        )
+        message = NaturalGradientMP.apply_damping!(
+            state,
+            NormalWeightedMeanPrecision(100.0, 40.0),
+        )
+        @test sqrt(sum(abs2, state.η)) ≈ 0.25
+        @test message isa NormalWeightedMeanPrecision
+        @test_throws ArgumentError DampingMeta(max_step = 0.0)
+    end
+
     @testset "Gaussian wrapper matches the manual scalar recursion" begin
         α, β = 0.5, 0.2
         state = NGMPEdgeState(DampingMeta(alpha = α, beta = β))
