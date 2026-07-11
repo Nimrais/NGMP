@@ -188,6 +188,61 @@ function project(::TangentProjection{<:ClosedForm}, q::_GaussianProjectionPoint,
     )
 end
 
+"""
+    DerivativeEnhancedFunction(p::Logpdf{<:GaussianStudentTMessage}, expansion_point)
+
+Attach the analytic first two derivatives of the numerically evaluated
+Gaussian-Student-t convolution log-message for a delta projection.
+"""
+function DerivativeEnhancedFunction(p::Logpdf{<:GaussianStudentTMessage}, expansion_point)
+    return DerivativeEnhancedFunction(
+        p,
+        expansion_point,
+        Base.Fix1(_gaussian_student_t_first_derivative, p),
+        Base.Fix1(_gaussian_student_t_second_derivative, p),
+    )
+end
+
+function _gaussian_student_t_first_derivative(p::Logpdf{<:GaussianStudentTMessage}, x)
+    first, _ = _gaussian_student_t_logderivatives(p.dist, x)
+    return first
+end
+
+function _gaussian_student_t_second_derivative(p::Logpdf{<:GaussianStudentTMessage}, x)
+    _, second = _gaussian_student_t_logderivatives(p.dist, x)
+    return second
+end
+
+
+function project(
+    ::TangentProjection{<:DeltaApproximation},
+    q::_GaussianProjectionPoint,
+    f::Logpdf{<:GaussianStudentTMessage},
+)
+    q_ef = q isa ExponentialFamilyDistribution ?
+        q : convert(ExponentialFamilyDistribution, q)
+    m, _ = _mean_var(q_ef)
+    ξ, Λ = project_to_normal(DerivativeEnhancedFunction(f, m), q_ef)
+    η = promote(ξ, -Λ / 2)
+    return ExponentialFamilyDistribution(
+        NormalMeanVariance,
+        collect(η),
+        nothing,
+        nothing,
+    )
+end
+
+function project(
+    ::TangentProjection{<:ClosedForm},
+    q::_GaussianProjectionPoint,
+    f::Logpdf{<:GaussianStudentTMessage},
+)
+    return error(
+        "`GaussianStudentTMessage` has no closed-form Williams product against a Gaussian belief. ",
+        "Choose `DeltaApproximation`, `Unscented`, or `Quadrature(n)` explicitly."
+    )
+end
+
 # Product-factor messages: no exact Williams product and no analytic-derivative
 # bundle — the strategy must be Unscented or Quadrature.
 const _ProductGaussianMessage = Union{ProductPartnerMessage, ProductOutMessage}

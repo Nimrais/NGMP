@@ -35,6 +35,39 @@ end
     return NaturalGradientMP.apply_damping!(meta, site)
 end
 
+# All three interfaces latent and in one BP cluster. Integrating the Gaussian
+# cavity on the opposite location edge and the Gamma precision cavity produces a
+# Gaussian-Student-t convolution, projected at the receiving Gaussian marginal.
+@rule NormalMeanPrecision(:out, NaturalGradientMessage) (m_μ::UnivariateNormalDistributionsFamily, m_τ::GammaDistributionsFamily, q_out::UnivariateNormalDistributionsFamily, meta::NGMPEdgeState) = begin
+    m, v = mean_var(m_μ)
+    exact = Logpdf(GaussianStudentTMessage(m, v, shape(m_τ), rate(m_τ)))
+    site = project(resolve_projection(getprojection(vconstraint)), q_out, exact)
+    return NaturalGradientMP.apply_damping!(meta, site)
+end
+
+@rule NormalMeanPrecision(:μ, NaturalGradientMessage) (m_out::UnivariateNormalDistributionsFamily, m_τ::GammaDistributionsFamily, q_μ::UnivariateNormalDistributionsFamily, meta::NGMPEdgeState) = begin
+    m, v = mean_var(m_out)
+    exact = Logpdf(GaussianStudentTMessage(m, v, shape(m_τ), rate(m_τ)))
+    site = project(resolve_projection(getprojection(vconstraint)), q_μ, exact)
+    return NaturalGradientMP.apply_damping!(meta, site)
+end
+
+# The difference of two independent Gaussian cavities is Gaussian, so the exact
+# precision-edge BP message stays the existing NormalPrecisionMessage.
+@rule NormalMeanPrecision(:τ, NaturalGradientMessage) (m_out::UnivariateNormalDistributionsFamily, m_μ::UnivariateNormalDistributionsFamily, q_τ::GammaDistributionsFamily, meta::NGMPEdgeState) = begin
+    m_out_mean, m_out_var = mean_var(m_out)
+    m_μ_mean, m_μ_var = mean_var(m_μ)
+    exact = Logpdf(
+        NormalPrecisionMessage(
+            m_out_mean,
+            m_μ_mean,
+            m_out_var + m_μ_var,
+        ),
+    )
+    site = project(resolve_projection(getprojection(vconstraint)), q_τ, exact)
+    return NaturalGradientMP.apply_damping!(meta, site)
+end
+
 # --- product-of-experts usage: ALL THREE edges latent (out in a structured cluster
 # --- with μ; τ mean-field apart) — the ReLU-diffusion model's gate consumer.
 #

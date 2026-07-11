@@ -57,6 +57,8 @@ include("expressions/product_messages.jl")
 
 include("expressions/student_t_message.jl")
 
+include("expressions/gaussian_student_t_message.jl")
+
 include("tangent_projections/common.jl")
 
 include("tangent_projections/closed_form_tangent.jl")
