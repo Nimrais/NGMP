@@ -1,5 +1,6 @@
-import SurrogateModelling: NaturalGradientMP, NormalPrecisionMessage, StudentTMessage,
-    project_to_gamma, project_to_normal
+import SurrogateModelling: GaussianStudentTMessage, NaturalGradientMP,
+    NormalPrecisionMessage, StudentTMessage, project_to_gamma, project_to_normal
+import FastGaussQuadrature
 import SpecialFunctions: digamma
 import SpecialFunctions: trigamma as sf_trigamma
 
@@ -28,6 +29,54 @@ end
     τ ~ GammaShapeRate(a0, b0)
     for i in 1:length(y)
         y[i] ~ NormalMeanPrecision(x, τ) where { dependencies = deps, meta = damping }
+    end
+end
+
+@model function latent_ngbp_normal_toy(y, deps, damping)
+    out ~ NormalMeanVariance(0.5, 1.0)
+    μ ~ NormalMeanVariance(0.0, 1.0)
+    τ ~ GammaShapeRate(2.0, 2.0)
+    out ~ NormalMeanPrecision(μ, τ) where {
+        dependencies = deps,
+        meta = damping,
+    }
+    y ~ NormalMeanVariance(out, 0.5)
+end
+
+function gaussian_student_t_reference_log(message, x; order = 128)
+    nodes, weights = FastGaussQuadrature.gausshermite(order)
+    scale = sqrt(2 * message.v)
+    component_logs = map(nodes, weights) do node, weight
+        residual = x - (message.m + scale * node)
+        return log(weight / sqrt(pi)) -
+               (2 * message.a + 1) / 2 * log(2 * message.b + residual^2)
+    end
+    maximum_log = maximum(component_logs)
+    return maximum_log + log(sum(exp.(component_logs .- maximum_log)))
+end
+
+@testset "GaussianStudentTMessage" begin
+    @testset "zero cavity variance reduces to StudentTMessage" begin
+        convolution = GaussianStudentTMessage(0.7, 0.0, 2.5, 1.3)
+        student = StudentTMessage(0.7, 2.5, 1.3)
+        for x in (-2.0, 0.7, 3.0)
+            @test log(convolution, x) ≈ log(student, x) atol = 1e-12
+        end
+    end
+
+    @testset "16-node evaluator tracks dense quadrature" begin
+        message = GaussianStudentTMessage(0.7, 0.8, 2.5, 1.3)
+        for x in (-1.0, 0.7, 2.0)
+            @test log(message, x) ≈ gaussian_student_t_reference_log(message, x) atol = 5e-4
+            step = 1e-4
+            first_fd = (log(message, x + step) - log(message, x - step)) / (2 * step)
+            second_fd =
+                (log(message, x + step) - 2 * log(message, x) + log(message, x - step)) /
+                step^2
+            first, second = SurrogateModelling._gaussian_student_t_logderivatives(message, x)
+            @test first ≈ first_fd atol = 1e-7
+            @test second ≈ second_fd atol = 1e-5
+        end
     end
 end
 
@@ -120,6 +169,58 @@ end
         end
     end
 
+    @testset "three-latent-edge rules match their tangent projections" begin
+        projection = TangentProjection(type = Unscented)
+        m_out = NormalMeanVariance(0.8, 0.4)
+        m_μ = NormalMeanVariance(0.2, 0.7)
+        m_τ = GammaShapeRate(2.5, 1.4)
+        q_out = NormalMeanVariance(0.6, 0.9)
+        q_μ = NormalMeanVariance(0.3, 1.1)
+        q_τ = GammaShapeRate(2.0, 1.7)
+
+        out_state = NGMPEdgeState(DampingMeta(alpha = 1.0, beta = 0.0))
+        out_message = @call_rule NormalMeanPrecision(:out, NaturalGradientMessage(projection)) (
+            m_μ = m_μ, m_τ = m_τ, q_out = q_out, meta = out_state
+        )
+        out_target = project(
+            projection,
+            q_out,
+            Logpdf(GaussianStudentTMessage(mean(m_μ), var(m_μ), shape(m_τ), rate(m_τ))),
+        )
+        @test weightedmean(out_message) ≈ getnaturalparameters(out_target)[1]
+        @test precision(out_message) ≈ -2 * getnaturalparameters(out_target)[2]
+
+        mean_state = NGMPEdgeState(DampingMeta(alpha = 1.0, beta = 0.0))
+        mean_message = @call_rule NormalMeanPrecision(:μ, NaturalGradientMessage(projection)) (
+            m_out = m_out, m_τ = m_τ, q_μ = q_μ, meta = mean_state
+        )
+        mean_target = project(
+            projection,
+            q_μ,
+            Logpdf(GaussianStudentTMessage(mean(m_out), var(m_out), shape(m_τ), rate(m_τ))),
+        )
+        @test weightedmean(mean_message) ≈ getnaturalparameters(mean_target)[1]
+        @test precision(mean_message) ≈ -2 * getnaturalparameters(mean_target)[2]
+
+        precision_state = NGMPEdgeState(DampingMeta(alpha = 1.0, beta = 0.0))
+        precision_message = @call_rule NormalMeanPrecision(:τ, NaturalGradientMessage(projection)) (
+            m_out = m_out, m_μ = m_μ, q_τ = q_τ, meta = precision_state
+        )
+        precision_target = project(
+            projection,
+            q_τ,
+            Logpdf(
+                NormalPrecisionMessage(
+                    mean(m_out),
+                    mean(m_μ),
+                    var(m_out) + var(m_μ),
+                ),
+            ),
+        )
+        @test shape(precision_message) ≈ getnaturalparameters(precision_target)[1] + 1
+        @test rate(precision_message) ≈ -getnaturalparameters(precision_target)[2]
+    end
+
     @testset "damped recursion on the τ edge matches manual η replay" begin
         α, β = 0.5, 0.2
         state = NGMPEdgeState(DampingMeta(alpha = α, beta = β))
@@ -177,5 +278,44 @@ end
         @test var(qx) ≈ ex.vx rtol = 0.5
         @test mean(qτ) ≈ ex.mτ rtol = 0.05
         @test var(qτ) ≈ ex.vτ rtol = 0.3
+    end
+
+
+    @testset "integration: all NormalMeanPrecision interfaces latent" begin
+        for projection in (
+            TangentProjection(type = DeltaApproximation),
+            TangentProjection(type = Unscented),
+            TangentProjection(type = Quadrature(16)),
+        )
+            deps = NGMPDependencies(
+                out = nothing,
+                μ = nothing,
+                τ = nothing,
+                projection = projection,
+            )
+            init = @initialization begin
+                q(out) = NormalMeanVariance(0.5, 1.0)
+                q(μ) = NormalMeanVariance(0.0, 1.0)
+                q(τ) = GammaShapeRate(2.0, 2.0)
+            end
+            result = infer(
+                model = latent_ngbp_normal_toy(
+                    deps = deps,
+                    damping = DampingMeta(alpha = 0.2, beta = 0.0),
+                ),
+                data = (y = 0.7,),
+                initialization = init,
+                iterations = 10,
+                disable_inference_error_hint = true,
+            )
+            q_out = last(result.posteriors[:out])
+            q_μ = last(result.posteriors[:μ])
+            q_τ = last(result.posteriors[:τ])
+            @test isfinite(mean(q_out)) && var(q_out) > 0
+            @test isfinite(mean(q_μ)) && var(q_μ) > 0
+            @test shape(q_τ) > 0 && rate(q_τ) > 0
+            @test length(deps.states) == 3
+            @test all(state -> state.nfired == 10, deps.states)
+        end
     end
 end
