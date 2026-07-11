@@ -1,6 +1,8 @@
 export project_to_gamma
 
 using SpecialFunctions: trigamma
+import SpecialFunctions
+import FastGaussQuadrature
 import ExponentialFamily: ExponentialFamilyDistribution, getnaturalparameters
 import ClosedFormExpectations: Logpdf
 
@@ -121,6 +123,76 @@ function project_to_gamma(p::NormalPrecisionMessage, q::ExponentialFamilyDistrib
     return project_to_gamma(DerivativeEnhancedFunction(Logpdf(p), a / b), q)
 end
 
+const _GammaProjectionPoint = Union{
+    GammaDistributionsFamily,
+    ExponentialFamilyDistribution{Distributions.Gamma},
+}
+
+"""
+    project(TangentProjection(type = ClosedForm), q::GammaDistributionsFamily, f::Logpdf)
+
+Exact tangent projection of the log-message `f` onto the Gamma edge at the
+receiving marginal `q` — the Gamma analogue of the Gaussian `project` method in
+`closed_form_tangent.jl`. The `ClosedWilliamsProduct` against the
+`ExponentialFamilyDistribution{Gamma}` form of `q` yields the natural-coordinate
+gradient `∇_η E_q[ℓ] = (Cov_q[log τ, ℓ], Cov_q[τ, ℓ])`; the inverse-Fisher map
+turns it into the natural-gradient increments `(Δa, Δb)` of the projected site
+
+    μ̂(τ) ∝ τ^{Δa} exp(-Δb τ),
+
+returned as an unchecked `ExponentialFamilyDistribution{Gamma}` with natural
+parameters `(Δa, -Δb)` — sites may be improper during damping, so properness is
+deliberately not validated.
+"""
+function project(::TangentProjection{<:ClosedForm}, q::_GammaProjectionPoint, f::Logpdf)
+    q_ef = q isa ExponentialFamilyDistribution ? q : convert(ExponentialFamilyDistribution, q)
+    c1, c2 = ClosedFormExpectations.mean(ClosedWilliamsProduct(), f, q_ef)
+    Δa, Δb = _increments_from_williams(c1, c2, _shape_rate(q_ef)...)
+    η = promote(Δa, -Δb)
+    return ExponentialFamilyDistribution(Distributions.Gamma, collect(η), nothing, nothing)
+end
+
+"""
+    project(TangentProjection(type = Quadrature(n)), q::GammaDistributionsFamily, f::Logpdf)
+
+Quadrature-exact tangent projection onto the Gamma edge: the Williams product
+`∇_η E_q[ℓ] = (Cov_q[log τ, ℓ], Cov_q[τ, ℓ])` is evaluated on a **log-space
+trapezoid grid**. Substituting `s = log τ`, the Gamma(a, b) expectation becomes
+`∫ f(eˢ) exp(a·s − b·eˢ) ds` (up to normalization) — a smooth, unimodal integrand
+decaying (double-)exponentially in both directions, for which the trapezoid rule
+converges geometrically for **any** shape `a` (generalized Gauss–Laguerre, by
+contrast, converges only algebraically against the `log τ` statistic and its
+weights overflow for large `a`). The grid spans ±12 log-space standard deviations
+(`√ψ₁(a)`) around `E[log τ] = ψ(a) − log b`; weights are self-normalized and both
+covariances use the discrete means, so normalization errors cancel exactly.
+
+Unlike the second-order `project_to_gamma`, this is exact for any width of `q` —
+the delta expansion is only trustworthy when `q` is concentrated. Returns the same
+unchecked `ExponentialFamilyDistribution{Gamma}` site `(Δa, -Δb)` as the
+`ClosedForm` method.
+"""
+function project(::TangentProjection{Quadrature{n}}, q::_GammaProjectionPoint, f::Logpdf) where {n}
+    q_ef = q isa ExponentialFamilyDistribution ? q : convert(ExponentialFamilyDistribution, q)
+    a, b = _shape_rate(q_ef)
+    sμ = SpecialFunctions.digamma(a) - log(b)
+    sσ = sqrt(trigamma(a))
+    s = range(sμ - 12 * sσ, sμ + 12 * sσ; length = n)
+    τ = exp.(s)
+    logw = a .* s .- b .* τ                  # τ^{a-1} e^{-bτ} dτ = e^{as - be^s} ds
+    logw .-= maximum(logw)
+    w̃ = exp.(logw)
+    w̃ ./= sum(w̃)
+    ℓ = map(τk -> _eval_logmessage(f, τk), τ)
+    Eℓ = sum(w̃ .* ℓ)
+    Es = sum(w̃ .* s)
+    Eτ = sum(w̃ .* τ)
+    c1 = sum(w̃ .* (s .- Es) .* (ℓ .- Eℓ))   # Cov_q[log τ, ℓ]
+    c2 = sum(w̃ .* (τ .- Eτ) .* (ℓ .- Eℓ))   # Cov_q[τ, ℓ]
+    Δa, Δb = _increments_from_williams(c1, c2, a, b)
+    η = promote(Δa, -Δb)
+    return ExponentialFamilyDistribution(Distributions.Gamma, collect(η), nothing, nothing)
+end
+
 # Analytic τ-derivatives of  log μ_{f→τ}(τ) = -½ log(ṽ + τ⁻¹) - (y - m̃)²/(2(ṽ + τ⁻¹))
 # (the τ-independent -½ log 2π drops out). With s = ṽ + τ⁻¹ and r = (y - m̃)²:
 function _normal_precision_first_derivative(p::Logpdf{<:NormalPrecisionMessage}, τ)
@@ -136,4 +208,52 @@ function _normal_precision_second_derivative(p::Logpdf{<:NormalPrecisionMessage}
     s  = msg.ṽ + inv(τ)
     t2 = τ^2
     return (s - 2r) / (2 * s^3 * t2^2) + (r - s) / (s^2 * τ * t2)  # ℓ″(τ)
+end
+
+"""
+    project(TangentProjection(type = DeltaApproximation), q::GammaDistributionsFamily, f::Logpdf{<:NormalPrecisionMessage})
+
+Second-order (delta-method) tangent projection of a `NormalPrecisionMessage` —
+a message with NO exact Williams product — via its analytic τ-derivatives
+([`project_to_gamma`](@ref)). Trustworthy only when `q` is concentrated; for
+wide `q` prefer `Unscented`/`Quadrature`.
+"""
+function project(::TangentProjection{<:DeltaApproximation}, q::_GammaProjectionPoint, f::Logpdf{<:NormalPrecisionMessage})
+    q_ef = q isa ExponentialFamilyDistribution ? q : convert(ExponentialFamilyDistribution, q)
+    Δa, Δb = project_to_gamma(f.dist, q_ef)
+    η = promote(Δa, -Δb)
+    return ExponentialFamilyDistribution(Distributions.Gamma, collect(η), nothing, nothing)
+end
+
+# `ClosedForm` means an EXACT Williams product — which this message does not have.
+function project(::TangentProjection{<:ClosedForm}, q::_GammaProjectionPoint, f::Logpdf{<:NormalPrecisionMessage})
+    return error(
+        "`NormalPrecisionMessage` has no closed-form Williams product against a Gamma belief. ",
+        "Choose the approximation explicitly via `NGMPDependencies(...; projection = ...)`: ",
+        "`TangentProjection(type = DeltaApproximation)` (2 analytic derivatives, biased for wide q), ",
+        "`TangentProjection(type = Unscented)` (3 sigma points), or ",
+        "`TangentProjection(type = Quadrature(n))` (exact to quadrature precision)."
+    )
+end
+
+# Same non-conjugacy in the multivariate case; additionally no analytic-derivative
+# bundle is provided, so `DeltaApproximation` must error informatively too instead
+# of falling through to a bare MethodError.
+const _MvGatePrecisionMessage = Union{MvNormalPrecisionMessage, MvNormalDeviationPrecisionMessage}
+
+function project(::TangentProjection{<:ClosedForm}, q::_GammaProjectionPoint, f::Logpdf{<:_MvGatePrecisionMessage})
+    return error(
+        "`$(nameof(typeof(f.dist)))` has no closed-form Williams product against a Gamma belief. ",
+        "Choose the approximation explicitly via `NGMPDependencies(...; projection = ...)`: ",
+        "`TangentProjection(type = Unscented)` (3 sigma points) or ",
+        "`TangentProjection(type = Quadrature(n))` (exact to quadrature precision)."
+    )
+end
+
+function project(::TangentProjection{<:DeltaApproximation}, q::_GammaProjectionPoint, f::Logpdf{<:_MvGatePrecisionMessage})
+    return error(
+        "`$(nameof(typeof(f.dist)))` has no analytic-derivative delta projection. ",
+        "Use `TangentProjection(type = Unscented)` (3 sigma points) or ",
+        "`TangentProjection(type = Quadrature(n))` (exact to quadrature precision)."
+    )
 end

@@ -1,5 +1,6 @@
 export project_to_normal
 
+import FastGaussQuadrature
 import ExponentialFamily: ExponentialFamilyDistribution, getnaturalparameters, NormalMeanVariance
 import ClosedFormExpectations: Logpdf
 
@@ -105,6 +106,32 @@ function project_to_normal(p::StudentTMessage, q::ExponentialFamilyDistribution{
 end
 
 """
+    project(TangentProjection(type = Quadrature(n)), q::UnivariateGaussianDistributionsFamily, f::Logpdf)
+
+Quadrature-exact tangent projection onto the Gaussian edge: the Williams product
+`∇_η E_q[ℓ] = (Cov_q[x, ℓ], Cov_q[x², ℓ])` is evaluated by **Gauss–Hermite**
+(`x = m + √(2v)·u`, weights `w/√π`), with the sufficient statistics centered at
+their analytic means (`E[x] = m`, `E[x²] = m² + v`). Exact for any width of `q`,
+unlike the second-order `project_to_normal`. Returns the same unchecked
+`ExponentialFamilyDistribution{NormalMeanVariance}` site `(ξ, -Λ/2)` as the
+`ClosedForm` method.
+"""
+function project(::TangentProjection{Quadrature{n}}, q::_GaussianProjectionPoint, f::Logpdf) where {n}
+    normal_q = convert(Distributions.Normal, q)
+    m = Distributions.mean(normal_q)
+    v = Distributions.var(normal_q)
+    u, w = FastGaussQuadrature.gausshermite(n)
+    x = m .+ sqrt(2 * v) .* u
+    w̃ = w ./ sqrt(π)
+    ℓ = map(xk -> _eval_logmessage(f, xk), x)
+    c1 = sum(w̃ .* (x .- m) .* ℓ)                    # Cov_q[x, ℓ]
+    c2 = sum(w̃ .* (x .^ 2 .- (m^2 + v)) .* ℓ)       # Cov_q[x², ℓ]
+    ξ, Λ = _increments_from_williams_normal(c1, c2, m, v)
+    η = promote(ξ, -Λ / 2)
+    return ExponentialFamilyDistribution(NormalMeanVariance, collect(η), nothing, nothing)
+end
+
+"""
     DerivativeEnhancedFunction(p::Logpdf{<:StudentTMessage}, expansion_point)
 
 Bundle the Student-t log-message `p = Logpdf(StudentTMessage(...))` with its
@@ -133,4 +160,106 @@ function _student_t_second_derivative(p::Logpdf{<:StudentTMessage}, x)
     msg = p.dist
     d = x - msg.y
     return -(2 * msg.ã + 1) * (2 * msg.b̃ - d^2) / (2 * msg.b̃ + d^2)^2  # ℓ″(x)
+end
+
+"""
+    project(TangentProjection(type = DeltaApproximation), q::UnivariateGaussianDistributionsFamily, f::Logpdf{<:StudentTMessage})
+
+Second-order (delta-method) tangent projection of a `StudentTMessage` — a
+message with NO exact Williams product — via its analytic x-derivatives
+([`project_to_normal`](@ref)). Trustworthy only when `q` is concentrated; for
+wide `q` prefer `Unscented`/`Quadrature`.
+"""
+function project(::TangentProjection{<:DeltaApproximation}, q::_GaussianProjectionPoint, f::Logpdf{<:StudentTMessage})
+    q_ef = q isa ExponentialFamilyDistribution ? q : convert(ExponentialFamilyDistribution, q)
+    ξ, Λ = project_to_normal(f.dist, q_ef)
+    η = promote(ξ, -Λ / 2)
+    return ExponentialFamilyDistribution(NormalMeanVariance, collect(η), nothing, nothing)
+end
+
+# `ClosedForm` means an EXACT Williams product — which this message does not have.
+function project(::TangentProjection{<:ClosedForm}, q::_GaussianProjectionPoint, f::Logpdf{<:StudentTMessage})
+    return error(
+        "`StudentTMessage` has no closed-form Williams product against a Gaussian belief. ",
+        "Choose the approximation explicitly via `NGMPDependencies(...; projection = ...)`: ",
+        "`TangentProjection(type = DeltaApproximation)` (2 analytic derivatives, biased for wide q), ",
+        "`TangentProjection(type = Unscented)` (3 sigma points), or ",
+        "`TangentProjection(type = Quadrature(n))` (exact to quadrature precision)."
+    )
+end
+
+"""
+    DerivativeEnhancedFunction(p::Logpdf{<:GaussianStudentTMessage}, expansion_point)
+
+Attach the analytic first two derivatives of the numerically evaluated
+Gaussian-Student-t convolution log-message for a delta projection.
+"""
+function DerivativeEnhancedFunction(p::Logpdf{<:GaussianStudentTMessage}, expansion_point)
+    return DerivativeEnhancedFunction(
+        p,
+        expansion_point,
+        Base.Fix1(_gaussian_student_t_first_derivative, p),
+        Base.Fix1(_gaussian_student_t_second_derivative, p),
+    )
+end
+
+function _gaussian_student_t_first_derivative(p::Logpdf{<:GaussianStudentTMessage}, x)
+    first, _ = _gaussian_student_t_logderivatives(p.dist, x)
+    return first
+end
+
+function _gaussian_student_t_second_derivative(p::Logpdf{<:GaussianStudentTMessage}, x)
+    _, second = _gaussian_student_t_logderivatives(p.dist, x)
+    return second
+end
+
+
+function project(
+    ::TangentProjection{<:DeltaApproximation},
+    q::_GaussianProjectionPoint,
+    f::Logpdf{<:GaussianStudentTMessage},
+)
+    q_ef = q isa ExponentialFamilyDistribution ?
+        q : convert(ExponentialFamilyDistribution, q)
+    m, _ = _mean_var(q_ef)
+    ξ, Λ = project_to_normal(DerivativeEnhancedFunction(f, m), q_ef)
+    η = promote(ξ, -Λ / 2)
+    return ExponentialFamilyDistribution(
+        NormalMeanVariance,
+        collect(η),
+        nothing,
+        nothing,
+    )
+end
+
+function project(
+    ::TangentProjection{<:ClosedForm},
+    q::_GaussianProjectionPoint,
+    f::Logpdf{<:GaussianStudentTMessage},
+)
+    return error(
+        "`GaussianStudentTMessage` has no closed-form Williams product against a Gaussian belief. ",
+        "Choose `DeltaApproximation`, `Unscented`, or `Quadrature(n)` explicitly."
+    )
+end
+
+# Product-factor messages: no exact Williams product and no analytic-derivative
+# bundle — the strategy must be Unscented or Quadrature.
+const _ProductGaussianMessage = Union{ProductPartnerMessage, ProductOutMessage}
+
+function project(::TangentProjection{<:ClosedForm}, q::_GaussianProjectionPoint, f::Logpdf{<:_ProductGaussianMessage})
+    return error(
+        "`$(nameof(typeof(f.dist)))` has no closed-form Williams product against a Gaussian belief. ",
+        "Choose the approximation explicitly via `NGMPDependencies(...; projection = ...)`: ",
+        "`TangentProjection(type = Unscented)` (3 sigma points) or ",
+        "`TangentProjection(type = Quadrature(n))` (exact to quadrature precision)."
+    )
+end
+
+function project(::TangentProjection{<:DeltaApproximation}, q::_GaussianProjectionPoint, f::Logpdf{<:_ProductGaussianMessage})
+    return error(
+        "`$(nameof(typeof(f.dist)))` has no analytic-derivative delta projection. ",
+        "Use `TangentProjection(type = Unscented)` (3 sigma points) or ",
+        "`TangentProjection(type = Quadrature(n))` (exact to quadrature precision)."
+    )
 end
