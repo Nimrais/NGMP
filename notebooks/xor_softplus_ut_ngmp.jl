@@ -48,8 +48,8 @@ the Gamma messages proper on this large factor graph.
 begin
     config = (
         n_samples =  1_600,
-        n_neurons =  16,
-        iterations = 200,
+        n_neurons =  8,
+        iterations = 100,
         train_fraction = 0.40,
         noise_std = 0.10,
         data_seed = 2_026,
@@ -59,12 +59,12 @@ begin
         gate_prior_precision = 1.0,
         ngmp_alpha = 0.2,
         ngmp_beta = 0.0,
-        ngmp_max_step = 0.1,
+        ngmp_max_step = 1.0,
         gamma_rate_prior_shape = 10.0,
         gamma_rate_prior_rate = 10.0,
         grid_size = 160,
         animation_fps = 5,
-        checkboard_size = (3, 3),
+        checkboard_size = (1, 4),
         output_dir = joinpath(@__DIR__, "..", "viz"),
     )
 end
@@ -186,6 +186,8 @@ positive rate regularizes the absolute gate scale.
     priors,
     dependencies,
     damping,
+    obs_dependencies,
+    obs_damping
 )
     local w_mean, w_a, z_mean, za, γ, τ, τ_mean, obs_noise, out, β
 
@@ -215,7 +217,10 @@ positive rate regularizes the absolute gate scale.
             out[observation] ~ NormalMeanPrecision(
                 z_mean[neuron, observation],
                 γ[neuron, observation],
-            )
+            ) where {
+                dependencies = obs_dependencies,
+                obs_damping = obs_damping
+            }
         end
         y[observation] ~ NormalMeanPrecision(out[observation], obs_noise)
     end
@@ -224,7 +229,7 @@ end
 # ╔═╡ 70d0a30d-54c8-4515-bfb5-3d470686bc99
 @constraints function xor_softplus_ut_constraints()
     q(w_mean, w_a, z_mean, za, γ, τ, τ_mean, out, obs_noise, β) =
-        q(w_mean, z_mean, out)q(w_a)q(za, γ)q(τ)q(τ_mean)q(obs_noise)q(β)
+        q(w_mean, z_mean, out, za, γ)q(w_a)q(τ)q(τ_mean)q(obs_noise)q(β)
 
     # softdot repeatedly consumes the same weight means and covariances.
     q(w_mean)::MomentForm()
@@ -232,8 +237,10 @@ end
 end
 
 # ╔═╡ 7f098370-c2fc-4d0c-86d2-5487a1527765
-@initialization function xor_softplus_ut_initialization(priors)
+@initialization function xor_softplus_ut_initialization(priors, output_mean)
     q(w_a) = deepcopy(priors[:w_a])
+    q(z_mean) = NormalMeanVariance(output_mean, 1.0)
+    q(out) = NormalMeanVariance(output_mean, 1.0)
     q(za) = NormalMeanVariance(0.0, 1.0)
     q(γ) = GammaShapeScale(2.0, 1.0)
     q(τ) = priors[:τ]
@@ -323,17 +330,35 @@ function run_softplus_ut_ngmp(
         max_step = ngmp_max_step,
     )
 
+    obs_dependencies = NGMPDependencies(
+        out = nothing,
+        μ = nothing,
+        τ = nothing,
+        projection = TangentProjection(type = Unscented),
+    )
+
+    obs_damping = DampingMeta(
+        alpha = ngmp_alpha,
+        beta = ngmp_beta,
+        max_step = ngmp_max_step,
+    )
+
     inference_model = xor_softplus_ut_ngmp(
         n_neurons = n_neurons,
         priors = priors,
         dependencies = dependencies,
         damping = damping,
+        obs_dependencies = obs_dependencies,
+        obs_damping = obs_damping
     )
+
+    output_mean = mean(observations)
+    
     result = infer(
         model = inference_model,
         data = (y = observations, features = features),
         constraints = xor_softplus_ut_constraints(),
-        initialization = xor_softplus_ut_initialization(priors),
+        initialization = xor_softplus_ut_initialization(priors, output_mean),
         iterations = iterations,
         free_energy = true,
         showprogress = showprogress,
