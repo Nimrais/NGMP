@@ -224,7 +224,7 @@ positive rate regularizes the absolute gate scale.
                 γ[neuron, observation],
             ) where {
                 dependencies = obs_dependencies,
-                obs_damping = obs_damping
+                meta = obs_damping
             }
         end
         y[observation] ~ NormalMeanPrecision(out[observation], obs_noise)
