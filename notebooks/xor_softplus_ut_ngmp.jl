@@ -14,7 +14,7 @@ end
 begin
     using DataFrames
     using ExponentialFamily
-    using LinearAlgebra: Diagonal, dot
+    using LinearAlgebra: Diagonal
     using StatsPlots
     using ProbabilisticEnsembling
     using Random
@@ -62,9 +62,14 @@ begin
         ngmp_max_step = 1.0,
         gamma_rate_prior_shape = 10.0,
         gamma_rate_prior_rate = 10.0,
+        prediction_iterations = 20,
+        prediction_batch_size = 1_024,
+        prediction_prior_variance = 1e12,
+        animation_frames = 12,
+        animation_grid_size = 60,
         grid_size = 160,
         animation_fps = 5,
-        checkboard_size = (1, 4),
+        checkboard_size = (2, 2),
         output_dir = joinpath(@__DIR__, "..", "viz"),
     )
 end
@@ -388,48 +393,289 @@ fit = run_softplus_ut_ngmp(
 )
 
 # ╔═╡ db34de5d-f617-4236-aabb-3318863b8acf
-stable_softplus(x::Real) = max(x, zero(x)) + log1p(exp(-abs(x)))
+@model function xor_softplus_ut_ngmp_prediction(
+    n_neurons,
+    features,
+    priors,
+    dependencies,
+    damping,
+    obs_dependencies,
+    obs_damping,
+    y_prior_variance,
+)
+    local w_mean, w_a, z_mean, za, γ, τ, τ_mean, obs_noise, out, β, y
+
+    τ ~ priors[:τ]
+    τ_mean ~ priors[:τ_mean]
+    obs_noise ~ priors[:obs_noise]
+    β ~ priors[:β]
+
+    for neuron in 1:n_neurons
+        w_mean[neuron] ~ priors[:w_mean][neuron]
+        w_a[neuron] ~ priors[:w_a][neuron]
+    end
+
+    for observation in eachindex(features)
+        for neuron in 1:n_neurons
+            z_mean[neuron, observation] ~
+                softdot(features[observation], w_mean[neuron], τ_mean)
+            za[neuron, observation] ~
+                softdot(features[observation], w_a[neuron], τ) where {
+                    meta = LowRankMeta(),
+                }
+            γ[neuron, observation] ~ GammaShapeRate(1.0, β)
+            γ[neuron, observation] ~ Softplus(za[neuron, observation]) where {
+                dependencies = dependencies,
+                meta = damping,
+            }
+            out[observation] ~ NormalMeanPrecision(
+                z_mean[neuron, observation],
+                γ[neuron, observation],
+            ) where {
+                dependencies = obs_dependencies,
+                meta = obs_damping,
+            }
+        end
+        y[observation] ~ NormalMeanPrecision(out[observation], obs_noise)
+        y[observation] ~ NormalMeanVariance(0.0, y_prior_variance)
+    end
+end
 
 # ╔═╡ df426399-1486-4640-86f6-dfc6d5542f08
-function predict_softplus(feature, w_means, w_as)
-    local_means = [dot(weight, feature) for weight in w_means]
-    gate_scores = [dot(weight, feature) for weight in w_as]
-    precisions = stable_softplus.(gate_scores)
-    total_precision = sum(precisions)
-    return total_precision > eps(Float64) ?
-        dot(precisions, local_means) / total_precision : mean(local_means)
+@constraints function xor_softplus_ut_prediction_constraints(priors)
+    # Keep the predictive output chain Gaussian while updating each gate through
+    # its own structured Softplus belief.
+    q(w_mean, w_a, z_mean, za, γ, τ, τ_mean, out, obs_noise, β, y) =
+        q(w_mean)q(w_a)q(τ)q(τ_mean)q(obs_noise)q(β)q(z_mean, out, y)q(za, γ)
+
+    q(τ)::RxInfer.FixedMarginalFormConstraint(priors[:τ])
+    q(τ_mean)::RxInfer.FixedMarginalFormConstraint(priors[:τ_mean])
+    q(obs_noise)::RxInfer.FixedMarginalFormConstraint(priors[:obs_noise])
+    q(β)::RxInfer.FixedMarginalFormConstraint(priors[:β])
+
+    for (neuron, prior) in enumerate(priors[:w_mean])
+        q(w_mean[neuron])::RxInfer.FixedMarginalFormConstraint(prior)
+    end
+    for (neuron, prior) in enumerate(priors[:w_a])
+        q(w_a[neuron])::RxInfer.FixedMarginalFormConstraint(prior)
+    end
 end
 
 # ╔═╡ 0f9e2758-1b87-4444-944b-dd12b33d05dc
-posterior_weights = [
-    (
-        w_means = mean.(fit.result.posteriors[:w_mean][iteration]),
-        w_as = mean.(fit.result.posteriors[:w_a][iteration]),
-    ) for iteration in eachindex(fit.result.posteriors[:w_mean])
-]
+@initialization function xor_softplus_ut_prediction_initialization(
+    priors,
+    output_mean,
+    y_prior_variance,
+)
+    q(w_mean) = deepcopy(priors[:w_mean])
+    q(w_a) = deepcopy(priors[:w_a])
+    q(z_mean) = NormalMeanVariance(output_mean, 1.0)
+    q(out) = NormalMeanVariance(output_mean, 1.0)
+    q(za) = NormalMeanVariance(0.0, 1.0)
+    q(γ) = GammaShapeScale(2.0, 1.0)
+    q(τ) = priors[:τ]
+    q(τ_mean) = priors[:τ_mean]
+    q(obs_noise) = priors[:obs_noise]
+    q(β) = priors[:β]
+    q(y) = NormalMeanVariance(output_mean, y_prior_variance)
+
+    μ(z_mean) = NormalMeanVariance(output_mean, 10.0)
+    μ(out) = NormalMeanVariance(output_mean, 10.0)
+    μ(y) = NormalMeanVariance(output_mean, y_prior_variance)
+end
 
 # ╔═╡ 6f70997c-dc59-4295-a168-4b9623165c9e
+function softplus_prediction_priors(result, iteration)
+    checkbounds(result.posteriors[:w_mean], iteration)
+    return Dict{Symbol, Any}(
+        :w_mean => deepcopy(result.posteriors[:w_mean][iteration]),
+        :w_a => deepcopy(result.posteriors[:w_a][iteration]),
+        :τ => deepcopy(result.posteriors[:τ][iteration]),
+        :τ_mean => deepcopy(result.posteriors[:τ_mean][iteration]),
+        :obs_noise => deepcopy(result.posteriors[:obs_noise][iteration]),
+        :β => deepcopy(result.posteriors[:β][iteration]),
+    )
+end
+
+# ╔═╡ f74c2668-9b51-4444-8c1e-e2027073d32d
+function run_softplus_prediction_batch(
+    priors,
+    features;
+    n_neurons,
+    iterations,
+    output_mean,
+    y_prior_variance,
+    ngmp_alpha,
+    ngmp_beta,
+    ngmp_max_step,
+)
+    isempty(features) && return Any[]
+
+    dependencies = NGMPDependencies(
+        out = nothing,
+        in = nothing,
+        projection = TangentProjection(type = Unscented),
+    )
+    obs_dependencies = NGMPDependencies(
+        τ = nothing,
+        projection = TangentProjection(type = Unscented),
+    )
+    damping = DampingMeta(
+        alpha = ngmp_alpha,
+        beta = ngmp_beta,
+        max_step = ngmp_max_step,
+    )
+    obs_damping = DampingMeta(
+        alpha = ngmp_alpha,
+        beta = ngmp_beta,
+        max_step = ngmp_max_step,
+    )
+
+    result = infer(
+        model = xor_softplus_ut_ngmp_prediction(
+            n_neurons = n_neurons,
+            priors = priors,
+            dependencies = dependencies,
+            damping = damping,
+            obs_dependencies = obs_dependencies,
+            obs_damping = obs_damping,
+            y_prior_variance = y_prior_variance,
+        ),
+        data = (features = features,),
+        constraints = xor_softplus_ut_prediction_constraints(priors),
+        initialization = xor_softplus_ut_prediction_initialization(
+            priors,
+            output_mean,
+            y_prior_variance,
+        ),
+        iterations = iterations,
+        free_energy = false,
+        showprogress = false,
+        returnvars = (y = KeepLast(),),
+        options = (limit_stack_depth = 100,),
+        disable_inference_error_hint = true,
+    )
+
+    marginals = collect(vec(result.posteriors[:y]))
+    length(marginals) == length(features) ||
+        error("prediction graph returned the wrong number of y marginals")
+    return marginals
+end
+
+# ╔═╡ b59e6867-147d-43d3-9db0-ed2a07460dc7
+function predict_softplus_marginals(
+    priors,
+    features;
+    batch_size,
+    kwargs...,
+)
+    batch_size > 0 || throw(ArgumentError("batch_size must be positive"))
+    marginals = Vector{Any}(undef, length(features))
+
+    for first_index in 1:batch_size:length(features)
+        indices = first_index:min(first_index + batch_size - 1, length(features))
+        marginals[indices] = run_softplus_prediction_batch(
+            priors,
+            features[indices];
+            kwargs...,
+        )
+    end
+    return marginals
+end
+
+# ╔═╡ b3cf22f8-82e3-47a4-82a3-7dc98f9ffec8
 begin
-      predictions_by_iteration = [
-          [
-              predict_softplus(feature, weights.w_means, weights.w_as) for
-              feature in test_features
-          ] for weights in posterior_weights
-      ]
+    function predictive_statistics(marginals)
+        means = Float64.(mean.(marginals))
+        variances = Float64.(var.(marginals))
+        all(isfinite, means) || error("prediction graph produced a non-finite mean")
+        all(variance -> isfinite(variance) && variance > 0, variances) ||
+            error("prediction graph produced a non-positive or non-finite variance")
+        return (mean = means, variance = variances)
+    end
+    
+    function thinned_iterations(n_iterations, n_frames)
+        n_iterations > 0 || throw(ArgumentError("n_iterations must be positive"))
+        n_frames > 0 || throw(ArgumentError("n_frames must be positive"))
+        n_frames == 1 && return [n_iterations]
+        return unique(round.(Int, range(
+            1,
+            n_iterations;
+            length = min(n_iterations, n_frames),
+        )))
+    end
+end
 
-      constant_prediction = mean(train_data.OT)
-      constant_mse = mean(abs2, constant_prediction .- test_data.OT)
+# ╔═╡ c3ec192b-2b65-4102-b417-eb8c1d042bb3
+animation_grid = let
+    x = range(-2.0, 2.0; length = config.animation_grid_size)
+    y = range(-2.0, 2.0; length = config.animation_grid_size)
+    actual = [
+        checkerboard_label(x_value, y_value, config.checkboard_size) for
+        y_value in y, x_value in x
+    ]
+    features = vec([
+        [1.0, x_value, y_value] for y_value in y, x_value in x
+    ])
+    (x = x, y = y, actual = actual, features = features)
+end
 
-      mse_by_iteration = [
-          mean(abs2, predictions .- test_data.OT) for
-          predictions in predictions_by_iteration
-      ]
+# ╔═╡ ae1f0398-f75c-4539-bfd2-3fbcc98d17f8
+begin
+    snapshot_iterations = thinned_iterations(
+        length(fit.result.posteriors[:w_mean]),
+        config.animation_frames,
+    )
+    prediction_output_mean = mean(train_data.OT)
+    n_test_predictions = length(test_features)
+    snapshot_features = vcat(test_features, animation_grid.features)
 
-      mse_history = DataFrame(
-          iteration = eachindex(mse_by_iteration),
-          test_mse = mse_by_iteration,
-      );
-  end
+    prediction_snapshots = map(snapshot_iterations) do training_iteration
+        priors = softplus_prediction_priors(fit.result, training_iteration)
+        marginals = predict_softplus_marginals(
+            priors,
+            snapshot_features;
+            batch_size = config.prediction_batch_size,
+            n_neurons = config.n_neurons,
+            iterations = config.prediction_iterations,
+            output_mean = prediction_output_mean,
+            y_prior_variance = config.prediction_prior_variance,
+            ngmp_alpha = config.ngmp_alpha,
+            ngmp_beta = config.ngmp_beta,
+            ngmp_max_step = config.ngmp_max_step,
+        )
+        test_statistics = predictive_statistics(
+            @view(marginals[1:n_test_predictions]),
+        )
+        surface_statistics = predictive_statistics(
+            @view(marginals[(n_test_predictions + 1):end]),
+        )
+        (
+            iteration = training_iteration,
+            test_mean = test_statistics.mean,
+            test_variance = test_statistics.variance,
+            test_mse = mean(abs2, test_statistics.mean .- test_data.OT),
+            mean_surface = reshape(
+                surface_statistics.mean,
+                length(animation_grid.y),
+                length(animation_grid.x),
+            ),
+            variance_surface = reshape(
+                surface_statistics.variance,
+                length(animation_grid.y),
+                length(animation_grid.x),
+            ),
+        )
+    end
+
+    constant_prediction = prediction_output_mean
+    constant_mse = mean(abs2, constant_prediction .- test_data.OT)
+    mse_by_iteration = getproperty.(prediction_snapshots, :test_mse)
+    mse_history = DataFrame(
+        iteration = snapshot_iterations,
+        test_mse = mse_by_iteration,
+    )
+end
 
 # ╔═╡ 87f5a99a-6251-44b1-bcd2-bf562715a35f
 begin
@@ -438,11 +684,14 @@ begin
     final_total_gamma = vec(sum(final_gamma_matrix; dims = 1))
     run_summary = DataFrame(
         neurons = config.n_neurons,
-        iterations = length(posterior_weights),
+        iterations = length(fit.result.posteriors[:w_mean]),
         train_points = nrow(train_data),
         test_points = nrow(test_data),
         test_mse = last(mse_by_iteration),
         constant_mse = constant_mse,
+        minimum_predictive_variance = minimum(prediction_snapshots[end].test_variance),
+        mean_predictive_variance = mean(prediction_snapshots[end].test_variance),
+        maximum_predictive_variance = maximum(prediction_snapshots[end].test_variance),
         minimum_gamma_shape = minimum(shape, final_gamma),
         minimum_gamma_rate = minimum(rate, final_gamma),
         maximum_total_gamma = maximum(final_total_gamma),
@@ -456,7 +705,7 @@ end
 # ╔═╡ 4758395c-51a4-43c4-b1e1-853678612c13
 learning_curve = let
     curve = plot(
-        eachindex(mse_by_iteration),
+        snapshot_iterations,
         mse_by_iteration;
         marker = :circle,
         linewidth = 2,
@@ -465,7 +714,7 @@ learning_curve = let
         ylabel = "Test MSE",
         title = "Checkerboard Softplus UT NGMP learning",
         label = "Softplus",
-        xlims = (0.5, length(mse_by_iteration) + 0.5),
+        xlims = (0.5, length(fit.result.posteriors[:w_mean]) + 0.5),
     )
     hline!(
         curve,
@@ -503,16 +752,22 @@ do not compare the values directly with another activation model.
 # ╔═╡ d45d778b-789a-4b66-a7c4-a2a42062007a
 learned_weights = DataFrame(
     neuron = 1:config.n_neurons,
-    mean_weights = posterior_weights[end].w_means,
-    gate_weights = posterior_weights[end].w_as,
+    mean_weights = mean.(fit.result.posteriors[:w_mean][end]),
+    gate_weights = mean.(fit.result.posteriors[:w_a][end]),
 )
 
 # ╔═╡ 8d66c7f6-75b7-4db6-8350-05257d80d0bb
 md"""
 ## Learned surface
 
-All iteration surfaces are cached below. This makes the final animation a
-rendering step rather than another inference run.
+Prediction uses a second RxInfer graph. Learned global marginals are fixed with
+`FixedMarginalFormConstraint`; each predictive ``y`` receives a diffuse
+``\mathcal{N}(0, 10^{12})`` factor. The resulting ``q(y)`` includes both latent
+model uncertainty and learned observation noise.
+
+The full-resolution final graph is used below. Animation frames use a smaller
+grid and a thinned set of training iterations so that the notebook remains
+interactive.
 """
 
 # ╔═╡ 429bd3a0-8c79-4376-a6b6-eb0c63cffb77
@@ -523,41 +778,77 @@ grid = let
         checkerboard_label(x_value, y_value, config.checkboard_size) for
         y_value in y, x_value in x
     ]
-    (x = x, y = y, actual = actual)
+    features = vec([
+        [1.0, x_value, y_value] for y_value in y, x_value in x
+    ])
+    (x = x, y = y, actual = actual, features = features)
 end
 
 # ╔═╡ 685ca7c0-ccea-4f7c-8067-5e948f0da331
-iteration_surfaces = [
-    [
-        predict_softplus(
-            [1.0, x_value, y_value],
-            weights.w_means,
-            weights.w_as,
-        ) for y_value in grid.y, x_value in grid.x
-    ] for weights in posterior_weights
-]
+final_grid_prediction = let
+    priors = softplus_prediction_priors(
+        fit.result,
+        length(fit.result.posteriors[:w_mean]),
+    )
+    marginals = predict_softplus_marginals(
+        priors,
+        grid.features;
+        batch_size = config.prediction_batch_size,
+        n_neurons = config.n_neurons,
+        iterations = config.prediction_iterations,
+        output_mean = prediction_output_mean,
+        y_prior_variance = config.prediction_prior_variance,
+        ngmp_alpha = config.ngmp_alpha,
+        ngmp_beta = config.ngmp_beta,
+        ngmp_max_step = config.ngmp_max_step,
+    )
+    statistics = predictive_statistics(marginals)
+    (
+        mean = reshape(statistics.mean, length(grid.y), length(grid.x)),
+        variance = reshape(
+            statistics.variance,
+            length(grid.y),
+            length(grid.x),
+        ),
+    )
+end
 
 # ╔═╡ 3395813c-c790-47c2-916e-75abb32355c4
-# Change this index to inspect a cached iteration without rerunning inference.
-surface_iteration = length(iteration_surfaces)
+final_variance_limits = let
+    lower = minimum(final_grid_prediction.variance)
+    upper = maximum(final_grid_prediction.variance)
+    lower == upper ? (lower, nextfloat(upper)) : (lower, upper)
+end
 
 # ╔═╡ d47d2ef0-da37-4127-ad06-1bb602e655c4
 final_surface_plot = let
-    checkbounds(iteration_surfaces, surface_iteration)
-    predicted_plot = contourf(
+    mean_panel = contourf(
         grid.x,
         grid.y,
-        iteration_surfaces[surface_iteration];
+        final_grid_prediction.mean;
         color = :RdBu,
         levels = 20,
         clims = (0, 1),
         xlabel = "x1",
         ylabel = "x2",
-        title = "Predicted",
+        title = "Predictive mean",
         linewidth = 0,
         aspect_ratio = :equal,
     )
-    actual_plot = heatmap(
+    variance_panel = contourf(
+        grid.x,
+        grid.y,
+        final_grid_prediction.variance;
+        color = :viridis,
+        levels = 20,
+        clims = final_variance_limits,
+        xlabel = "x1",
+        ylabel = "x2",
+        title = "Predictive variance q(y)",
+        linewidth = 0,
+        aspect_ratio = :equal,
+    )
+    actual_panel = heatmap(
         grid.x,
         grid.y,
         grid.actual;
@@ -569,11 +860,12 @@ final_surface_plot = let
         aspect_ratio = :equal,
     )
     plot(
-        predicted_plot,
-        actual_plot;
-        layout = (1, 2),
-        size = (1_000, 400),
-        plot_title = "$(config.checkboard_size[1])x$(config.checkboard_size[2]) checkerboard - iteration $surface_iteration",
+        mean_panel,
+        variance_panel,
+        actual_panel;
+        layout = (1, 3),
+        size = (1_350, 420),
+        plot_title = "$(config.checkboard_size[1])x$(config.checkboard_size[2]) checkerboard - posterior prediction",
     )
 end
 
@@ -582,29 +874,56 @@ md"""
 ## Learning animation
 
 The final cell shows the GIF inline in Pluto and writes a file named for the
-current checkerboard dimensions into `viz`.
+current checkerboard dimensions into `viz`. Each frame runs the prediction graph
+against a saved training posterior and displays total ``q(y)`` variance.
 """
 
 # ╔═╡ d8fa36a3-ac39-44e1-88e8-5adba1aa4ef1
 animation_output = let
-    animation = @animate for iteration in eachindex(iteration_surfaces)
-        predicted_panel = contourf(
-            grid.x,
-            grid.y,
-            iteration_surfaces[iteration];
+    all_animation_variances = reduce(
+        vcat,
+        vec.(getproperty.(prediction_snapshots, :variance_surface)),
+    )
+    variance_lower = minimum(all_animation_variances)
+    variance_upper = maximum(all_animation_variances)
+    variance_limits = variance_lower == variance_upper ?
+        (variance_lower, nextfloat(variance_upper)) :
+        (variance_lower, variance_upper)
+    mse_upper = max(constant_mse, maximum(mse_by_iteration))
+    mse_limits = (0.0, mse_upper > 0 ? 1.1 * mse_upper : 1.0)
+
+    animation = @animate for frame in eachindex(prediction_snapshots)
+        snapshot = prediction_snapshots[frame]
+        mean_panel = contourf(
+            animation_grid.x,
+            animation_grid.y,
+            snapshot.mean_surface;
             color = :RdBu,
             levels = 20,
             clims = (0, 1),
             xlabel = "x1",
             ylabel = "x2",
-            title = "Predicted (iteration $iteration)",
+            title = "Predictive mean",
+            linewidth = 0,
+            aspect_ratio = :equal,
+        )
+        variance_panel = contourf(
+            animation_grid.x,
+            animation_grid.y,
+            snapshot.variance_surface;
+            color = :viridis,
+            levels = 20,
+            clims = variance_limits,
+            xlabel = "x1",
+            ylabel = "x2",
+            title = "Predictive variance q(y)",
             linewidth = 0,
             aspect_ratio = :equal,
         )
         actual_panel = heatmap(
-            grid.x,
-            grid.y,
-            grid.actual;
+            animation_grid.x,
+            animation_grid.y,
+            animation_grid.actual;
             color = :RdBu,
             clims = (0, 1),
             xlabel = "x1",
@@ -613,20 +932,17 @@ animation_output = let
             aspect_ratio = :equal,
         )
         mse_panel = plot(
-            1:iteration,
-            mse_by_iteration[1:iteration];
+            snapshot_iterations[1:frame],
+            mse_by_iteration[1:frame];
             color = :steelblue,
             marker = :circle,
             linewidth = 2,
             xlabel = "Iteration",
             ylabel = "Test MSE",
-            title = "MSE = $(round(mse_by_iteration[iteration]; digits = 4))",
-            label = "Softplus",
-            xlims = (0.5, length(mse_by_iteration) + 0.5),
-            ylims = (
-                0,
-                1.1 * max(constant_mse, maximum(mse_by_iteration)),
-            ),
+            title = "MSE = $(round(snapshot.test_mse; digits = 4))",
+            label = "q(y) mean",
+            xlims = (0.5, length(fit.result.posteriors[:w_mean]) + 0.5),
+            ylims = mse_limits,
         )
         hline!(
             mse_panel,
@@ -636,12 +952,13 @@ animation_output = let
             label = "constant",
         )
         plot(
-            predicted_panel,
+            mean_panel,
+            variance_panel,
             actual_panel,
             mse_panel;
-            layout = (1, 3),
-            size = (1_350, 400),
-            plot_title = "$(config.checkboard_size[1])x$(config.checkboard_size[2]) checkerboard - iteration $iteration",
+            layout = (2, 2),
+            size = (1_100, 820),
+            plot_title = "$(config.checkboard_size[1])x$(config.checkboard_size[2]) checkerboard - training iteration $(snapshot.iteration)",
         )
     end
 
@@ -676,6 +993,11 @@ end
 # ╠═df426399-1486-4640-86f6-dfc6d5542f08
 # ╠═0f9e2758-1b87-4444-944b-dd12b33d05dc
 # ╠═6f70997c-dc59-4295-a168-4b9623165c9e
+# ╠═f74c2668-9b51-4444-8c1e-e2027073d32d
+# ╠═b59e6867-147d-43d3-9db0-ed2a07460dc7
+# ╠═b3cf22f8-82e3-47a4-82a3-7dc98f9ffec8
+# ╠═c3ec192b-2b65-4102-b417-eb8c1d042bb3
+# ╠═ae1f0398-f75c-4539-bfd2-3fbcc98d17f8
 # ╠═87f5a99a-6251-44b1-bcd2-bf562715a35f
 # ╠═4758395c-51a4-43c4-b1e1-853678612c13
 # ╠═726541a4-9de7-468f-9ac5-2ebcdcc18644
