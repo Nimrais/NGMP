@@ -28,20 +28,91 @@ end
 md"""
 # Checkerboard Softplus UT NGMP
 
-This notebook generalizes the successful XOR experiment to an ``N \times M``
-checkerboard. The `(2, 2)` special case is XOR; `checkboard_size` in `config`
-selects the active grid while keeping the inference model unchanged.
-
-The positive gate is
+This notebook trains a small Bayesian neural network on a noisy ``N \times M``
+checkerboard — the ``(2, 2)`` special case is XOR; `checkboard_size` in
+`config` selects the active grid — using **natural-gradient message passing
+(NGMP)**, the algorithm from *Information Geometry of Message Passing*, as
+implemented in the local `SurrogateModelling` package. Each neuron carries a
+positive, input-dependent precision gate
 
 ```math
 \gamma = \operatorname{softplus}(z_a) = \log(1 + e^{z_a}),
 ```
 
 with a Gamma belief on ``\gamma`` and a Gaussian belief on ``z_a``. Both
-Softplus messages use natural-gradient message passing. The tangent projection
-uses the unscented transform; damping and a bounded natural-parameter step keep
-the Gamma messages proper on this large factor graph.
+messages through the Softplus factor are computed with NGMP; the tangent
+projection is evaluated with the unscented transform.
+
+## NGMP in a nutshell
+
+Beliefs live in exponential families
+``q_\lambda(z) = h(z)\exp\{\lambda^\top T(z) - A(\lambda)\}``, which carry two
+coordinate systems: the natural parameters ``\lambda`` and the mean parameters
+``\mu(\lambda) = \nabla_\lambda A(\lambda) = \mathbb{E}_{q_\lambda}[T(z)]``.
+The Fisher information ``G(\lambda) = \nabla^2_\lambda A(\lambda)`` is the
+Jacobian of the map between them, which gives the identity that powers
+everything below: the *natural* gradient in ``\lambda`` is the *plain*
+gradient in ``\mu``,
+
+```math
+\tilde\nabla_\lambda F = G(\lambda)^{-1} \nabla_\lambda F = \nabla_\mu F .
+```
+
+On a factor graph, the exact belief-propagation (BP) message
+``\mu_{a \to i}(z_i)`` out of a non-conjugate factor such as Softplus has no
+finite parameterization: its logarithm ``\ell_{a \to i} = \log \mu_{a \to i}``
+is not a linear combination of the sufficient statistics ``T_i`` of the
+receiving edge. NGMP sends instead the exponential-family message whose
+natural parameter is the **natural gradient of the expected log-message**,
+evaluated at the *current marginal of the receiving edge*:
+
+```math
+\eta_{a \to i}
+  = \nabla_{\mu_i}\, \mathbb{E}_{q_{\lambda_i}}\!\bigl[ \ell_{a \to i}(z_i) \bigr],
+\qquad
+\hat\mu_{a \to i}(z_i) \propto \exp\{\eta_{a \to i}^\top T_i(z_i)\}.
+```
+
+Geometrically, ``\eta_{a \to i}`` is the projection of the exact log-message
+onto the tangent space of the receiving family at ``q_{\lambda_i}`` in the
+Fisher metric; the component orthogonal to the family is dropped. The
+stationary points of the (form-constrained) Bethe free energy satisfy, on
+every edge between factors ``b`` and ``c``,
+
+```math
+\lambda_i = \eta_{b \to i} + \eta_{c \to i},
+```
+
+the familiar BP "product of incoming messages", now with projected natural
+parameters. This is the same fixed point as global natural-gradient
+variational inference (CVI), derived edge-locally — so each edge can carry its
+own family: below, the Softplus factor sends a **Gamma** message towards
+``\gamma`` and a **Gaussian** message towards ``z_a``.
+
+Compared with its relatives:
+
+- **VMP** first tilts the factor by mean-field expectations and only then
+  sends a conjugate message; the tilting changes the message content (the
+  classic symptom is overconfident precision messages).
+- **EP** projects a tilted marginal and divides out the cavity. NGMP has no
+  cavity step: the projection point is simply the current receiving marginal,
+  so an outgoing message depends on the belief it is sent *to*, and inference
+  becomes a fixed-point iteration in the natural parameters.
+
+Two practical ingredients complete the algorithm:
+
+- **Unscented tangent projection.** The projection reduces to
+  ``G_i^{-1}\operatorname{Cov}_{q_{\lambda_i}}\!\bigl[T_i(z_i),\, \ell_{a \to i}(z_i)\bigr]``,
+  expectations with no closed form for Softplus.
+  `TangentProjection(type = Unscented)` evaluates them with deterministic
+  sigma points rather than Monte-Carlo samples.
+- **Damping.** Writing one full sweep of projections as
+  ``\Phi(\lambda)``, NGMP iterates ``\lambda^{(t+1)} = \Phi(\lambda^{(t)})``.
+  `DampingMeta(alpha, beta, max_step)` relaxes the iteration in natural
+  coordinates, ``\lambda^{(t+1)} = (1-\alpha)\lambda^{(t)} + \alpha\,\Phi(\lambda^{(t)})``,
+  optionally adds momentum ``\beta``, and bounds the natural-parameter step.
+  Damping changes the path, not the fixed point, and keeps the Gamma messages
+  proper on this large factor graph.
 """
 
 # ╔═╡ ba670c90-a7db-4f2b-8067-cf3e3c9b58d4
@@ -65,12 +136,13 @@ begin
         prediction_iterations = 20,
         prediction_batch_size = 1_024,
         prediction_prior_variance = 1e12,
-        animation_frames = 12,
-        animation_grid_size = 60,
-        grid_size = 160,
-        animation_fps = 5,
+        mse_snapshots = 12,
+        mse_subsample = 240,
+        mse_subsample_seed = 2_028,
+        # Quick-look resolution. Raise for publication figures, or use
+        # scripts/xor_softplus_ut_ngmp_animation.jl for the heavy renders.
+        grid_size = 60,
         checkboard_size = (2, 2),
-        output_dir = joinpath(@__DIR__, "..", "viz"),
     )
 end
 
@@ -166,10 +238,39 @@ scatter(
 md"""
 ## Softplus model
 
-Each neuron contributes a local linear mean and a positive input-dependent
-precision. The shared output is therefore a precision-weighted ensemble. The
-`NGMPDependencies` object below requests an unscented tangent projection on
-both Softplus message edges.
+The network is a **precision-gated ensemble** of `n_neurons` linear neurons.
+For an input with features ``x = [1, x_1, x_2]`` each neuron ``k`` owns two
+weight vectors:
+
+- a *mean branch* ``z^{\mathrm{mean}}_k \sim \operatorname{softdot}(x, w^{\mathrm{mean}}_k, \tau_{\mathrm{mean}})``
+  — its local linear prediction, and
+- a *gate branch* ``z^{a}_k \sim \operatorname{softdot}(x, w^{a}_k, \tau)``,
+  pushed through the Softplus factor to yield a positive precision
+  ``\gamma_k = \operatorname{softplus}(z^a_k)``.
+
+Each neuron then attaches a factor
+``\mathcal{N}(\mathrm{out} \mid z^{\mathrm{mean}}_k, \gamma_k^{-1})`` to the
+shared output. Multiplying the ``K`` Gaussian factors gives
+
+```math
+p(\mathrm{out} \mid \cdot) \propto \mathcal{N}\!\left(
+\mathrm{out} \,\middle|\,
+\frac{\sum_k \gamma_k z^{\mathrm{mean}}_k}{\sum_k \gamma_k},\;
+\Bigl(\sum_k \gamma_k\Bigr)^{-1}
+\right),
+```
+
+a precision-weighted ensemble: ``\gamma_k(x)`` is an input-dependent
+*responsibility*, so a neuron whose gate is large in some region of the input
+plane dominates the prediction there — a mixture-of-experts built entirely
+from Gaussian and Gamma beliefs.
+
+The Softplus factor connects a **Gaussian** belief on ``z^a`` to a **Gamma**
+belief on ``\gamma``. Neither exact BP message is representable in the
+receiving family, so both are sent as NGMP tangent projections: the
+`NGMPDependencies` objects below request the unscented projection on both
+edges. The `NormalMeanPrecision` output factor gets the same treatment — its
+exact message towards ``\gamma`` is likewise non-conjugate.
 
 Every local precision also has an exponential prior with one inferred global
 rate:
@@ -230,6 +331,18 @@ positive rate regularizes the absolute gate scale.
         y[observation] ~ NormalMeanPrecision(out[observation], obs_noise)
     end
 end
+
+# ╔═╡ 3c1f5a2e-8f4d-4b6a-9c3e-2d7b1e5a9f04
+md"""
+The variational family is structured, not fully mean-field: the joint cluster
+``q(w_{\mathrm{mean}}, z_{\mathrm{mean}}, \mathrm{out}, z_a, \gamma)`` keeps
+the coupling between each neuron's mean branch and its gate — exactly the
+correlation that decides *which* neuron is responsible *where*. Severing it
+with a full mean-field factorization would feed every neuron the same averaged
+residual. `MomentForm()` stores the weight posteriors in moment
+parameterization because the `softdot` rules repeatedly consume the same
+weight means and covariances.
+"""
 
 # ╔═╡ 70d0a30d-54c8-4515-bfb5-3d470686bc99
 @constraints function xor_softplus_ut_constraints()
@@ -376,8 +489,22 @@ function run_softplus_ut_ngmp(
     )
 end
 
+# ╔═╡ b7e2c4d1-56a9-4f3b-8e0d-4a1c9f6b2e73
+md"""
+## Training
+
+One `infer` iteration sweeps the whole graph once: every Softplus and every
+`NormalMeanPrecision` output factor recomputes its unscented tangent
+projection at the current edge marginals and applies the damped
+natural-parameter update, then the conjugate part of the graph (the `softdot`
+weight updates) responds with ordinary message passing. The Bethe free energy
+is recorded per iteration as a convergence diagnostic. At the default config
+(100 iterations over 640 training points and 8 neurons) this takes on the
+order of a minute.
+"""
+
 # ╔═╡ 041edacb-5c47-487c-8117-0757e79d975f
-fit = run_softplus_ut_ngmp(
+ngmp_fit = run_softplus_ut_ngmp(
         train_data.OT,
         train_features;
         n_neurons = config.n_neurons,
@@ -391,6 +518,30 @@ fit = run_softplus_ut_ngmp(
         ngmp_beta = config.ngmp_beta,
         ngmp_max_step = config.ngmp_max_step,
 )
+
+# ╔═╡ c5b2f8e3-7a1d-4c96-b04e-6f3a8d2c1e59
+md"""
+## Prediction is inference
+
+There is no closed-form predictive function to evaluate: at a new input the
+per-observation latents — the gate variables ``z_a`` and ``\gamma``, the mean
+branches ``z_{\mathrm{mean}}`` and the ensemble output ``\mathrm{out}`` —
+must themselves be inferred. Prediction therefore uses a second RxInfer graph
+with the same local structure, in which
+
+- the learned global marginals (weights, precisions, ``\beta``) are clamped
+  with `FixedMarginalFormConstraint`, and
+- each ``y`` receives a diffuse ``\mathcal{N}(0, 10^{12})`` factor instead of
+  data, making it an effectively unobserved latent whose posterior ``q(y)``
+  carries both latent model uncertainty and the learned observation noise.
+
+Each batch runs `prediction_iterations` NGMP sweeps, because the gate messages
+again require the fixed-point tangent projection. This is why evaluating the
+model on many points is not free — and why this notebook tracks the learning
+curve on a small test subsample and predicts over a full grid only once, at
+the final training iteration. The heavy renders (high-resolution surface,
+learning animation) live in `scripts/xor_softplus_ut_ngmp_animation.jl`.
+"""
 
 # ╔═╡ db34de5d-f617-4236-aabb-3318863b8acf
 @model function xor_softplus_ut_ngmp_prediction(
@@ -606,35 +757,40 @@ begin
     end
 end
 
-# ╔═╡ c3ec192b-2b65-4102-b417-eb8c1d042bb3
-animation_grid = let
-    x = range(-2.0, 2.0; length = config.animation_grid_size)
-    y = range(-2.0, 2.0; length = config.animation_grid_size)
-    actual = [
-        checkerboard_label(x_value, y_value, config.checkboard_size) for
-        y_value in y, x_value in x
-    ]
-    features = vec([
-        [1.0, x_value, y_value] for y_value in y, x_value in x
-    ])
-    (x = x, y = y, actual = actual, features = features)
-end
+# ╔═╡ f2a7d9c4-3e61-48b2-95af-8c0d6e1b3f52
+md"""
+## Learning curve
+
+Because every evaluation is an inference run, the learning curve is tracked
+cheaply: test MSE is measured at `mse_snapshots` thinned training iterations
+on a fixed random subsample of `mse_subsample` test points — enough to see
+when learning saturates. The full test set is evaluated once, at the final
+iteration, in the cell after next.
+"""
 
 # ╔═╡ ae1f0398-f75c-4539-bfd2-3fbcc98d17f8
 begin
     snapshot_iterations = thinned_iterations(
-        length(fit.result.posteriors[:w_mean]),
-        config.animation_frames,
+        length(ngmp_fit.result.posteriors[:w_mean]),
+        config.mse_snapshots,
     )
     prediction_output_mean = mean(train_data.OT)
-    n_test_predictions = length(test_features)
-    snapshot_features = vcat(test_features, animation_grid.features)
+
+    # A fixed random subsample keeps the per-snapshot prediction runs cheap;
+    # the full test set is evaluated once at the final iteration below.
+    mse_subsample_indices = let
+        rng = StableRNG(config.mse_subsample_seed)
+        n_subsample = min(config.mse_subsample, length(test_features))
+        sort(randperm(rng, length(test_features))[1:n_subsample])
+    end
+    mse_features = test_features[mse_subsample_indices]
+    mse_targets = test_data.OT[mse_subsample_indices]
 
     prediction_snapshots = map(snapshot_iterations) do training_iteration
-        priors = softplus_prediction_priors(fit.result, training_iteration)
+        priors = softplus_prediction_priors(ngmp_fit.result, training_iteration)
         marginals = predict_softplus_marginals(
             priors,
-            snapshot_features;
+            mse_features;
             batch_size = config.prediction_batch_size,
             n_neurons = config.n_neurons,
             iterations = config.prediction_iterations,
@@ -644,32 +800,16 @@ begin
             ngmp_beta = config.ngmp_beta,
             ngmp_max_step = config.ngmp_max_step,
         )
-        test_statistics = predictive_statistics(
-            @view(marginals[1:n_test_predictions]),
-        )
-        surface_statistics = predictive_statistics(
-            @view(marginals[(n_test_predictions + 1):end]),
-        )
+        statistics = predictive_statistics(marginals)
         (
             iteration = training_iteration,
-            test_mean = test_statistics.mean,
-            test_variance = test_statistics.variance,
-            test_mse = mean(abs2, test_statistics.mean .- test_data.OT),
-            mean_surface = reshape(
-                surface_statistics.mean,
-                length(animation_grid.y),
-                length(animation_grid.x),
-            ),
-            variance_surface = reshape(
-                surface_statistics.variance,
-                length(animation_grid.y),
-                length(animation_grid.x),
-            ),
+            test_mse = mean(abs2, statistics.mean .- mse_targets),
         )
     end
 
     constant_prediction = prediction_output_mean
-    constant_mse = mean(abs2, constant_prediction .- test_data.OT)
+    constant_mse = mean(abs2, constant_prediction .- mse_targets)
+    constant_mse_full = mean(abs2, constant_prediction .- test_data.OT)
     mse_by_iteration = getproperty.(prediction_snapshots, :test_mse)
     mse_history = DataFrame(
         iteration = snapshot_iterations,
@@ -677,28 +817,54 @@ begin
     )
 end
 
+# ╔═╡ e9d3b8a2-1c47-4f5e-a6b9-7d2f0c4e8a15
+final_test_evaluation = let
+    priors = softplus_prediction_priors(
+        ngmp_fit.result,
+        length(ngmp_fit.result.posteriors[:w_mean]),
+    )
+    marginals = predict_softplus_marginals(
+        priors,
+        test_features;
+        batch_size = config.prediction_batch_size,
+        n_neurons = config.n_neurons,
+        iterations = config.prediction_iterations,
+        output_mean = prediction_output_mean,
+        y_prior_variance = config.prediction_prior_variance,
+        ngmp_alpha = config.ngmp_alpha,
+        ngmp_beta = config.ngmp_beta,
+        ngmp_max_step = config.ngmp_max_step,
+    )
+    statistics = predictive_statistics(marginals)
+    (
+        mean = statistics.mean,
+        variance = statistics.variance,
+        mse = mean(abs2, statistics.mean .- test_data.OT),
+    )
+end
+
 # ╔═╡ 87f5a99a-6251-44b1-bcd2-bf562715a35f
 begin
-    final_gamma = vec(fit.result.posteriors[:γ][end])
-    final_gamma_matrix = mean.(fit.result.posteriors[:γ][end])
+    final_gamma = vec(ngmp_fit.result.posteriors[:γ][end])
+    final_gamma_matrix = mean.(ngmp_fit.result.posteriors[:γ][end])
     final_total_gamma = vec(sum(final_gamma_matrix; dims = 1))
     run_summary = DataFrame(
         neurons = config.n_neurons,
-        iterations = length(fit.result.posteriors[:w_mean]),
+        iterations = length(ngmp_fit.result.posteriors[:w_mean]),
         train_points = nrow(train_data),
         test_points = nrow(test_data),
-        test_mse = last(mse_by_iteration),
-        constant_mse = constant_mse,
-        minimum_predictive_variance = minimum(prediction_snapshots[end].test_variance),
-        mean_predictive_variance = mean(prediction_snapshots[end].test_variance),
-        maximum_predictive_variance = maximum(prediction_snapshots[end].test_variance),
+        test_mse = final_test_evaluation.mse,
+        constant_mse = constant_mse_full,
+        minimum_predictive_variance = minimum(final_test_evaluation.variance),
+        mean_predictive_variance = mean(final_test_evaluation.variance),
+        maximum_predictive_variance = maximum(final_test_evaluation.variance),
         minimum_gamma_shape = minimum(shape, final_gamma),
         minimum_gamma_rate = minimum(rate, final_gamma),
         maximum_total_gamma = maximum(final_total_gamma),
-        global_gamma_rate = mean(fit.result.posteriors[:β][end]),
-        gate_softdot_precision = mean(fit.result.posteriors[:τ][end]),
-        mean_softdot_precision = mean(fit.result.posteriors[:τ_mean][end]),
-        observation_precision = mean(fit.result.posteriors[:obs_noise][end]),
+        global_gamma_rate = mean(ngmp_fit.result.posteriors[:β][end]),
+        gate_softdot_precision = mean(ngmp_fit.result.posteriors[:τ][end]),
+        mean_softdot_precision = mean(ngmp_fit.result.posteriors[:τ_mean][end]),
+        observation_precision = mean(ngmp_fit.result.posteriors[:obs_noise][end]),
     )
 end
 
@@ -711,10 +877,10 @@ learning_curve = let
         linewidth = 2,
         color = :steelblue,
         xlabel = "Iteration",
-        ylabel = "Test MSE",
+        ylabel = "Test MSE ($(length(mse_targets))-point subsample)",
         title = "Checkerboard Softplus UT NGMP learning",
         label = "Softplus",
-        xlims = (0.5, length(fit.result.posteriors[:w_mean]) + 0.5),
+        xlims = (0.5, length(ngmp_fit.result.posteriors[:w_mean]) + 0.5),
     )
     hline!(
         curve,
@@ -730,8 +896,8 @@ end
 begin
     start_from = 1
     plot(
-        eachindex(fit.result.free_energy[start_from:end]),
-        fit.result.free_energy[start_from:end];
+        eachindex(ngmp_fit.result.free_energy[start_from:end]),
+        ngmp_fit.result.free_energy[start_from:end];
         marker = :circle,
         linewidth = 2,
         color = :darkorange,
@@ -752,22 +918,16 @@ do not compare the values directly with another activation model.
 # ╔═╡ d45d778b-789a-4b66-a7c4-a2a42062007a
 learned_weights = DataFrame(
     neuron = 1:config.n_neurons,
-    mean_weights = mean.(fit.result.posteriors[:w_mean][end]),
-    gate_weights = mean.(fit.result.posteriors[:w_a][end]),
+    mean_weights = mean.(ngmp_fit.result.posteriors[:w_mean][end]),
+    gate_weights = mean.(ngmp_fit.result.posteriors[:w_a][end]),
 )
 
 # ╔═╡ 8d66c7f6-75b7-4db6-8350-05257d80d0bb
 md"""
 ## Learned surface
 
-Prediction uses a second RxInfer graph. Learned global marginals are fixed with
-`FixedMarginalFormConstraint`; each predictive ``y`` receives a diffuse
-``\mathcal{N}(0, 10^{12})`` factor. The resulting ``q(y)`` includes both latent
-model uncertainty and learned observation noise.
-
-The full-resolution final graph is used below. Animation frames use a smaller
-grid and a thinned set of training iterations so that the notebook remains
-interactive.
+The final-iteration posterior is pushed through the prediction graph over a
+`grid_size` × `grid_size` grid.
 """
 
 # ╔═╡ 429bd3a0-8c79-4376-a6b6-eb0c63cffb77
@@ -787,8 +947,8 @@ end
 # ╔═╡ 685ca7c0-ccea-4f7c-8067-5e948f0da331
 final_grid_prediction = let
     priors = softplus_prediction_priors(
-        fit.result,
-        length(fit.result.posteriors[:w_mean]),
+        ngmp_fit.result,
+        length(ngmp_fit.result.posteriors[:w_mean]),
     )
     marginals = predict_softplus_marginals(
         priors,
@@ -873,102 +1033,15 @@ end
 md"""
 ## Learning animation
 
-The final cell shows the GIF inline in Pluto and writes a file named for the
-current checkerboard dimensions into `viz`. Each frame runs the prediction graph
-against a saved training posterior and displays total ``q(y)`` variance.
+The animated version of the surface above — the predictive mean and variance
+evolving across training iterations, next to the running test MSE — lives in
+`scripts/xor_softplus_ut_ngmp_animation.jl`. The script is a self-contained
+copy of this model (edit its `config` block to play with the architecture,
+checkerboard size, and NGMP parameters); it writes
+`viz/checkerboard_<N>x<M>_softplus_ut_ngmp_learning.gif` and a
+high-resolution final surface PNG. It re-runs the prediction graph over a full
+grid for every frame, so expect roughly 15–20 minutes at the default settings.
 """
-
-# ╔═╡ d8fa36a3-ac39-44e1-88e8-5adba1aa4ef1
-animation_output = let
-    all_animation_variances = reduce(
-        vcat,
-        vec.(getproperty.(prediction_snapshots, :variance_surface)),
-    )
-    variance_lower = minimum(all_animation_variances)
-    variance_upper = maximum(all_animation_variances)
-    variance_limits = variance_lower == variance_upper ?
-        (variance_lower, nextfloat(variance_upper)) :
-        (variance_lower, variance_upper)
-    mse_upper = max(constant_mse, maximum(mse_by_iteration))
-    mse_limits = (0.0, mse_upper > 0 ? 1.1 * mse_upper : 1.0)
-
-    animation = @animate for frame in eachindex(prediction_snapshots)
-        snapshot = prediction_snapshots[frame]
-        mean_panel = contourf(
-            animation_grid.x,
-            animation_grid.y,
-            snapshot.mean_surface;
-            color = :RdBu,
-            levels = 20,
-            clims = (0, 1),
-            xlabel = "x1",
-            ylabel = "x2",
-            title = "Predictive mean",
-            linewidth = 0,
-            aspect_ratio = :equal,
-        )
-        variance_panel = contourf(
-            animation_grid.x,
-            animation_grid.y,
-            snapshot.variance_surface;
-            color = :viridis,
-            levels = 20,
-            clims = variance_limits,
-            xlabel = "x1",
-            ylabel = "x2",
-            title = "Predictive variance q(y)",
-            linewidth = 0,
-            aspect_ratio = :equal,
-        )
-        actual_panel = heatmap(
-            animation_grid.x,
-            animation_grid.y,
-            animation_grid.actual;
-            color = :RdBu,
-            clims = (0, 1),
-            xlabel = "x1",
-            ylabel = "x2",
-            title = "Clean $(config.checkboard_size[1])x$(config.checkboard_size[2]) target",
-            aspect_ratio = :equal,
-        )
-        mse_panel = plot(
-            snapshot_iterations[1:frame],
-            mse_by_iteration[1:frame];
-            color = :steelblue,
-            marker = :circle,
-            linewidth = 2,
-            xlabel = "Iteration",
-            ylabel = "Test MSE",
-            title = "MSE = $(round(snapshot.test_mse; digits = 4))",
-            label = "q(y) mean",
-            xlims = (0.5, length(fit.result.posteriors[:w_mean]) + 0.5),
-            ylims = mse_limits,
-        )
-        hline!(
-            mse_panel,
-            [constant_mse];
-            color = :black,
-            linestyle = :dash,
-            label = "constant",
-        )
-        plot(
-            mean_panel,
-            variance_panel,
-            actual_panel,
-            mse_panel;
-            layout = (2, 2),
-            size = (1_100, 820),
-            plot_title = "$(config.checkboard_size[1])x$(config.checkboard_size[2]) checkerboard - training iteration $(snapshot.iteration)",
-        )
-    end
-
-    mkpath(config.output_dir)
-    output_path = joinpath(
-        config.output_dir,
-        "checkerboard_$(config.checkboard_size[1])x$(config.checkboard_size[2])_softplus_ut_ngmp_learning.gif",
-    )
-    gif(animation, output_path; fps = config.animation_fps)
-end
 
 # ╔═╡ Cell order:
 # ╠═01d63ba0-6582-4aa6-a102-81a361672512
@@ -984,11 +1057,14 @@ end
 # ╠═d47a3bc7-d040-4675-98d5-1497cdfaa673
 # ╟─57bb6db3-53bb-4fde-96c6-ce26a33e8029
 # ╠═222053f5-382d-418e-a649-045d59728513
+# ╟─3c1f5a2e-8f4d-4b6a-9c3e-2d7b1e5a9f04
 # ╠═70d0a30d-54c8-4515-bfb5-3d470686bc99
 # ╠═7f098370-c2fc-4d0c-86d2-5487a1527765
 # ╠═9e3a784a-ea10-4edc-b5c8-583bc3df77c0
 # ╠═c9267a99-5dfc-4d89-b054-eab7a4c69484
+# ╟─b7e2c4d1-56a9-4f3b-8e0d-4a1c9f6b2e73
 # ╠═041edacb-5c47-487c-8117-0757e79d975f
+# ╟─c5b2f8e3-7a1d-4c96-b04e-6f3a8d2c1e59
 # ╠═db34de5d-f617-4236-aabb-3318863b8acf
 # ╠═df426399-1486-4640-86f6-dfc6d5542f08
 # ╠═0f9e2758-1b87-4444-944b-dd12b33d05dc
@@ -996,17 +1072,17 @@ end
 # ╠═f74c2668-9b51-4444-8c1e-e2027073d32d
 # ╠═b59e6867-147d-43d3-9db0-ed2a07460dc7
 # ╠═b3cf22f8-82e3-47a4-82a3-7dc98f9ffec8
-# ╠═c3ec192b-2b65-4102-b417-eb8c1d042bb3
+# ╟─f2a7d9c4-3e61-48b2-95af-8c0d6e1b3f52
 # ╠═ae1f0398-f75c-4539-bfd2-3fbcc98d17f8
+# ╠═e9d3b8a2-1c47-4f5e-a6b9-7d2f0c4e8a15
 # ╠═87f5a99a-6251-44b1-bcd2-bf562715a35f
 # ╠═4758395c-51a4-43c4-b1e1-853678612c13
 # ╠═726541a4-9de7-468f-9ac5-2ebcdcc18644
 # ╟─a6830b67-90bd-41bd-a5be-85a6ace9eccd
 # ╠═d45d778b-789a-4b66-a7c4-a2a42062007a
-# ╟─8d66c7f6-75b7-4db6-8350-05257d80d0bb
+# ╠═8d66c7f6-75b7-4db6-8350-05257d80d0bb
 # ╠═429bd3a0-8c79-4376-a6b6-eb0c63cffb77
 # ╠═685ca7c0-ccea-4f7c-8067-5e948f0da331
 # ╠═3395813c-c790-47c2-916e-75abb32355c4
 # ╠═d47d2ef0-da37-4127-ad06-1bb602e655c4
 # ╟─5bc819f5-61a4-47d3-ac36-5c022f9aca99
-# ╠═d8fa36a3-ac39-44e1-88e8-5adba1aa4ef1
