@@ -16,11 +16,14 @@ const SUPPORTED_HORIZONS = (96, 192, 336, 720)
 const SUPPORTED_ARMS = (:vmp, :ngmp, :relaxed)
 const ETTH2_COMPARISON_CONFIG = (
     training_observations=0, # 0 uses the complete validation split
-    inference_iterations=20,
+    training_batch_size=250,
+    repeat_batch=1, # resample once per variational iteration
+    inference_iterations=5,
+    prediction_batch_size=250,
     prediction_iterations=3,
+    prediction_method=:rxinfer_fixed_marginals,
     alpha=0.2,
     beta=0.0,
-    kappa=1.0,
     arms=SUPPORTED_ARMS,
     limit_stack_depth=500,
     show_progress=true,
@@ -126,49 +129,27 @@ end
     q(beta) = priors[:β]
 end
 
-@model function inner_z(n_forecasters, n_obs, features, w_priors, tau_priors, obsz, Rz)
-    local w, z, tau
-    for i in 1:n_forecasters
-        w[i] ~ w_priors[i]
-        tau[i] ~ tau_priors[i]
-    end
-    for j in 1:n_obs, i in 1:n_forecasters
-        z[i, j] ~ softdot(features[j], w[i], tau[i])
-        obsz[i, j] ~ NormalMeanVariance(z[i, j], Rz[i, j])
-    end
-end
-
-@constraints function inner_z_constraints()
-    q(w, z, tau) = q(w, z)q(tau)
-end
-
-function infer_qz(features, w_priors, tau_priors; iterations, limit_stack_depth)
-    n_forecasters = length(w_priors)
-    n_obs = length(features)
-    initialization = @initialization begin
-        q(w) = w_priors
-        q(tau) = tau_priors
-        q(z) = NormalMeanVariance(0.0, 1.0)
-    end
-    result = infer(
-        model=inner_z(
-            n_forecasters=n_forecasters,
-            n_obs=n_obs,
-            w_priors=w_priors,
-            tau_priors=tau_priors,
-        ),
-        data=(
-            features=features,
-            obsz=zeros(n_forecasters, n_obs),
-            Rz=fill(1e12, n_forecasters, n_obs),
-        ),
-        constraints=inner_z_constraints(),
-        initialization=initialization,
-        iterations=iterations,
-        options=(limit_stack_depth=limit_stack_depth,),
+@constraints function dynamic_prediction_constraints(priors)
+    q(w, z, gamma, tau, beta) = q(w)q(z, gamma)q(tau)q(beta)
+    q(z)::ProjectedTo(
+        NormalMeanVariance,
+        parameters=ProjectionParameters(strategy=ClosedFormStrategy()),
     )
-    qz = last(result.posteriors[:z])
-    return map(mean, qz), map(var, qz)
+    q(gamma)::ProjectedTo(
+        Gamma,
+        parameters=ProjectionParameters(strategy=ClosedFormStrategy()),
+    )
+    # Match PrecisionGatedExperts prediction: learned global marginals are
+    # fixed, while z, gamma, and the missing target y are inferred per batch.
+    for (i, prior) in enumerate(deepcopy(priors[:w]))
+        q(w[i])::RxInfer.FixedMarginalFormConstraint(prior)
+    end
+    for (i, prior) in enumerate(priors[:τ])
+        q(tau[i])::RxInfer.FixedMarginalFormConstraint(prior)
+    end
+    for (i, prior) in enumerate(priors[:β])
+        q(beta[i])::RxInfer.FixedMarginalFormConstraint(prior)
+    end
 end
 
 function dynamic_predict(
@@ -176,24 +157,62 @@ function dynamic_predict(
     predictions,
     w,
     tau,
-    expected_beta;
-    kappa,
+    beta;
     iterations,
     limit_stack_depth,
 )
     n_forecasters, n_obs = size(predictions)
-    mean_z, var_z = infer_qz(features, w, tau; iterations, limit_stack_depth)
-    predictive_variance = exp.(.-mean_z .+ var_z ./ 2) .+
-                          kappa .* reshape(Float64.(expected_beta), n_forecasters, 1)
-    precision = clamp.(1 ./ predictive_variance, 1e-6, 1e6)
+    priors = Dict{Symbol,Any}(
+        :w => deepcopy(w),
+        :τ => deepcopy(tau),
+        :β => deepcopy(beta),
+    )
+    result = infer(
+        model=dynamic_vmp(; n_forecasters, n_obs, priors),
+        data=(
+            y=fill(missing, n_obs),
+            features=features,
+            predictions=predictions,
+        ),
+        constraints=dynamic_prediction_constraints(priors),
+        initialization=dynamic_initialization(priors),
+        iterations=iterations,
+        free_energy=false,
+        options=(limit_stack_depth=limit_stack_depth,),
+    )
+    predictive = last(result.predictions[:y])
+    return mean.(predictive), std.(predictive)
+end
+
+function dynamic_predict_batched(
+    features,
+    predictions,
+    w,
+    tau,
+    beta;
+    iterations,
+    limit_stack_depth,
+    batch_size,
+)
+    n_obs = size(predictions, 2)
+    n_obs > 0 || throw(ArgumentError("prediction data must not be empty"))
+    batch_size > 0 || throw(ArgumentError("prediction batch size must be positive"))
     predictive_mean = Vector{Float64}(undef, n_obs)
     predictive_std = Vector{Float64}(undef, n_obs)
-    for j in 1:n_obs
-        total_precision = sum(@view precision[:, j])
-        predictive_mean[j] = sum(
-            precision[i, j] * predictions[i, j] for i in 1:n_forecasters
-        ) / total_precision
-        predictive_std[j] = sqrt(inv(total_precision))
+    for batch_start in 1:batch_size:n_obs
+        batch_end = min(batch_start + batch_size - 1, n_obs)
+        batch_range = batch_start:batch_end
+        batch_mean, batch_std = dynamic_predict(
+            features[batch_range],
+            predictions[:, batch_range],
+            w,
+            tau,
+            beta;
+            iterations,
+            limit_stack_depth,
+        )
+        predictive_mean[batch_range] = batch_mean
+        predictive_std[batch_range] = batch_std
     end
     return predictive_mean, predictive_std
 end
@@ -278,14 +297,26 @@ function run_arm(
     predictions,
     targets;
     iterations,
+    training_batch_size,
+    repeat_batch,
     alpha,
     beta,
     limit_stack_depth,
     showprogress,
 )
     n_forecasters = size(predictions, 1)
-    n_obs = length(targets)
-    common_data = (y=targets, features=features, predictions=predictions)
+    training_observations = length(targets)
+    training_observations > 0 || throw(ArgumentError("training data must not be empty"))
+    training_batch_size > 0 || throw(ArgumentError("training batch size must be positive"))
+    repeat_batch > 0 || throw(ArgumentError("repeat_batch must be positive"))
+    n_obs = min(training_batch_size, training_observations)
+    # The wrappers use identical deterministic RNG seeds, keeping targets,
+    # features, and expert predictions synchronized while resampling batches.
+    common_data = (
+        y=ProbabilisticEnsembling.SubsampledData(targets, n_obs, repeat_batch),
+        features=ProbabilisticEnsembling.SubsampledData(features, n_obs, repeat_batch),
+        predictions=ProbabilisticEnsembling.SubsampledData(predictions, n_obs, repeat_batch),
+    )
     common_options = (limit_stack_depth=limit_stack_depth,)
 
     if arm === :vmp
@@ -342,9 +373,13 @@ function write_report(path, config, metrics)
         println(io)
         println(io, "Horizon: **$(config.horizon)**  ")
         println(io, "Training observations: **$(config.n_obs)**  ")
+        println(io, "Training batch size: **$(config.training_batch_size)**  ")
         println(io, "Inference iterations: **$(config.iterations)**  ")
+        println(io, "Batch reuse iterations: **$(config.repeat_batch)**  ")
+        println(io, "Prediction batch size: **$(config.prediction_batch_size)**  ")
         println(io, "Prediction iterations: **$(config.prediction_iterations)**  ")
-        println(io, "NGMP damping: alpha=$(config.alpha), beta=$(config.beta), kappa=$(config.kappa)")
+        println(io, "NGMP damping: alpha=$(config.alpha), beta=$(config.beta)")
+        println(io, "Prediction method: **$(config.prediction_method)**")
         println(io, "Session: `$(config.session)`")
         println(io)
         println(io, "| Method | MAE | RMSE | Mean LL | LL std | Coverage 95% | Pinball |")
@@ -377,11 +412,14 @@ function run_etth2_comparison(
     comparison = ETTH2_COMPARISON_CONFIG
     horizon = Int(raw["params"]["horizon"])
     requested_n_obs = comparison.training_observations
+    configured_training_batch_size = comparison.training_batch_size
+    repeat_batch = comparison.repeat_batch
     iterations = comparison.inference_iterations
+    configured_prediction_batch_size = comparison.prediction_batch_size
     prediction_iterations = comparison.prediction_iterations
+    prediction_method = comparison.prediction_method
     alpha = comparison.alpha
     beta = comparison.beta
-    kappa = comparison.kappa
     selected_arms = collect(comparison.arms)
     limit_stack_depth = comparison.limit_stack_depth
     showprogress = comparison.show_progress
@@ -393,6 +431,8 @@ function run_etth2_comparison(
     features_val = cache["features_val"]
     features_test = cache["features_test"]
     train_count = requested_n_obs == 0 ? length(y_val) : min(requested_n_obs, length(y_val))
+    training_batch_size = min(configured_training_batch_size, train_count)
+    prediction_batch_size = min(configured_prediction_batch_size, length(y_test))
     all(arm -> arm in SUPPORTED_ARMS, selected_arms) ||
         throw(ArgumentError("arms must be selected from $(collect(SUPPORTED_ARMS))"))
 
@@ -400,11 +440,14 @@ function run_etth2_comparison(
         session=relpath(session_path, ROOT),
         horizon,
         n_obs=train_count,
+        training_batch_size,
+        repeat_batch,
         iterations,
+        prediction_batch_size,
         prediction_iterations,
+        prediction_method,
         alpha,
         beta,
-        kappa,
         arms=selected_arms,
         limit_stack_depth,
         showprogress,
@@ -413,7 +456,7 @@ function run_etth2_comparison(
     predictions = Dict{Symbol,Any}()
     posteriors = Dict{Symbol,Any}()
     for arm in selected_arms
-        println("running arm=$arm horizon=$horizon observations=$train_count iterations=$iterations")
+        println("running arm=$arm horizon=$horizon observations=$train_count batch=$training_batch_size repeat_batch=$repeat_batch iterations=$iterations")
         result, _ = run_arm(
             arm,
             spec.priors,
@@ -421,6 +464,8 @@ function run_etth2_comparison(
             predictions_val[:, 1:train_count],
             y_val[1:train_count];
             iterations,
+            training_batch_size,
+            repeat_batch,
             alpha,
             beta,
             limit_stack_depth,
@@ -428,26 +473,26 @@ function run_etth2_comparison(
         )
         w = last(result.posteriors[:w])
         tau = last(result.posteriors[:tau])
-        expected_beta = mean.(last(result.posteriors[:beta]))
-        predicted_mean, predicted_std = dynamic_predict(
+        beta_posterior = last(result.posteriors[:beta])
+        predicted_mean, predicted_std = dynamic_predict_batched(
             features_test,
             predictions_test,
             w,
             tau,
-            expected_beta;
-            kappa,
+            beta_posterior;
             iterations=prediction_iterations,
             limit_stack_depth,
+            batch_size=prediction_batch_size,
         )
         metrics[arm] = predictive_metrics(predicted_mean, predicted_std, y_test)
         predictions[arm] = (mean=predicted_mean, std=predicted_std)
-        posteriors[arm] = (w=w, tau=tau, beta=last(result.posteriors[:beta]))
+        posteriors[arm] = (w=w, tau=tau, beta=beta_posterior)
         println("arm=$arm metrics=$(metrics[arm])")
     end
 
     results_dir = joinpath(ROOT, "results")
     mkpath(results_dir)
-    stem = "dynamic_etth2_h$(horizon)_n$(train_count)_i$(iterations)"
+    stem = "dynamic_etth2_h$(horizon)_n$(train_count)_b$(training_batch_size)_i$(iterations)_pb$(prediction_batch_size)_prx"
     jld2_path = joinpath(results_dir, "$stem.jld2")
     markdown_path = joinpath(results_dir, "$stem.md")
     jldsave(jld2_path; config, metrics, predictions, posteriors, y_test)
