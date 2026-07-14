@@ -19,6 +19,24 @@ const rx_no_vector_val = [
     0.820, 0.850, 0.830, 0.850, 0.850,
 ]
 
+const rx_projected_nesterov_train = [
+    0.667, 0.820, 0.853, 0.890, 0.911,
+    0.917, 0.904, 0.929, 0.933, 0.936,
+]
+const rx_projected_nesterov_val = [
+    0.680, 0.800, 0.780, 0.850, 0.840,
+    0.860, 0.850, 0.860, 0.850, 0.860,
+]
+
+const rx_two_hidden_vector_train = [
+    0.785, 0.833, 0.848, 0.864, 0.888,
+    0.893, 0.901, 0.906, 0.905, 0.920,
+]
+const rx_two_hidden_vector_val = [
+    0.770, 0.790, 0.800, 0.810, 0.820,
+    0.800, 0.810, 0.820, 0.810, 0.810,
+]
+
 const neural_train = [
     0.534, 0.690, 0.716, 0.746, 0.786, 0.818, 0.807, 0.828, 0.850, 0.858,
     0.860, 0.869, 0.875, 0.876, 0.883, 0.885, 0.893, 0.885, 0.899, 0.898,
@@ -55,6 +73,8 @@ const rx_cnn_vector_val = [0.688, 0.766, 0.703]
 function accuracy_plot(
     rx_vector,
     rx_no_vector,
+    rx_projected_nesterov,
+    rx_two_hidden_vector,
     neural,
     neural_cnn,
     rx_cnn_vector;
@@ -105,6 +125,23 @@ function accuracy_plot(
         markersize = 5,
     )
     plot!(
+        1:length(rx_projected_nesterov), rx_projected_nesterov;
+        label = "RxInfer MLP (projected Nesterov)",
+        color = :black,
+        linewidth = 3,
+        linestyle = :dash,
+        marker = :utriangle,
+        markersize = 5,
+    )
+    plot!(
+        1:length(rx_two_hidden_vector), rx_two_hidden_vector;
+        label = "RxInfer 2-hidden MLP (vector transport)",
+        color = :deeppink3,
+        linewidth = 3,
+        marker = :xcross,
+        markersize = 6,
+    )
+    plot!(
         1:length(rx_cnn_vector), rx_cnn_vector;
         label = "RxInfer CNN-like (vector transport)",
         color = :purple3,
@@ -117,6 +154,8 @@ end
 train_plot = accuracy_plot(
     rx_vector_train,
     rx_no_vector_train,
+    rx_projected_nesterov_train,
+    rx_two_hidden_vector_train,
     neural_train,
     neural_cnn_train,
     rx_cnn_vector_train;
@@ -131,6 +170,8 @@ Plots.gr()
 val_plot = accuracy_plot(
     rx_vector_val,
     rx_no_vector_val,
+    rx_projected_nesterov_val,
+    rx_two_hidden_vector_val,
     neural_val,
     neural_cnn_val,
     rx_cnn_vector_val;
