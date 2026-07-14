@@ -78,7 +78,7 @@ end
                 features[observation],
                 hidden_weight[cls, hidden],
                 hidden_precision,
-            )
+            ) where { meta=LowRankMeta() }
             output[cls, observation] ~ NormalMeanPrecision(
                 hidden_mean[cls, hidden, observation],
                 gate_precision[cls, hidden, observation],
@@ -98,6 +98,10 @@ end
 end
 
 @constraints function mnist_softplus_ut_ngmp_constraints()
+    # Standard (non-relaxed) NGMP factorization, analogous to ETTh2's
+    # q(w)q(z, gamma): global weights remain separate from per-observation
+    # nonlinear latent clusters. A relaxed form would instead join each weight
+    # bank with hidden_mean/output or gate_score/gate_precision.
     q(
         hidden_weight,
         gate_weight,
@@ -427,7 +431,7 @@ function train_mnist_softplus_ut_ngmp_mlp(
     history = NamedTuple[]
     rng = MersenneTwister(seed + 20)
 
-    println("Native RxInfer Softplus UT NGMP MLP-like MNIST classes=$classes")
+    println("Native RxInfer Softplus UT NGMP MLP-like MNIST classes=$classes factorization=standard_ngmp")
     println("train=$ntrain val=$nval test=$ntest input=$input_count hidden=$hidden_count batch=$batch_size epochs=$epochs iterations=$inference_iterations optimizer=$optimizer projection=$projection alpha=$alpha beta=$beta max_step=$max_step")
 
     for epoch in 1:epochs
