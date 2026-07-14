@@ -1,0 +1,491 @@
+using ClosedFormExpectations
+using Distributions
+using ExponentialFamily
+using ExponentialFamilyProjection
+using JLD2
+using LinearAlgebra: dot
+using Printf
+using ProbabilisticEnsembling
+using RxInfer
+using Statistics
+using SurrogateModelling
+using YAML
+
+const ROOT = @__DIR__
+const SUPPORTED_HORIZONS = (96, 192, 336, 720)
+const SUPPORTED_ARMS = (:vmp, :ngmp, :relaxed)
+const ETTH2_COMPARISON_CONFIG = (
+    training_observations=0, # 0 uses the complete validation split
+    inference_iterations=20,
+    prediction_iterations=3,
+    alpha=0.2,
+    beta=0.0,
+    kappa=1.0,
+    arms=SUPPORTED_ARMS,
+    limit_stack_depth=500,
+    show_progress=true,
+)
+
+@model function dynamic_vmp(n_forecasters, n_obs, y, features, predictions, priors)
+    local w, z, gamma, tau, beta
+    for i in 1:n_forecasters
+        w[i] ~ priors[:w][i]
+        tau[i] ~ priors[:τ][i]
+        beta[i] ~ priors[:β][i]
+    end
+    for j in 1:n_obs, i in 1:n_forecasters
+        z[i, j] ~ softdot(features[j], w[i], tau[i]) where { meta=LowRankMeta() }
+        gamma[i, j] ~ GammaShapeRate(1.0, beta[i])
+        z[i, j] ~ Log(gamma[i, j])
+        y[j] ~ NormalMeanPrecision(predictions[i, j], gamma[i, j])
+    end
+end
+
+@constraints function dynamic_vmp_constraints()
+    q(w, z, gamma, tau, beta) = q(w)q(z, gamma)q(tau)q(beta)
+    q(w)::MomentForm()
+    q(z)::ProjectedTo(
+        NormalMeanVariance,
+        parameters=ProjectionParameters(strategy=ClosedFormStrategy()),
+    )
+    q(gamma)::ProjectedTo(
+        Gamma,
+        parameters=ProjectionParameters(strategy=ClosedFormStrategy()),
+    )
+end
+
+@model function dynamic_ngmp(
+    n_forecasters,
+    n_obs,
+    y,
+    features,
+    predictions,
+    priors,
+    dependencies,
+    damping,
+)
+    local w, z, gamma, tau, beta
+    for i in 1:n_forecasters
+        w[i] ~ priors[:w][i]
+        tau[i] ~ priors[:τ][i]
+        beta[i] ~ priors[:β][i]
+    end
+    for j in 1:n_obs, i in 1:n_forecasters
+        z[i, j] ~ softdot(features[j], w[i], tau[i]) where { meta=LowRankMeta() }
+        gamma[i, j] ~ GammaShapeRate(1.0, beta[i])
+        z[i, j] ~ Log(gamma[i, j]) where {
+            dependencies=dependencies,
+            meta=damping,
+        }
+        y[j] ~ NormalMeanPrecision(predictions[i, j], gamma[i, j])
+    end
+end
+
+@constraints function dynamic_ngmp_constraints()
+    q(w, z, gamma, tau, beta) = q(w)q(z, gamma)q(tau)q(beta)
+    q(w)::MomentForm()
+end
+
+@model function dynamic_ngmp_relaxed(
+    n_forecasters,
+    n_obs,
+    y,
+    features,
+    predictions,
+    priors,
+    dependencies,
+    damping,
+)
+    local w, z, gamma, tau, beta
+    for i in 1:n_forecasters
+        w[i] ~ priors[:w][i]
+        tau[i] ~ priors[:τ][i]
+        beta[i] ~ priors[:β][i]
+    end
+    for j in 1:n_obs, i in 1:n_forecasters
+        z[i, j] ~ softdot(features[j], w[i], tau[i])
+        gamma[i, j] ~ GammaShapeRate(1.0, beta[i])
+        z[i, j] ~ Log(gamma[i, j]) where {
+            dependencies=dependencies,
+            meta=damping,
+        }
+        y[j] ~ NormalMeanPrecision(predictions[i, j], gamma[i, j])
+    end
+end
+
+@constraints function dynamic_relaxed_constraints()
+    q(w, z, gamma, tau, beta) = q(w, z, gamma)q(tau)q(beta)
+    q(w)::MomentForm()
+end
+
+@initialization function dynamic_initialization(priors)
+    q(w) = deepcopy(priors[:w])
+    q(z) = NormalMeanVariance(0.0, 1.0)
+    q(gamma) = GammaShapeScale(1.0, 1.0)
+    q(tau) = priors[:τ]
+    q(beta) = priors[:β]
+end
+
+@model function inner_z(n_forecasters, n_obs, features, w_priors, tau_priors, obsz, Rz)
+    local w, z, tau
+    for i in 1:n_forecasters
+        w[i] ~ w_priors[i]
+        tau[i] ~ tau_priors[i]
+    end
+    for j in 1:n_obs, i in 1:n_forecasters
+        z[i, j] ~ softdot(features[j], w[i], tau[i])
+        obsz[i, j] ~ NormalMeanVariance(z[i, j], Rz[i, j])
+    end
+end
+
+@constraints function inner_z_constraints()
+    q(w, z, tau) = q(w, z)q(tau)
+end
+
+function infer_qz(features, w_priors, tau_priors; iterations, limit_stack_depth)
+    n_forecasters = length(w_priors)
+    n_obs = length(features)
+    initialization = @initialization begin
+        q(w) = w_priors
+        q(tau) = tau_priors
+        q(z) = NormalMeanVariance(0.0, 1.0)
+    end
+    result = infer(
+        model=inner_z(
+            n_forecasters=n_forecasters,
+            n_obs=n_obs,
+            w_priors=w_priors,
+            tau_priors=tau_priors,
+        ),
+        data=(
+            features=features,
+            obsz=zeros(n_forecasters, n_obs),
+            Rz=fill(1e12, n_forecasters, n_obs),
+        ),
+        constraints=inner_z_constraints(),
+        initialization=initialization,
+        iterations=iterations,
+        options=(limit_stack_depth=limit_stack_depth,),
+    )
+    qz = last(result.posteriors[:z])
+    return map(mean, qz), map(var, qz)
+end
+
+function dynamic_predict(
+    features,
+    predictions,
+    w,
+    tau,
+    expected_beta;
+    kappa,
+    iterations,
+    limit_stack_depth,
+)
+    n_forecasters, n_obs = size(predictions)
+    mean_z, var_z = infer_qz(features, w, tau; iterations, limit_stack_depth)
+    predictive_variance = exp.(.-mean_z .+ var_z ./ 2) .+
+                          kappa .* reshape(Float64.(expected_beta), n_forecasters, 1)
+    precision = clamp.(1 ./ predictive_variance, 1e-6, 1e6)
+    predictive_mean = Vector{Float64}(undef, n_obs)
+    predictive_std = Vector{Float64}(undef, n_obs)
+    for j in 1:n_obs
+        total_precision = sum(@view precision[:, j])
+        predictive_mean[j] = sum(
+            precision[i, j] * predictions[i, j] for i in 1:n_forecasters
+        ) / total_precision
+        predictive_std[j] = sqrt(inv(total_precision))
+    end
+    return predictive_mean, predictive_std
+end
+
+function predictive_metrics(predicted_mean, predicted_std, target)
+    log_likelihood = [
+        logpdf(Normal(predicted_mean[j], predicted_std[j]), target[j]) for
+        j in eachindex(target)
+    ]
+    z95 = 1.959963984540054
+    coverage95 = mean(
+        (target .>= predicted_mean .- z95 .* predicted_std) .&
+        (target .<= predicted_mean .+ z95 .* predicted_std),
+    )
+    pinball = Float64[]
+    for q in (0.1, 0.9)
+        estimate = predicted_mean .+ quantile(Normal(), q) .* predicted_std
+        push!(pinball, mean(max.(q .* (target .- estimate), (q - 1) .* (target .- estimate))))
+    end
+    return (
+        mae=mean(abs.(predicted_mean .- target)),
+        rmse=sqrt(mean((predicted_mean .- target) .^ 2)),
+        log_likelihood=mean(log_likelihood),
+        log_likelihood_std=std(log_likelihood),
+        coverage95=coverage95,
+        pinball=mean(pinball),
+    )
+end
+
+function required_paths(session)
+    raw = YAML.load_file(session)
+    params = raw["params"]
+    relative_paths = String[params["dataset_path"]]
+    append!(relative_paths, String.(params["experts"]))
+    push!(relative_paths, "models/ETTh2_s96_VAE_enzyme.jld2")
+    return [joinpath(ROOT, path) for path in relative_paths]
+end
+
+function verify_prerequisites(session)
+    isfile(session) || error("Session file not found: $session")
+    raw = YAML.load_file(session)
+    params = raw["params"]
+    get(params, "dataset", nothing) == "ETTh2" ||
+        error("Session must configure dataset ETTh2: $session")
+    horizon = Int(params["horizon"])
+    horizon in SUPPORTED_HORIZONS || throw(ArgumentError(
+        "unsupported horizon $horizon; choose one of $(collect(SUPPORTED_HORIZONS))",
+    ))
+    paths = required_paths(session)
+    missing = filter(path -> !isfile(path), paths)
+    isempty(missing) || error("Missing ETTh2 prerequisites:\n" * join(missing, "\n"))
+    return raw
+end
+
+function prepare_data(session; rebuild_cache=false)
+    raw = verify_prerequisites(session)
+    horizon = Int(raw["params"]["horizon"])
+    cache_dir = joinpath(ROOT, "cache")
+    mkpath(cache_dir)
+    cache_path = joinpath(cache_dir, "dynamic_etth2_h$(horizon)_cache.jld2")
+    if rebuild_cache || !isfile(cache_path)
+        spec = ProbabilisticEnsembling._parse_spec(raw)
+        prepared = cd(() -> ProbabilisticEnsembling.before_rxinfer(spec), ROOT)
+        jldsave(
+            cache_path;
+            y_val=prepared[1],
+            y_test=prepared[2],
+            predictions_val=prepared[3],
+            predictions_test=prepared[4],
+            features_val=prepared[5],
+            features_test=prepared[6],
+        )
+    end
+    spec = ProbabilisticEnsembling._parse_spec(raw)
+    return spec, raw, load(cache_path), cache_path
+end
+
+function run_arm(
+    arm,
+    priors,
+    features,
+    predictions,
+    targets;
+    iterations,
+    alpha,
+    beta,
+    limit_stack_depth,
+    showprogress,
+)
+    n_forecasters = size(predictions, 1)
+    n_obs = length(targets)
+    common_data = (y=targets, features=features, predictions=predictions)
+    common_options = (limit_stack_depth=limit_stack_depth,)
+
+    if arm === :vmp
+        result = infer(
+            model=dynamic_vmp(; n_forecasters, n_obs, priors),
+            data=common_data,
+            constraints=dynamic_vmp_constraints(),
+            initialization=dynamic_initialization(priors),
+            iterations=iterations,
+            options=common_options,
+            showprogress=showprogress,
+        )
+        return result, nothing
+    end
+
+    dependencies = NGMPDependencies(out=nothing, in=nothing)
+    damping = DampingMeta(; alpha, beta)
+    if arm === :ngmp
+        result = infer(
+            model=dynamic_ngmp(; n_forecasters, n_obs, priors, dependencies, damping),
+            data=common_data,
+            constraints=dynamic_ngmp_constraints(),
+            initialization=dynamic_initialization(priors),
+            iterations=iterations,
+            options=common_options,
+            showprogress=showprogress,
+        )
+    elseif arm === :relaxed
+        result = infer(
+            model=dynamic_ngmp_relaxed(;
+                n_forecasters,
+                n_obs,
+                priors,
+                dependencies,
+                damping,
+            ),
+            data=common_data,
+            constraints=dynamic_relaxed_constraints(),
+            initialization=dynamic_initialization(priors),
+            iterations=iterations,
+            options=common_options,
+            showprogress=showprogress,
+        )
+    else
+        throw(ArgumentError("unsupported arm $arm"))
+    end
+    @assert length(dependencies.states) == 2 * n_forecasters * n_obs
+    return result, dependencies
+end
+
+function write_report(path, config, metrics)
+    open(path, "w") do io
+        println(io, "# Dynamic VMP vs NGMP on ETTh2")
+        println(io)
+        println(io, "Horizon: **$(config.horizon)**  ")
+        println(io, "Training observations: **$(config.n_obs)**  ")
+        println(io, "Inference iterations: **$(config.iterations)**  ")
+        println(io, "Prediction iterations: **$(config.prediction_iterations)**  ")
+        println(io, "NGMP damping: alpha=$(config.alpha), beta=$(config.beta), kappa=$(config.kappa)")
+        println(io, "Session: `$(config.session)`")
+        println(io)
+        println(io, "| Method | MAE | RMSE | Mean LL | LL std | Coverage 95% | Pinball |")
+        println(io, "|---|---:|---:|---:|---:|---:|---:|")
+        labels = Dict(:vmp => "VMP", :ngmp => "NGMP", :relaxed => "NGMP relaxed")
+        for arm in config.arms
+            value = metrics[arm]
+            println(
+                io,
+                "| $(labels[arm]) | $(@sprintf("%.4f", value.mae)) | " *
+                "$(@sprintf("%.4f", value.rmse)) | $(@sprintf("%.4f", value.log_likelihood)) | " *
+                "$(@sprintf("%.3f", value.log_likelihood_std)) | " *
+                "$(@sprintf("%.4f", value.coverage95)) | $(@sprintf("%.4f", value.pinball)) |",
+            )
+        end
+    end
+end
+
+function run_etth2_comparison(
+    ;
+    session,
+    prepare_only=false,
+    rebuild_cache=false,
+)
+    session_path = isabspath(session) ? normpath(session) : normpath(joinpath(ROOT, session))
+    spec, raw, cache, cache_path = prepare_data(session_path; rebuild_cache)
+    println("prepared_cache=$cache_path")
+    prepare_only && return (cache_path=cache_path,)
+
+    comparison = ETTH2_COMPARISON_CONFIG
+    horizon = Int(raw["params"]["horizon"])
+    requested_n_obs = comparison.training_observations
+    iterations = comparison.inference_iterations
+    prediction_iterations = comparison.prediction_iterations
+    alpha = comparison.alpha
+    beta = comparison.beta
+    kappa = comparison.kappa
+    selected_arms = collect(comparison.arms)
+    limit_stack_depth = comparison.limit_stack_depth
+    showprogress = comparison.show_progress
+
+    y_val = cache["y_val"]
+    y_test = cache["y_test"]
+    predictions_val = cache["predictions_val"]
+    predictions_test = cache["predictions_test"]
+    features_val = cache["features_val"]
+    features_test = cache["features_test"]
+    train_count = requested_n_obs == 0 ? length(y_val) : min(requested_n_obs, length(y_val))
+    all(arm -> arm in SUPPORTED_ARMS, selected_arms) ||
+        throw(ArgumentError("arms must be selected from $(collect(SUPPORTED_ARMS))"))
+
+    config = (;
+        session=relpath(session_path, ROOT),
+        horizon,
+        n_obs=train_count,
+        iterations,
+        prediction_iterations,
+        alpha,
+        beta,
+        kappa,
+        arms=selected_arms,
+        limit_stack_depth,
+        showprogress,
+    )
+    metrics = Dict{Symbol,Any}()
+    predictions = Dict{Symbol,Any}()
+    posteriors = Dict{Symbol,Any}()
+    for arm in selected_arms
+        println("running arm=$arm horizon=$horizon observations=$train_count iterations=$iterations")
+        result, _ = run_arm(
+            arm,
+            spec.priors,
+            features_val[1:train_count],
+            predictions_val[:, 1:train_count],
+            y_val[1:train_count];
+            iterations,
+            alpha,
+            beta,
+            limit_stack_depth,
+            showprogress,
+        )
+        w = last(result.posteriors[:w])
+        tau = last(result.posteriors[:tau])
+        expected_beta = mean.(last(result.posteriors[:beta]))
+        predicted_mean, predicted_std = dynamic_predict(
+            features_test,
+            predictions_test,
+            w,
+            tau,
+            expected_beta;
+            kappa,
+            iterations=prediction_iterations,
+            limit_stack_depth,
+        )
+        metrics[arm] = predictive_metrics(predicted_mean, predicted_std, y_test)
+        predictions[arm] = (mean=predicted_mean, std=predicted_std)
+        posteriors[arm] = (w=w, tau=tau, beta=last(result.posteriors[:beta]))
+        println("arm=$arm metrics=$(metrics[arm])")
+    end
+
+    results_dir = joinpath(ROOT, "results")
+    mkpath(results_dir)
+    stem = "dynamic_etth2_h$(horizon)_n$(train_count)_i$(iterations)"
+    jld2_path = joinpath(results_dir, "$stem.jld2")
+    markdown_path = joinpath(results_dir, "$stem.md")
+    jldsave(jld2_path; config, metrics, predictions, posteriors, y_test)
+    write_report(markdown_path, config, metrics)
+    println("results_jld2=$jld2_path")
+    println("results_markdown=$markdown_path")
+    return (; config, metrics, predictions, posteriors, jld2_path, markdown_path)
+end
+
+function parse_cli(args)
+    options = Dict{String,String}()
+    flags = Set{String}()
+    index = 1
+    while index <= length(args)
+        argument = args[index]
+        if argument in ("--prepare-only", "--rebuild-cache")
+            push!(flags, argument)
+            index += 1
+        elseif startswith(argument, "--")
+            index == length(args) && error("missing value for $argument")
+            options[argument] = args[index + 1]
+            index += 2
+        else
+            error("unknown argument $argument")
+        end
+    end
+    allowed_options = Set(["--session", "--horizon"])
+    unknown = setdiff(Set(keys(options)), allowed_options)
+    isempty(unknown) || error("unknown options: $(join(sort!(collect(unknown)), ", "))")
+    horizon = parse(Int, get(options, "--horizon", "96"))
+    default_session = joinpath("sessions", "dynamic", "vae", "dynamic_ETTh2_$(horizon).yaml")
+    return (
+        session=get(options, "--session", default_session),
+        prepare_only="--prepare-only" in flags,
+        rebuild_cache="--rebuild-cache" in flags,
+    )
+end
+
+if abspath(PROGRAM_FILE) == @__FILE__
+    run_etth2_comparison(; parse_cli(ARGS)...)
+end
