@@ -377,6 +377,9 @@ function infer_batch_mlp_rxinfer(priors, batch_x, batch_y;
     product_classifier_site_scale=0.0,
     alpha=0.2,
     global_site_scale=1.0,
+    projected_nesterov=false,
+    nesterov_beta=0.9,
+    nesterov_eps=1e-8,
     vector_transport=false,
     vector_transport_momentum=0.8,
     vector_transport_damping=1e-6,
@@ -387,6 +390,9 @@ function infer_batch_mlp_rxinfer(priors, batch_x, batch_y;
     hidden_count = size(priors.w_m, 1)
     class_count = length(priors.classes)
     site = mlp_zero_sites(n_count, input_count, hidden_count, class_count)
+    projected_nesterov && vector_transport && error("Use either projected_nesterov or vector_transport, not both.")
+    previous_direction = zero_like_sites(site)
+    has_previous_direction = false
     previous_update = zero_like_sites(site)
     previous_metric = diagonal_site_metric(site; damping=vector_transport_damping)
     local result, marginals
@@ -401,7 +407,21 @@ function infer_batch_mlp_rxinfer(priors, batch_x, batch_y;
             classes=priors.classes)
         direction = site_direction(site, target)
         old_site = site
-        if vector_transport
+        if projected_nesterov
+            lookahead_site = clamp_site_precisions(nesterov_projected_lookahead(
+                site, direction, previous_direction, has_previous_direction;
+                alpha, beta=nesterov_beta, eps=nesterov_eps))
+            lookahead_result = run_mlp_surrogate_bp(lookahead_site, priors; global_site_scale)
+            lookahead_marginals = extract_mlp_marginals(lookahead_result)
+            lookahead_target = refresh_mlp_sites(batch_x, batch_y, lookahead_marginals, lookahead_site;
+                sigma_sp2, sigma_hidden2, direct_weight_site_scale,
+                discriminative_site_scale, product_classifier_site_scale,
+                classes=priors.classes)
+            lookahead_direction = site_direction(lookahead_site, lookahead_target)
+            site = clamp_site_precisions(add_scaled_sites(site, lookahead_direction, alpha))
+            previous_direction = direction
+            has_previous_direction = true
+        elseif vector_transport
             site, previous_update, previous_metric = vector_transport_site_step(
                 site, direction, previous_update, previous_metric;
                 alpha, momentum=vector_transport_momentum, damping=vector_transport_damping)
@@ -519,6 +539,9 @@ function train_mlp_rxinfer_demo(; ntrain=1000, nval=100, ntest=100,
     w_init_scale=0.01,
     u_init_scale=0.1,
     classes=collect(0:9),
+    projected_nesterov=false,
+    nesterov_beta=0.9,
+    nesterov_eps=1e-8,
     vector_transport=true,
     vector_transport_momentum=0.5,
     vector_transport_damping=1e-6,
@@ -532,7 +555,7 @@ function train_mlp_rxinfer_demo(; ntrain=1000, nval=100, ntest=100,
     site_scale = inv(epochs)
 
     println("RxInfer flattened softplus MLP MNIST classes=$(classes)")
-    println("train=$(length(data.train_y)) val=$(length(data.val_y)) test=$(length(data.test_y)) input=$input_count hidden=$hidden_count batch=$batch_size epochs=$epochs alpha=$alpha sigma_sp2=$sigma_sp2 sigma_hidden2=$sigma_hidden2 direct_weight_site_scale=$direct_weight_site_scale discriminative_site_scale=$discriminative_site_scale product_classifier_site_scale=$product_classifier_site_scale w_init_scale=$w_init_scale u_init_scale=$u_init_scale vector_transport=$vector_transport site_scale=$(round(site_scale, digits=4))")
+    println("train=$(length(data.train_y)) val=$(length(data.val_y)) test=$(length(data.test_y)) input=$input_count hidden=$hidden_count batch=$batch_size epochs=$epochs alpha=$alpha sigma_sp2=$sigma_sp2 sigma_hidden2=$sigma_hidden2 direct_weight_site_scale=$direct_weight_site_scale discriminative_site_scale=$discriminative_site_scale product_classifier_site_scale=$product_classifier_site_scale w_init_scale=$w_init_scale u_init_scale=$u_init_scale projected_nesterov=$projected_nesterov nesterov_beta=$nesterov_beta nesterov_eps=$nesterov_eps vector_transport=$vector_transport site_scale=$(round(site_scale, digits=4))")
 
     history = NamedTuple[]
     best_val_acc = -Inf
@@ -551,6 +574,9 @@ function train_mlp_rxinfer_demo(; ntrain=1000, nval=100, ntest=100,
                 sigma_sp2, sigma_hidden2, direct_weight_site_scale,
                 discriminative_site_scale, product_classifier_site_scale, alpha,
                 global_site_scale=site_scale,
+                projected_nesterov,
+                nesterov_beta,
+                nesterov_eps,
                 vector_transport,
                 vector_transport_momentum,
                 vector_transport_damping,
