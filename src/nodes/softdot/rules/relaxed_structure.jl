@@ -51,10 +51,24 @@
     return NaturalGradientMP.apply_damping!(meta, stock_vmp_message)
 end
 
-# The remaining methods do not damp their messages. DampingMeta belongs to the
-# same SoftDot node because the γ edge above is damped, so it is also passed to
-# the ordinary structured interfaces. Each adapter removes that metadata and
-# calls the corresponding stock ReactiveMP 6.3 VMP rule.
+# Metadata-tolerant stock γ edge for models that damp θ and/or x but leave γ as
+# ordinary VMP. This adapter does not damp γ.
+@rule softdot(:γ, Marginalisation) (
+    q_y_x::MultivariateNormalDistributionsFamily,
+    q_θ::NormalDistributionsFamily,
+    meta::DampingMeta,
+) = begin
+    return @call_rule softdot(:γ, Marginalisation) (
+        q_y_x = q_y_x,
+        q_θ = q_θ,
+    )
+end
+
+# DampingMeta belongs to the complete SoftDot node, so it is also passed to its
+# ordinary structured interfaces. The Marginalisation adapters below remove that
+# metadata and call the corresponding stock ReactiveMP 6.3 VMP rule. When θ or x
+# is selected in NGMPDependencies, the NaturalGradientMessage adapters instead
+# damp the same stock VMP target in Gaussian natural coordinates.
 
 # VMP message toward the now-random θ. It uses the complete joint q(y, x):
 #
@@ -71,6 +85,22 @@ end
         q_y_x = q_y_x,
         q_γ = q_γ,
     )
+end
+
+# Stateful damping of the structured VMP target toward θ. q_θ is the receiving
+# marginal inserted by NGMPDependencies; it is deliberately not passed into the
+# stock rule because a factor-to-θ VMP target excludes q(θ) itself.
+@rule softdot(:θ, NaturalGradientMessage) (
+    q_y_x::MultivariateNormalDistributionsFamily,
+    q_θ::NormalDistributionsFamily,
+    q_γ::Any,
+    meta::NGMPEdgeState,
+) = begin
+    stock_vmp_message = @call_rule softdot(:θ, Marginalisation) (
+        q_y_x = q_y_x,
+        q_γ = q_γ,
+    )
+    return NaturalGradientMP.apply_damping!(meta, stock_vmp_message)
 end
 
 # Structured message toward y. ReactiveMP includes Vθ through
@@ -101,6 +131,24 @@ end
         q_θ = q_θ,
         q_γ = q_γ,
     )
+end
+
+# Stateful damping of the structured VMP target toward x. As on the θ edge,
+# q_x is only the receiving marginal required by NGMPDependencies to maintain a
+# per-edge update state; the undamped target remains ReactiveMP's stock rule.
+@rule softdot(:x, NaturalGradientMessage) (
+    m_y::UnivariateNormalDistributionsFamily,
+    q_θ::NormalDistributionsFamily,
+    q_x::NormalDistributionsFamily,
+    q_γ::Any,
+    meta::NGMPEdgeState,
+) = begin
+    stock_vmp_message = @call_rule softdot(:x, Marginalisation) (
+        m_y = m_y,
+        q_θ = q_θ,
+        q_γ = q_γ,
+    )
+    return NaturalGradientMP.apply_damping!(meta, stock_vmp_message)
 end
 
 # Construct q(y, x). The stock lower-right precision block is
