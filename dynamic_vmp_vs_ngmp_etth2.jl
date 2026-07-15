@@ -16,9 +16,9 @@ const SUPPORTED_HORIZONS = (96, 192, 336, 720)
 const SUPPORTED_ARMS = (:vmp, :ngmp, :relaxed)
 const ETTH2_COMPARISON_CONFIG = (
     training_observations=0, # 0 uses the complete validation split
-    training_batch_size=250,
+    training_batch_size=nothing, # set to `nothing` for full-graph training
     repeat_batch=1, # resample once per variational iteration
-    inference_iterations=5,
+    inference_iterations=20,
     prediction_batch_size=250,
     prediction_iterations=3,
     prediction_method=:rxinfer_fixed_marginals,
@@ -217,11 +217,25 @@ function dynamic_predict_batched(
     return predictive_mean, predictive_std
 end
 
+function mean_with_confidence95(values)
+    value = mean(values)
+    half_width = length(values) > 1 ? 1.959963984540054 * std(values) / sqrt(length(values)) : 0.0
+    return (
+        mean=value,
+        half_width=half_width,
+        lower=value - half_width,
+        upper=value + half_width,
+    )
+end
+
 function predictive_metrics(predicted_mean, predicted_std, target)
-    log_likelihood = [
-        logpdf(Normal(predicted_mean[j], predicted_std[j]), target[j]) for
+    squared_error = (predicted_mean .- target) .^ 2
+    negative_log_likelihood = [
+        -logpdf(Normal(predicted_mean[j], predicted_std[j]), target[j]) for
         j in eachindex(target)
     ]
+    mse_summary = mean_with_confidence95(squared_error)
+    nll_summary = mean_with_confidence95(negative_log_likelihood)
     z95 = 1.959963984540054
     coverage95 = mean(
         (target .>= predicted_mean .- z95 .* predicted_std) .&
@@ -234,9 +248,14 @@ function predictive_metrics(predicted_mean, predicted_std, target)
     end
     return (
         mae=mean(abs.(predicted_mean .- target)),
-        rmse=sqrt(mean((predicted_mean .- target) .^ 2)),
-        log_likelihood=mean(log_likelihood),
-        log_likelihood_std=std(log_likelihood),
+        mse=mse_summary.mean,
+        mse_ci95=mse_summary.half_width,
+        mse_ci95_lower=mse_summary.lower,
+        mse_ci95_upper=mse_summary.upper,
+        negative_log_likelihood=nll_summary.mean,
+        negative_log_likelihood_ci95=nll_summary.half_width,
+        negative_log_likelihood_ci95_lower=nll_summary.lower,
+        negative_log_likelihood_ci95_upper=nll_summary.upper,
         coverage95=coverage95,
         pinball=mean(pinball),
     )
@@ -307,16 +326,26 @@ function run_arm(
     n_forecasters = size(predictions, 1)
     training_observations = length(targets)
     training_observations > 0 || throw(ArgumentError("training data must not be empty"))
-    training_batch_size > 0 || throw(ArgumentError("training batch size must be positive"))
     repeat_batch > 0 || throw(ArgumentError("repeat_batch must be positive"))
-    n_obs = min(training_batch_size, training_observations)
-    # The wrappers use identical deterministic RNG seeds, keeping targets,
-    # features, and expert predictions synchronized while resampling batches.
-    common_data = (
-        y=ProbabilisticEnsembling.SubsampledData(targets, n_obs, repeat_batch),
-        features=ProbabilisticEnsembling.SubsampledData(features, n_obs, repeat_batch),
-        predictions=ProbabilisticEnsembling.SubsampledData(predictions, n_obs, repeat_batch),
-    )
+    n_obs, common_data = if isnothing(training_batch_size)
+        training_observations, (y=targets, features=features, predictions=predictions)
+    else
+        training_batch_size > 0 ||
+            throw(ArgumentError("training batch size must be positive or nothing"))
+        batch_size = min(training_batch_size, training_observations)
+        # The wrappers use identical deterministic RNG seeds, keeping targets,
+        # features, and expert predictions synchronized while resampling batches.
+        batch_data = (
+            y=ProbabilisticEnsembling.SubsampledData(targets, batch_size, repeat_batch),
+            features=ProbabilisticEnsembling.SubsampledData(features, batch_size, repeat_batch),
+            predictions=ProbabilisticEnsembling.SubsampledData(
+                predictions,
+                batch_size,
+                repeat_batch,
+            ),
+        )
+        batch_size, batch_data
+    end
     common_options = (limit_stack_depth=limit_stack_depth,)
 
     if arm === :vmp
@@ -373,25 +402,31 @@ function write_report(path, config, metrics)
         println(io)
         println(io, "Horizon: **$(config.horizon)**  ")
         println(io, "Training observations: **$(config.n_obs)**  ")
-        println(io, "Training batch size: **$(config.training_batch_size)**  ")
+        training_batch_label = isnothing(config.training_batch_size) ? "full graph" :
+                               string(config.training_batch_size)
+        println(io, "Training batch size: **$training_batch_label**  ")
         println(io, "Inference iterations: **$(config.iterations)**  ")
-        println(io, "Batch reuse iterations: **$(config.repeat_batch)**  ")
+        if !isnothing(config.training_batch_size)
+            println(io, "Batch reuse iterations: **$(config.repeat_batch)**  ")
+        end
         println(io, "Prediction batch size: **$(config.prediction_batch_size)**  ")
         println(io, "Prediction iterations: **$(config.prediction_iterations)**  ")
         println(io, "NGMP damping: alpha=$(config.alpha), beta=$(config.beta)")
         println(io, "Prediction method: **$(config.prediction_method)**")
+        println(io, "Confidence intervals: mean ± 1.96 × standard error across test observations")
         println(io, "Session: `$(config.session)`")
         println(io)
-        println(io, "| Method | MAE | RMSE | Mean LL | LL std | Coverage 95% | Pinball |")
-        println(io, "|---|---:|---:|---:|---:|---:|---:|")
+        println(io, "| Method | MAE | MSE ± 95% CI | NLL ± 95% CI | Coverage 95% | Pinball |")
+        println(io, "|---|---:|---:|---:|---:|---:|")
         labels = Dict(:vmp => "VMP", :ngmp => "NGMP", :relaxed => "NGMP relaxed")
         for arm in config.arms
             value = metrics[arm]
             println(
                 io,
                 "| $(labels[arm]) | $(@sprintf("%.4f", value.mae)) | " *
-                "$(@sprintf("%.4f", value.rmse)) | $(@sprintf("%.4f", value.log_likelihood)) | " *
-                "$(@sprintf("%.3f", value.log_likelihood_std)) | " *
+                "$(@sprintf("%.4f", value.mse)) ± $(@sprintf("%.4f", value.mse_ci95)) | " *
+                "$(@sprintf("%.4f", value.negative_log_likelihood)) ± " *
+                "$(@sprintf("%.4f", value.negative_log_likelihood_ci95)) | " *
                 "$(@sprintf("%.4f", value.coverage95)) | $(@sprintf("%.4f", value.pinball)) |",
             )
         end
@@ -431,7 +466,8 @@ function run_etth2_comparison(
     features_val = cache["features_val"]
     features_test = cache["features_test"]
     train_count = requested_n_obs == 0 ? length(y_val) : min(requested_n_obs, length(y_val))
-    training_batch_size = min(configured_training_batch_size, train_count)
+    training_batch_size = isnothing(configured_training_batch_size) ? nothing :
+                          min(configured_training_batch_size, train_count)
     prediction_batch_size = min(configured_prediction_batch_size, length(y_test))
     all(arm -> arm in SUPPORTED_ARMS, selected_arms) ||
         throw(ArgumentError("arms must be selected from $(collect(SUPPORTED_ARMS))"))
@@ -456,7 +492,8 @@ function run_etth2_comparison(
     predictions = Dict{Symbol,Any}()
     posteriors = Dict{Symbol,Any}()
     for arm in selected_arms
-        println("running arm=$arm horizon=$horizon observations=$train_count batch=$training_batch_size repeat_batch=$repeat_batch iterations=$iterations")
+        batch_label = isnothing(training_batch_size) ? "full" : string(training_batch_size)
+        println("running arm=$arm horizon=$horizon observations=$train_count batch=$batch_label repeat_batch=$repeat_batch iterations=$iterations")
         result, _ = run_arm(
             arm,
             spec.priors,
@@ -492,7 +529,8 @@ function run_etth2_comparison(
 
     results_dir = joinpath(ROOT, "results")
     mkpath(results_dir)
-    stem = "dynamic_etth2_h$(horizon)_n$(train_count)_b$(training_batch_size)_i$(iterations)_pb$(prediction_batch_size)_prx"
+    batch_token = isnothing(training_batch_size) ? "full" : string(training_batch_size)
+    stem = "dynamic_etth2_h$(horizon)_n$(train_count)_b$(batch_token)_i$(iterations)_pb$(prediction_batch_size)_prx"
     jld2_path = joinpath(results_dir, "$stem.jld2")
     markdown_path = joinpath(results_dir, "$stem.md")
     jldsave(jld2_path; config, metrics, predictions, posteriors, y_test)
@@ -522,15 +560,36 @@ function parse_cli(args)
     allowed_options = Set(["--session", "--horizon"])
     unknown = setdiff(Set(keys(options)), allowed_options)
     isempty(unknown) || error("unknown options: $(join(sort!(collect(unknown)), ", "))")
-    horizon = parse(Int, get(options, "--horizon", "96"))
-    default_session = joinpath("sessions", "dynamic", "vae", "dynamic_ETTh2_$(horizon).yaml")
+    horizon_values = split(get(options, "--horizon", "96"), ',')
+    horizons = parse.(Int, strip.(horizon_values))
+    isempty(horizons) && error("--horizon must contain at least one horizon")
+    allunique(horizons) || error("--horizon contains duplicate values")
+    unsupported = setdiff(horizons, collect(SUPPORTED_HORIZONS))
+    isempty(unsupported) || error(
+        "unsupported horizons: $(join(unsupported, ", ")); supported horizons: $(join(SUPPORTED_HORIZONS, ", "))",
+    )
+    haskey(options, "--session") && length(horizons) > 1 && error(
+        "--session can only be combined with a single --horizon value",
+    )
+    sessions = if haskey(options, "--session")
+        [options["--session"]]
+    else
+        [joinpath("sessions", "dynamic", "vae", "dynamic_ETTh2_$(horizon).yaml") for horizon in horizons]
+    end
     return (
-        session=get(options, "--session", default_session),
+        sessions,
         prepare_only="--prepare-only" in flags,
         rebuild_cache="--rebuild-cache" in flags,
     )
 end
 
 if abspath(PROGRAM_FILE) == @__FILE__
-    run_etth2_comparison(; parse_cli(ARGS)...)
+    cli = parse_cli(ARGS)
+    for session in cli.sessions
+        run_etth2_comparison(;
+            session,
+            prepare_only=cli.prepare_only,
+            rebuild_cache=cli.rebuild_cache,
+        )
+    end
 end
