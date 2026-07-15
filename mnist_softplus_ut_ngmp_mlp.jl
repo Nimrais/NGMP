@@ -218,12 +218,12 @@ function posterior_priors(result, old_priors)
     posteriors = result.posteriors
     hidden_weight = map(
         information_form_prior,
-        last(posteriors[:hidden_weight]),
+        posteriors[:hidden_weight],
         old_priors.hidden_weight,
     )
     gate_weight = map(
         information_form_prior,
-        last(posteriors[:gate_weight]),
+        posteriors[:gate_weight],
         old_priors.gate_weight,
     )
     return (
@@ -235,10 +235,10 @@ function posterior_priors(result, old_priors)
             gate_weight,
             size(old_priors.gate_weight),
         ),
-        hidden_precision=deepcopy(last(posteriors[:hidden_precision])),
-        gate_score_precision=deepcopy(last(posteriors[:gate_score_precision])),
-        observation_precision=deepcopy(last(posteriors[:observation_precision])),
-        gate_rate=deepcopy(last(posteriors[:gate_rate])),
+        hidden_precision=deepcopy(posteriors[:hidden_precision]),
+        gate_score_precision=deepcopy(posteriors[:gate_score_precision]),
+        observation_precision=deepcopy(posteriors[:observation_precision]),
+        gate_rate=deepcopy(posteriors[:gate_rate]),
     )
 end
 
@@ -287,6 +287,14 @@ function infer_ngmp_mlp_batch(
             hidden_count,
             class_count,
             observation_count,
+        ),
+        returnvars=Dict(
+            :hidden_weight => KeepLast(),
+            :gate_weight => KeepLast(),
+            :hidden_precision => KeepLast(),
+            :gate_score_precision => KeepLast(),
+            :observation_precision => KeepLast(),
+            :gate_rate => KeepLast(),
         ),
         iterations=iterations,
         options=(limit_stack_depth=500,),
@@ -492,7 +500,8 @@ function smoke_test()
     )
     @assert size(updated.hidden_weight) == (2, 2)
     @assert size(updated.gate_weight) == (2, 2)
-    @assert haskey(result.posteriors, :gate_precision)
+    @assert size(result.posteriors[:hidden_weight]) == (2, 2)
+    @assert !haskey(result.posteriors, :gate_precision)
     println("smoke_test=passed")
 end
 
