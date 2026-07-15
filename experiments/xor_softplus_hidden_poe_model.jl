@@ -139,7 +139,8 @@ using SurrogateModelling
     end
 end
 
-@constraints function xor_softplus_hidden_poe_training_constraints()
+@constraints function xor_softplus_hidden_poe_training_constraints(connect_hidden_to_y)
+    if connect_hidden_to_y
       q(
           w_mean,
           w_a,
@@ -174,8 +175,42 @@ end
           q(β_hidden) *
           q(β_out) *
           q(τ_hidden)
+    else
+        q(
+          w_mean,
+          w_a,
+          w_h,
+          z_mean,
+          za,
+          γ_hidden,
+          hidden_out,
+          mean_contribution,
+          gate_contribution,
+          τ_mean,
+          τ_gate,
+          τ_h,
+          β_hidden,
+          β_out
+      ) =
+          q(w_mean) *
+          q(w_a) *
+          q(w_h) *
+          q(
+              z_mean,
+              za,
+              γ_hidden,
+              hidden_out,
+              mean_contribution,
+              gate_contribution,
+          ) *
+          q(τ_mean) *
+          q(τ_gate) *
+          q(τ_h) *
+          q(β_hidden) *
+          q(β_out)
+    end 
 
-      q(w_mean)::MomentForm()
-      q(w_a)::MomentForm()
-      q(w_h)::MomentForm()
-  end
+    q(w_mean)::MomentForm()
+    q(w_a)::MomentForm()
+    q(w_h)::MomentForm()
+end
