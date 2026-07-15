@@ -379,8 +379,7 @@ function weight_means(priors)
     return hidden, gates
 end
 
-function predict_ngmp_mlp(priors, feature, classes)
-    hidden_weights, gate_weights = weight_means(priors)
+function predict_ngmp_mlp(hidden_weights, gate_weights, feature, classes)
     hidden_count = size(gate_weights, 2)
     class_count = length(classes)
     scores = zeros(class_count)
@@ -398,9 +397,20 @@ function predict_ngmp_mlp(priors, feature, classes)
     return classes[argmax(scores)], scores
 end
 
+function predict_ngmp_mlp(priors, feature, classes)
+    hidden_weights, gate_weights = weight_means(priors)
+    return predict_ngmp_mlp(hidden_weights, gate_weights, feature, classes)
+end
+
 function evaluate_ngmp_mlp(priors, split, classes)
+    hidden_weights, gate_weights = weight_means(priors)
     correct = count(eachindex(split.labels)) do index
-        prediction, _ = predict_ngmp_mlp(priors, split.features[index], classes)
+        prediction, _ = predict_ngmp_mlp(
+            hidden_weights,
+            gate_weights,
+            split.features[index],
+            classes,
+        )
         prediction == split.labels[index]
     end
     return correct / length(split.labels)
@@ -502,6 +512,23 @@ function smoke_test()
     @assert size(updated.gate_weight) == (2, 2)
     @assert size(result.posteriors[:hidden_weight]) == (2, 2)
     @assert !haskey(result.posteriors, :gate_precision)
+    classes = [0, 1]
+    hidden_weights, gate_weights = weight_means(updated)
+    direct_prediction, direct_scores = predict_ngmp_mlp(updated, features[1], classes)
+    cached_prediction, cached_scores = predict_ngmp_mlp(
+        hidden_weights,
+        gate_weights,
+        features[1],
+        classes,
+    )
+    @assert direct_prediction == cached_prediction
+    @assert direct_scores ≈ cached_scores
+    accuracy = evaluate_ngmp_mlp(
+        updated,
+        (features=features, labels=classes),
+        classes,
+    )
+    @assert 0.0 <= accuracy <= 1.0
     println("smoke_test=passed")
 end
 
