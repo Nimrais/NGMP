@@ -72,3 +72,55 @@ import Random: MersenneTwister
         @test marginal_info !== marginal_moment
     end
 end
+
+@testset "damped scalar random-random softdot gate edge" begin
+    q_y = NormalMeanVariance(0.3, 0.2)
+    q_x = NormalMeanVariance(-0.4, 0.5)
+    q_θ = NormalMeanVariance(1.0, 0.1)
+    q_γ = PointMass(20.0)
+    damping = DampingMeta(alpha = 0.25, beta = 0.0)
+    state = NGMPEdgeState(damping)
+
+    target_weighted_mean = mean(q_γ) * mean(q_y) * mean(q_x)
+    target_precision = mean(q_γ) * (var(q_x) + mean(q_x)^2)
+    first_message = @call_rule softdot(
+        :θ,
+        NaturalGradientMessage(),
+    ) (q_y = q_y, q_θ = q_θ, q_x = q_x, q_γ = q_γ, meta = state)
+    @test weightedmean(first_message) ≈ 0.25 * target_weighted_mean
+    @test precision(first_message) ≈ 0.25 * target_precision
+    @test state.nfired == 1
+
+    second_message = @call_rule softdot(
+        :θ,
+        NaturalGradientMessage(),
+    ) (q_y = q_y, q_θ = q_θ, q_x = q_x, q_γ = q_γ, meta = state)
+    @test weightedmean(second_message) ≈ (1 - 0.75^2) * target_weighted_mean
+    @test precision(second_message) ≈ (1 - 0.75^2) * target_precision
+    @test state.nfired == 2
+
+    y_message = @call_rule softdot(:y, Marginalisation) (
+        q_θ = q_θ,
+        q_x = q_x,
+        q_γ = q_γ,
+        meta = damping,
+    )
+    x_message = @call_rule softdot(:x, Marginalisation) (
+        q_y = q_y,
+        q_θ = q_θ,
+        q_γ = q_γ,
+        meta = damping,
+    )
+    @test mean(y_message) ≈ mean(q_θ) * mean(q_x)
+    @test precision(y_message) ≈ mean(q_γ)
+    scaled_y_message = @call_rule softdot(:y, Marginalisation) (
+        q_θ = NormalMeanVariance(2mean(q_θ), 4var(q_θ)),
+        q_x = q_x,
+        q_γ = q_γ,
+        meta = damping,
+    )
+    @test mean(scaled_y_message) ≈ 2mean(y_message)
+    @test var(scaled_y_message) ≈ var(y_message)
+    @test weightedmean(x_message) ≈ mean(q_γ) * mean(q_θ) * mean(q_y)
+    @test precision(x_message) ≈ mean(q_γ) * (var(q_θ) + mean(q_θ)^2)
+end
