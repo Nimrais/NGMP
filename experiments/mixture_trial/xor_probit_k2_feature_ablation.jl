@@ -64,6 +64,22 @@ import RxInfer: @average_energy, @call_rule, @rule
     meta = meta,
 )
 
+@rule Probit(:in, Marginalisation) (m_out::DiscreteNonParametric, m_in::NormalMeanPrecision, meta::ProbitMeta) = begin 
+    return @call_rule Probit(:in, Marginalisation) (
+        m_out = Bernoulli(probvec(m_out)[2]),
+        m_in = m_in,
+        meta = meta,
+    )
+end
+
+@rule Probit(:in, Marginalisation) (m_out::DiscreteNonParametric, m_in::NormalMeanVariance, meta::ProbitMeta) = begin 
+    return @call_rule Probit(:in, Marginalisation) (
+        m_out = Bernoulli(probvec(m_out)[2]),
+        m_in = m_in,
+        meta = meta,
+    )
+end
+
 @rule Probit(:out, Marginalisation) (
     q_in::UnivariateNormalDistributionsFamily,
     meta::Union{ProbitMeta, Nothing},
@@ -264,25 +280,10 @@ end
     end
 end
 
-@model function xor_probit_gate(features, y, w_prior, mixture_precision)
-    w ~ w_prior
-    for n in eachindex(y)
-        # With fixed features and Gaussian q(w), this deterministic linear node
-        # sends an exact Gaussian score message in both directions.
-        z[n] ~ dot(features[n], w)
-        c[n] ~ Probit(z[n])
-        y[n] ~ NormalMixture(
-            switch = c[n],
-            m = (0.0, 1.0),
-            p = (mixture_precision, mixture_precision),
-        )
-    end
-end
-
 @constraints function probit_constraints()
     # Required because NormalMixture represents c as Categorical while the
     # native structured Probit marginal is Bernoulli-specific.
-    q(c, z, w) = q(c)q(z)q(w)
+    q(c, z, w) = q(c, z)q(w)
 end
 
 @initialization function probit_initialization(initial_w)
