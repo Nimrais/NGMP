@@ -11,7 +11,12 @@ using ExponentialFamily:
     NormalWeightedMeanPrecision,
     GammaShapeRate,
     UnivariateNormalDistributionsFamily,
-    GammaDistributionsFamily
+    GammaDistributionsFamily,
+    MvNormalMeanCovariance,
+    MvNormalWeightedMeanPrecision,
+    MultivariateNormalDistributionsFamily,
+    weightedmean_precision
+using LinearAlgebra: vec
 
 export NaturalGradientMessage, NGMPDependencies, DampingMeta, NGMPEdgeState, ClosedFormDefault, getprojection
 

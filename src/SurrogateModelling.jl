@@ -69,7 +69,12 @@ include("tangent_projections/normal.jl")
 
 include("tangent_projections/unscented.jl")
 
+include("tangent_projections/mv_normal.jl")
+
 include("nodes/softplus/softplus.jl")
+include("nodes/mv_softplus/node.jl")
+include("nodes/mv_softplus/rules/natural_gradient.jl")
+include("nodes/mv_softplus/rules/marginal.jl")
 include("nodes/exp/rules/natural_gradient.jl")
 include("nodes/log/rules/natural_gradient.jl")
 include("nodes/normal_mean_precision/joint_belief.jl")
@@ -80,6 +85,8 @@ include("nodes/softdot/rules/relaxed_structure.jl")
 include("nodes/softdot/rules/natural_gradient.jl")
 
 include("moment_form.jl")
+
+include("kl_divergences.jl")
 
 function __init__()
     __init__sunspots()

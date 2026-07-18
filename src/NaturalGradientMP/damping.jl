@@ -84,6 +84,10 @@ natural_parameters(target::UnivariateNormalDistributionsFamily) =
     (NormalMeanVariance, [weightedmean(target), -precision(target) / 2])
 natural_parameters(target::GammaDistributionsFamily) =
     (Gamma, [shape(target) - 1.0, -rate(target)])
+function natural_parameters(target::MultivariateNormalDistributionsFamily)
+    ξ, Λ = weightedmean_precision(target)
+    return (MvNormalMeanCovariance, vcat(collect(Float64, ξ), vec(collect(Float64, -Λ ./ 2))))
+end
 natural_parameters(target::ExponentialFamilyDistribution{T}) where {T} =
     (T, collect(Float64, getnaturalparameters(target)))
 # Generic fallback — checked, proper distributions only.
@@ -101,6 +105,10 @@ round-trip safely; the generic fallback uses the unchecked 4-argument
 """
 from_natural(::Type{NormalMeanVariance}, η) = NormalWeightedMeanPrecision(η[1], -2 * η[2])
 from_natural(::Type{Gamma}, η) = GammaShapeRate(η[1] + 1.0, -η[2])
+function from_natural(::Type{MvNormalMeanCovariance}, η)
+    d = div(isqrt(1 + 4 * length(η)) - 1, 2)
+    return MvNormalWeightedMeanPrecision(η[1:d], -2 .* reshape(η[(d + 1):end], d, d))
+end
 from_natural(::Type{T}, η) where {T} =
     convert(Distribution, ExponentialFamilyDistribution(T, η, nothing, nothing))
 

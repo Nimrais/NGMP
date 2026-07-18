@@ -17,6 +17,8 @@ the 2-derivative second-order delta projection and dense quadrature.
 """
 module UnscentedTransforms
 
+using LinearAlgebra: cholesky, Symmetric
+
 export UnscentedTransform
 
 """
@@ -71,6 +73,80 @@ function gaussian_sigma_points(α::Real, β::Real, κ::Real, m::Real, v::Real)
     wm = (λ / (d + λ), w, w)
     wc = (λ / (d + λ) + (1 - α^2 + β), w, w)
     return points, wm, wc
+end
+
+"""
+    gaussian_sigma_points(α, β, κ, m::AbstractVector, V::AbstractMatrix) -> (points, wm, wc)
+
+Classical scaled-UT sigma points and (mean, covariance) weights for a
+`d`-dimensional Gaussian belief `N(m, V)`; `2d + 1` points along the Cholesky
+columns. All weights are positive for the defaults `α = 1, β = 0, κ = 2`, which
+makes this set the right tool for MOMENT MATCHING a nonlinear pushforward
+(guaranteed-PSD covariance). It is NOT sufficient for the multivariate Williams
+product — use [`degree5_cubature_points`](@ref) there.
+"""
+function gaussian_sigma_points(α::Real, β::Real, κ::Real, m::AbstractVector, V::AbstractMatrix)
+    d = length(m)
+    λ = α^2 * (d + κ) - d
+    L = cholesky(Symmetric(Matrix(float.(V)))).L
+    c = sqrt(d + λ)
+    m0 = collect(float.(m))
+    points = Vector{typeof(m0)}(undef, 2d + 1)
+    points[1] = m0
+    for j in 1:d
+        col = c .* L[:, j]
+        points[1 + j] = m0 .+ col
+        points[1 + d + j] = m0 .- col
+    end
+    w = 1 / (2 * (d + λ))
+    wm = vcat(λ / (d + λ), fill(w, 2d))
+    wc = vcat(λ / (d + λ) + (1 - α^2 + β), fill(w, 2d))
+    return points, wm, wc
+end
+
+"""
+    degree5_cubature_points(m::AbstractVector, V::AbstractMatrix) -> (points, weights)
+
+McNamee–Stenger degree-5 Gaussian cubature for a `d`-dimensional belief
+`N(m, V)`: `2d² + 1` points — the center, `±√3` along each Cholesky column, and
+the `±√3 lᵢ ± √3 lⱼ` pair points — with weights
+
+    w₀ = 1 + d(d − 7)/18,   w₁ = (4 − d)/18,   w₂ = 1/36,
+
+exact for every polynomial integrand of degree ≤ 5. The pair points are what a
+`2d + 1` scaled-UT set lacks: without them the cross fourth moments
+`E[zᵢ²zⱼ²]` are misrepresented and the Williams product `Cov_q[x xᵀ, ℓ]` is
+wrong even for exactly quadratic `ℓ`. At `d = 1` this IS the scalar rule
+(points `m ± √(3v)`, weights `(2/3, 1/6, 1/6)` — 3-point Gauss–Hermite).
+Axis weights `w₁` turn negative for `d > 4` — standard for this rule and
+harmless for covariance estimation (the point set is not a density).
+"""
+function degree5_cubature_points(m::AbstractVector, V::AbstractMatrix)
+    d = length(m)
+    L = cholesky(Symmetric(Matrix(float.(V)))).L
+    u = sqrt(3.0)
+    m0 = collect(float.(m))
+    points = Vector{typeof(m0)}(undef, 2 * d^2 + 1)
+    points[1] = m0
+    for j in 1:d
+        col = u .* L[:, j]
+        points[1 + j] = m0 .+ col
+        points[1 + d + j] = m0 .- col
+    end
+    idx = 2d + 1
+    for i in 1:(d - 1), j in (i + 1):d
+        ci = u .* L[:, i]
+        cj = u .* L[:, j]
+        points[idx += 1] = m0 .+ ci .+ cj
+        points[idx += 1] = m0 .+ ci .- cj
+        points[idx += 1] = m0 .- ci .+ cj
+        points[idx += 1] = m0 .- ci .- cj
+    end
+    w0 = 1 + d * (d - 7) / 18
+    w1 = (4 - d) / 18
+    w2 = 1 / 36
+    weights = vcat(w0, fill(w1, 2d), fill(w2, 2 * d * (d - 1)))
+    return points, weights
 end
 
 """

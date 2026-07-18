@@ -61,6 +61,7 @@ end
     include("ngmp/integration_tests.jl")
     include("ngmp/log_rule_tests.jl")
     include("ngmp/softplus_rule_tests.jl")
+    include("ngmp/mv_softplus_rule_tests.jl")
     include("ngmp/normal_mean_precision_rule_tests.jl")
     include("ngmp/normal_mean_precision_joint_belief_tests.jl")
     include("ngmp/softdot_info_form_tests.jl")
