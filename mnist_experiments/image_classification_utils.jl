@@ -68,15 +68,15 @@ function resize_image_area(image, output_size)
     row_scale = div(source_height, output_height)
     column_scale = div(source_width, output_width)
     output = Array{Float64}(undef, output_height, output_width, channels)
-    normalization = inv(row_scale * column_scale)
     for channel in 1:channels, j in 1:output_width, i in 1:output_height
-        total = 0.0
-        for source_j in ((j - 1) * column_scale + 1):(j * column_scale)
-            for source_i in ((i - 1) * row_scale + 1):(i * row_scale)
-                total += normalized_pixel(image, source_i, source_j, channel)
-            end
-        end
-        output[i, j, channel] = total * normalization
+        rows = ((i - 1) * row_scale + 1):(i * row_scale)
+        columns = ((j - 1) * column_scale + 1):(j * column_scale)
+        block = ndims(image) == 2 ?
+            @view(image[rows, columns]) :
+            @view(image[rows, columns, channel])
+        value = Float64(mean(block))
+        output[i, j, channel] =
+            eltype(image) <: Integer ? value / Float64(typemax(eltype(image))) : value
     end
     return output
 end
