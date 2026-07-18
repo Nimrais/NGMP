@@ -1,6 +1,6 @@
 # This file is machine-generated - editing it directly is not advised
 
-julia_version = "1.11.9"
+julia_version = "1.11.8"
 manifest_format = "2.0"
 project_hash = "79f8f034f973582e0191cf825002fa771ed09ee8"
 
@@ -992,9 +992,9 @@ version = "1.0.7"
 
 [[deps.Enzyme]]
 deps = ["CEnum", "EnzymeCore", "Enzyme_jll", "GPUCompiler", "InteractiveUtils", "LLVM", "Libdl", "LinearAlgebra", "ObjectFile", "PrecompileTools", "Preferences", "Printf", "Random", "SparseArrays"]
-git-tree-sha1 = "72533e00d4a3918c546d413fec0ce7eb8ef0a4a7"
+git-tree-sha1 = "1cdf297c5a8f9f4f4bdc6a6039b0bec36287b709"
 uuid = "7da242da-08ed-463a-9acd-ee780be4f1d9"
-version = "0.13.185"
+version = "0.13.182"
 weakdeps = ["ADTypes", "BFloat16s", "ChainRulesCore", "GPUArraysCore", "LogExpFunctions", "SpecialFunctions", "StaticArrays"]
 
     [deps.Enzyme.extensions]
@@ -1140,9 +1140,9 @@ version = "1.3.0"
 
 [[deps.FileIO]]
 deps = ["Pkg", "Requires", "UUIDs"]
-git-tree-sha1 = "6621fef488e496356c9c9625d0562c12a6070819"
+git-tree-sha1 = "8e9c059d6857607253e837730dbf780b6b151acd"
 uuid = "5789e2e9-d7fb-5bc7-8068-2c6fae9b9549"
-version = "1.20.0"
+version = "1.19.0"
 weakdeps = ["HTTP"]
 
     [deps.FileIO.extensions]
@@ -1224,9 +1224,9 @@ version = "0.8.6"
 
 [[deps.FlexiChains]]
 deps = ["AbstractMCMC", "AbstractPPL", "DelimitedFiles", "DimensionalData", "DocStringExtensions", "LinearAlgebra", "MCMCDiagnosticTools", "OrderedCollections", "PrecompileTools", "Printf", "Random", "Statistics", "StatsBase", "Tables"]
-git-tree-sha1 = "4ab612beb43427268726add5d7be00cfd70c648d"
+git-tree-sha1 = "d50dcb1b13d446b2738ca5e54a8327963c91b1b4"
 uuid = "4a37a8b9-6e57-4b92-8664-298d46e639f7"
-version = "0.6.31"
+version = "0.6.28"
 
     [deps.FlexiChains.extensions]
     FlexiChainsAdvancedHMCExt = ["AdvancedHMC", "DimensionalData"]
@@ -1827,9 +1827,9 @@ version = "3.2.0+0"
 
 [[deps.JuliaInterpreter]]
 deps = ["CodeTracking", "InteractiveUtils", "Random", "UUIDs"]
-git-tree-sha1 = "027434f0225197332771b3a2ac8c6408021310a4"
+git-tree-sha1 = "58927c485919bf17ea308d9d82156de1adf4b006"
 uuid = "aa1ae85d-cabe-5617-a682-6adf51b2e16a"
-version = "0.11.2"
+version = "0.10.12"
 
 [[deps.KernelAbstractions]]
 deps = ["Adapt", "Atomix", "InteractiveUtils", "MacroTools", "PrecompileTools", "Requires", "StaticArrays", "UUIDs"]
@@ -1869,9 +1869,9 @@ version = "4.1.0+0"
 
 [[deps.LLVM]]
 deps = ["CEnum", "LLVMExtra_jll", "Libdl", "PrecompileTools", "Preferences", "Printf", "Unicode"]
-git-tree-sha1 = "24af42ea221a14a04283e362d83d2cdcb115cd12"
+git-tree-sha1 = "f74a9668f02e33399baa5ed3a092b3f7a93f192e"
 uuid = "929cbde3-209d-540e-8aea-75f648917ca0"
-version = "9.10.1"
+version = "9.10.0"
 weakdeps = ["BFloat16s"]
 
     [deps.LLVM.extensions]
@@ -2134,9 +2134,9 @@ weakdeps = ["FillArrays"]
 
 [[deps.LoweredCodeUtils]]
 deps = ["CodeTracking", "Compiler", "JuliaInterpreter"]
-git-tree-sha1 = "8b6ba8759d80f313a92545246c8dad2a7e8e7b4e"
+git-tree-sha1 = "3733419e9a71156b389f3e331672d2e95436783f"
 uuid = "6f1432cf-f94c-5a45-995e-cdbf5db27b0b"
-version = "3.7.2"
+version = "3.6.2"
 
 [[deps.Lux]]
 deps = ["ADTypes", "Adapt", "ArrayInterface", "ChainRulesCore", "ConcreteStructs", "DiffResults", "DispatchDoctor", "EnzymeCore", "FastClosures", "ForwardDiff", "Functors", "GPUArraysCore", "LinearAlgebra", "LuxCore", "LuxLib", "MLDataDevices", "MacroTools", "Markdown", "NNlib", "Optimisers", "PrecompileTools", "Preferences", "Random", "ReactantCore", "Reexport", "SciMLPublic", "Setfield", "Static", "StaticArraysCore", "Statistics", "UUIDs", "WeightInitializers"]
@@ -2569,9 +2569,9 @@ version = "0.3.4"
 
 [[deps.Moshi]]
 deps = ["ExproniconLite", "Jieko"]
-git-tree-sha1 = "2d5d1195e4d29712c0db4c0b608c1c3467ab9428"
+git-tree-sha1 = "acf5818bc38f95ee7202c248bd381c4e3f497575"
 uuid = "2e0e35c7-a2e4-4343-998d-7ef72827ed2d"
-version = "0.3.11"
+version = "0.3.10"
 
 [[deps.MozillaCACerts_jll]]
 uuid = "14a3606d-f60d-562e-9121-12d972cd8159"
@@ -2673,9 +2673,9 @@ version = "1.0.0"
 
 [[deps.NearestNeighbors]]
 deps = ["AbstractTrees", "Distances", "StaticArrays"]
-git-tree-sha1 = "576eb4656529c12e77a46b17c23103dfba9fa570"
+git-tree-sha1 = "ca562494d657e2b69191e440e9c28b9692d67944"
 uuid = "b8a86587-4115-5ab1-83bc-aa920d37bbce"
-version = "0.4.29"
+version = "0.4.28"
 
 [[deps.Netpbm]]
 deps = ["FileIO", "ImageCore", "ImageMetadata"]
@@ -3049,9 +3049,7 @@ version = "1.11.0"
 
 [[deps.ProbabilisticEnsembling]]
 deps = ["ADTypes", "BSON", "BayesBase", "CSV", "CairoMakie", "ClosedFormExpectations", "DataFrames", "Distributions", "Enzyme", "ExponentialFamily", "ExponentialFamilyManifolds", "ExponentialFamilyProjection", "FFTW", "JLD2", "KernelDensity", "LinearAlgebra", "LowRankMatrices", "Lux", "MCMCChains", "MLUtils", "Manifolds", "ManifoldsBase", "Manopt", "NNlib", "Optim", "Optimisers", "ProgressMeter", "Random", "Reactant", "ReactiveMP", "Revise", "RxInfer", "SHA", "StableRNGs", "Statistics", "Turing", "YAML"]
-git-tree-sha1 = "12a3b487666e691b15c160a951aaa785ea703ab4"
-repo-rev = "main"
-repo-url = "git@github.com:biaslab/PrecisionGatedExperts.git"
+path = "/Users/ruiite/projects/new_prob/probabilistic_ensemble_forecasting"
 uuid = "dab4be3b-02fa-4a9b-b857-091df78264db"
 version = "0.0.1"
 
@@ -3224,9 +3222,9 @@ version = "0.0.283+0"
 
 [[deps.ReactiveMP]]
 deps = ["BayesBase", "DiffResults", "Distributions", "DomainIntegrals", "DomainSets", "ExponentialFamily", "FastCholesky", "FastGaussQuadrature", "FixedArguments", "ForwardDiff", "HCubature", "LazyArrays", "LinearAlgebra", "MacroTools", "MatrixCorrectionTools", "Optim", "PolyaGammaHybridSamplers", "PositiveFactorizations", "Random", "Rocket", "SpecialFunctions", "StatsBase", "StatsFuns", "TinyHugeNumbers", "Tullio", "TupleTools", "UUIDs"]
-git-tree-sha1 = "3ea7ef60f844d33554c3b540ac588fbf4875a36f"
+git-tree-sha1 = "2196a408620ad732b114972b3d540095eb71a935"
 uuid = "a194aa59-28ba-4574-a09c-4a745416d6e3"
-version = "6.3.3"
+version = "6.3.1"
 weakdeps = ["ExponentialFamilyProjection", "Optimisers"]
 
     [deps.ReactiveMP.extensions]
@@ -3311,10 +3309,10 @@ uuid = "ae029012-a4dd-5104-9daa-d747884805df"
 version = "1.3.1"
 
 [[deps.Revise]]
-deps = ["CRC32c", "CodeTracking", "FileWatching", "JuliaInterpreter", "LibGit2", "LoweredCodeUtils", "OrderedCollections", "Preferences", "REPL", "UUIDs"]
-git-tree-sha1 = "838f84266bf2e9ca4b7d0b8965807c7a72745501"
+deps = ["CRC32c", "CodeTracking", "FileWatching", "InteractiveUtils", "JuliaInterpreter", "LibGit2", "LoweredCodeUtils", "OrderedCollections", "Preferences", "REPL", "UUIDs"]
+git-tree-sha1 = "27e3ee13fc8739a59b380d6163d6a82f52c03bd7"
 uuid = "295af30f-e4ad-537b-8983-00126c2a3abe"
-version = "3.16.1"
+version = "3.15.1"
 weakdeps = ["Distributed"]
 
     [deps.Revise.extensions]
@@ -3344,9 +3342,9 @@ weakdeps = ["Observables"]
 
 [[deps.Roots]]
 deps = ["Accessors", "CommonSolve", "Printf"]
-git-tree-sha1 = "a7caaf7ba8cf307112ca443784d1b56b4a591455"
+git-tree-sha1 = "125cbd31a56de53169c3eed9c17180bc6c245f83"
 uuid = "f2b01f46-fcfa-551c-844a-d8ac1e96c665"
-version = "3.0.5"
+version = "3.0.4"
 
     [deps.Roots.extensions]
     RootsChainRulesCoreExt = "ChainRulesCore"
@@ -3469,9 +3467,9 @@ weakdeps = ["Tracy"]
 
 [[deps.SciMLOperators]]
 deps = ["Accessors", "Adapt", "ArrayInterface", "DocStringExtensions", "LinearAlgebra"]
-git-tree-sha1 = "6727e42481434c5e72574e7957c4a97e70ee3c6a"
+git-tree-sha1 = "54ac780e1be8c12ad39295b5d4dfd4b1af3685ba"
 uuid = "c0aeaf25-5076-4817-a8d5-81caf7dfa961"
-version = "1.24.3"
+version = "1.24.0"
 
     [deps.SciMLOperators.extensions]
     SciMLOperatorsLoopVectorizationExt = "LoopVectorization"
@@ -3484,9 +3482,9 @@ version = "1.24.3"
     StaticArraysCore = "1e83bf80-4336-4d27-bf5d-d5a4f845583c"
 
 [[deps.SciMLPublic]]
-git-tree-sha1 = "24ff31136f3f991b74fbef71d5c638e2881d29d2"
+git-tree-sha1 = "764809974df0f3a8960101f9f9eb9ad4a137bdda"
 uuid = "431bcebd-1456-4ced-9d72-93c2757fff0b"
-version = "1.2.3"
+version = "1.2.2"
 
 [[deps.SciMLStructures]]
 deps = ["ArrayInterface", "PrecompileTools"]
