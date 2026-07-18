@@ -42,6 +42,11 @@ end
 image_count(images) = size(images, ndims(images))
 image_channels(images) = ndims(images) == 3 ? 1 : size(images, 3)
 
+function dataset_labels(data, name)
+    labels = name === :cifar100 ? data.targets.fine : data.targets
+    return Int.(vec(labels))
+end
+
 function image_at(images, index)
     if ndims(images) == 3
         return @view images[:, :, index]
@@ -159,8 +164,10 @@ function load_flattened_image_dataset(
     rng = MersenneTwister(seed)
     train_data = spec.constructor(split=:train)
     test_data = spec.constructor(split=:test)
-    train_images, train_labels = train_data.features, Int.(vec(train_data.targets))
-    test_images, test_labels = test_data.features, Int.(vec(test_data.targets))
+    train_images = train_data.features
+    test_images = test_data.features
+    train_labels = dataset_labels(train_data, name)
+    test_labels = dataset_labels(test_data, name)
 
     available_classes = sort(intersect(unique(train_labels), unique(test_labels)))
     selected_classes = isnothing(classes) ? available_classes : collect(Int, classes)

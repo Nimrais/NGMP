@@ -6,6 +6,7 @@ using Statistics
 using ProgressMeter
 
 include(joinpath(@__DIR__, "mnist_softplus_rxinfer_surrogate_multiclass.jl"))
+include(joinpath(@__DIR__, "image_classification_utils.jl"))
 
 # ============================================================================
 # RxInfer surrogate MLP on flattened MNIST pixels.
@@ -507,75 +508,6 @@ function infer_batch_mlp_rxinfer(priors, batch_x, batch_y;
     return mlp_posterior_as_priors(marginals, priors), (delta=last_delta, marginals=marginals)
 end
 
-function materialize_flattened_mnist_indices(images, labels, inds)
-    x = zeros(Float64, 14 * 14, length(inds))
-    y = zeros(Int, length(inds))
-    for (k, idx) in enumerate(inds)
-        x[:, k] .= vec(downsample14(@view images[:, :, idx]))
-        y[k] = labels[idx]
-    end
-    return x, y
-end
-
-function collect_flattened_mnist_split(images, labels, nmax, rng; digits=collect(0:9))
-    available = [count(==(digit), labels) for digit in digits]
-    counts = nmax >= sum(available) ? available : balanced_class_counts(nmax, digits)
-    inds = Int[]
-    for (i, digit) in enumerate(digits)
-        class_inds = findall(==(digit), labels)
-        shuffle!(rng, class_inds)
-        append!(inds, class_inds[1:min(counts[i], length(class_inds))])
-    end
-    shuffle!(rng, inds)
-    return materialize_flattened_mnist_indices(images, labels, inds)
-end
-
-function collect_flattened_mnist_train_val(images, labels, ntrain, nval, rng; digits=collect(0:9))
-    available = [count(==(digit), labels) for digit in digits]
-    if ntrain + nval >= sum(available)
-        val_counts = stratified_class_counts(nval, available)
-        train_counts = available .- val_counts
-    else
-        train_counts = balanced_class_counts(ntrain, digits)
-        val_counts = balanced_class_counts(nval, digits)
-    end
-
-    train_inds = Int[]
-    val_inds = Int[]
-    for (i, digit) in enumerate(digits)
-        class_inds = findall(==(digit), labels)
-        shuffle!(rng, class_inds)
-        train_take = min(train_counts[i], length(class_inds))
-        val_take = min(val_counts[i], max(length(class_inds) - train_take, 0))
-        append!(train_inds, class_inds[1:train_take])
-        append!(val_inds, class_inds[(train_take+1):(train_take+val_take)])
-    end
-    shuffle!(rng, train_inds)
-    shuffle!(rng, val_inds)
-
-    train_x, train_y = materialize_flattened_mnist_indices(images, labels, train_inds)
-    val_x, val_y = materialize_flattened_mnist_indices(images, labels, val_inds)
-    return train_x, train_y, val_x, val_y
-end
-
-function select_flattened_mnist(; ntrain=50000, ntest=10000, nval=10000,
-    seed=1, digits=collect(0:9))
-    rng = MersenneTwister(seed)
-    train = MNIST(split=:train)
-    test = MNIST(split=:test)
-    train_images = Float64.(train.features)
-    test_images = Float64.(test.features)
-    train_labels = Int.(train.targets)
-    test_labels = Int.(test.targets)
-
-    train_x, train_y, val_x, val_y =
-        collect_flattened_mnist_train_val(train_images, train_labels, ntrain, nval, rng; digits)
-    test_x, test_y = collect_flattened_mnist_split(test_images, test_labels, ntest, rng; digits)
-    return (train_x=train_x, train_y=train_y,
-        val_x=val_x, val_y=val_y,
-        test_x=test_x, test_y=test_y)
-end
-
 function predict_mlp_rx(priors, input)
     hidden = softplus.(priors.w_m * input)
     logits = priors.c_m .+ priors.u_m * hidden
@@ -597,6 +529,8 @@ function evaluate_mlp_rx(priors, x, y; max_images=size(x, 2))
 end
 
 function train_mlp_rxinfer_demo(; ntrain=10000, nval=1000, ntest=1000,
+    dataset=:mnist,
+    image_size=nothing,
     hidden_count=32,
     batch_size=32,
     epochs=50,
@@ -609,7 +543,7 @@ function train_mlp_rxinfer_demo(; ntrain=10000, nval=1000, ntest=1000,
     product_classifier_site_scale=0.0,
     w_init_scale=0.01,
     u_init_scale=0.1,
-    classes=collect(0:9),
+    classes=nothing,
     projected_nesterov=false,
     nesterov_beta=0.9,
     nesterov_eps=1e-8,
@@ -619,15 +553,17 @@ function train_mlp_rxinfer_demo(; ntrain=10000, nval=1000, ntest=1000,
     max_inner=3,
     eval_max_images=1000,
     inference_backend=:direct)
-    data = select_flattened_mnist(; ntrain, nval, ntest, seed, digits=classes)
+    data = load_flattened_image_dataset(
+        dataset; ntrain, nval, ntest, seed, classes, image_size)
+    classes = data.classes
     input_count = size(data.train_x, 1)
     priors = init_mlp_priors(input_count, hidden_count, classes;
         w_init_scale, u_init_scale, seed=seed + 20)
     rng = MersenneTwister(seed + 30)
     site_scale = inv(epochs)
 
-    println("RxInfer flattened softplus MLP MNIST classes=$(classes)")
-    println("train=$(length(data.train_y)) val=$(length(data.val_y)) test=$(length(data.test_y)) input=$input_count hidden=$hidden_count batch=$batch_size epochs=$epochs alpha=$alpha sigma_sp2=$sigma_sp2 sigma_hidden2=$sigma_hidden2 direct_weight_site_scale=$direct_weight_site_scale discriminative_site_scale=$discriminative_site_scale product_classifier_site_scale=$product_classifier_site_scale w_init_scale=$w_init_scale u_init_scale=$u_init_scale projected_nesterov=$projected_nesterov nesterov_beta=$nesterov_beta nesterov_eps=$nesterov_eps vector_transport=$vector_transport inference_backend=$inference_backend site_scale=$(round(site_scale, digits=4))")
+    println("RxInfer flattened softplus MLP dataset=$(data.name) classes=$(classes)")
+    println("train=$(length(data.train_y)) val=$(length(data.val_y)) test=$(length(data.test_y)) image_size=$(data.image_size) channels=$(data.channels) input=$input_count hidden=$hidden_count batch=$batch_size epochs=$epochs alpha=$alpha sigma_sp2=$sigma_sp2 sigma_hidden2=$sigma_hidden2 direct_weight_site_scale=$direct_weight_site_scale discriminative_site_scale=$discriminative_site_scale product_classifier_site_scale=$product_classifier_site_scale w_init_scale=$w_init_scale u_init_scale=$u_init_scale projected_nesterov=$projected_nesterov nesterov_beta=$nesterov_beta nesterov_eps=$nesterov_eps vector_transport=$vector_transport inference_backend=$inference_backend site_scale=$(round(site_scale, digits=4))")
 
     history = NamedTuple[]
     best_val_acc = -Inf

@@ -183,6 +183,8 @@ function evaluate_nn_mlp(model, x, y; max_images=size(x, 2), batch_size=256)
 end
 
 function train_nn_mlp_demo(; ntrain=10000, nval=1000, ntest=1000,
+    dataset=:mnist,
+    image_size=nothing,
     hidden_count=32,
     hidden_layers=7,
     batch_size=32,
@@ -192,9 +194,11 @@ function train_nn_mlp_demo(; ntrain=10000, nval=1000, ntest=1000,
     weight_decay=0.0,
     w_init_scale=0.01,
     u_init_scale=0.1,
-    classes=collect(0:9),
+    classes=nothing,
     eval_max_images=1000)
-    data = select_flattened_mnist(; ntrain, nval, ntest, seed, digits=classes)
+    data = load_flattened_image_dataset(
+        dataset; ntrain, nval, ntest, seed, classes, image_size)
+    classes = data.classes
     input_count = size(data.train_x, 1)
     model = init_nn_mlp(input_count, hidden_count, classes;
         hidden_layers,
@@ -202,8 +206,8 @@ function train_nn_mlp_demo(; ntrain=10000, nval=1000, ntest=1000,
     opt = MLPAdamState(model)
     rng = MersenneTwister(seed + 30)
 
-    println("Neural flattened softplus MLP MNIST classes=$(classes)")
-    println("train=$(length(data.train_y)) val=$(length(data.val_y)) test=$(length(data.test_y)) input=$input_count hidden_layers=$hidden_layers hidden_count=$hidden_count batch=$batch_size epochs=$epochs lr=$lr weight_decay=$weight_decay w_init_scale=$w_init_scale u_init_scale=$u_init_scale")
+    println("Neural flattened softplus MLP dataset=$(data.name) classes=$(classes)")
+    println("train=$(length(data.train_y)) val=$(length(data.val_y)) test=$(length(data.test_y)) image_size=$(data.image_size) channels=$(data.channels) input=$input_count hidden_layers=$hidden_layers hidden_count=$hidden_count batch=$batch_size epochs=$epochs lr=$lr weight_decay=$weight_decay w_init_scale=$w_init_scale u_init_scale=$u_init_scale")
 
     history = NamedTuple[]
     best_val_acc = -Inf

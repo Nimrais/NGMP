@@ -558,6 +558,8 @@ end
 
 function train_two_hidden_mlp_rxinfer_demo(
     ; ntrain=10000, nval=1000, ntest=1000,
+    dataset=:mnist,
+    image_size=nothing,
     hidden1_count=32,
     hidden2_count=32,
     batch_size=32,
@@ -569,10 +571,10 @@ function train_two_hidden_mlp_rxinfer_demo(
     sigma_hidden2_2=0.05^2,
     direct_weight_site_scale=1.0,
     discriminative_site_scale=2.0,
-    classes=collect(0:9),
-    w1_init_scale=sqrt(2 / (14 * 14 + hidden1_count)),
-    w2_init_scale=sqrt(2 / (hidden1_count + hidden2_count)),
-    u_init_scale=sqrt(2 / (hidden2_count + length(classes))),
+    classes=nothing,
+    w1_init_scale=nothing,
+    w2_init_scale=nothing,
+    u_init_scale=nothing,
     vector_transport=true,
     vector_transport_momentum=0.5,
     vector_transport_damping=1e-6,
@@ -580,8 +582,16 @@ function train_two_hidden_mlp_rxinfer_demo(
     eval_max_images=1000,
     inference_backend=:direct,
 )
-    data = select_flattened_mnist(; ntrain, nval, ntest, seed, digits=classes)
+    data = load_flattened_image_dataset(
+        dataset; ntrain, nval, ntest, seed, classes, image_size)
+    classes = data.classes
     input_count = size(data.train_x, 1)
+    w1_init_scale = something(
+        w1_init_scale, sqrt(2 / (input_count + hidden1_count)))
+    w2_init_scale = something(
+        w2_init_scale, sqrt(2 / (hidden1_count + hidden2_count)))
+    u_init_scale = something(
+        u_init_scale, sqrt(2 / (hidden2_count + length(classes))))
     priors = init_two_hidden_priors(
         input_count, hidden1_count, hidden2_count, classes;
         w1_init_scale, w2_init_scale, u_init_scale, seed=seed + 20)
@@ -592,8 +602,8 @@ function train_two_hidden_mlp_rxinfer_demo(
     best_priors = copy_two_hidden_priors(priors)
     best_epoch = 0
 
-    println("RxInfer two-hidden-layer Softplus MLP MNIST classes=$classes")
-    println("train=$(length(data.train_y)) val=$(length(data.val_y)) test=$(length(data.test_y)) input=$input_count hidden1=$hidden1_count hidden2=$hidden2_count batch=$batch_size epochs=$epochs max_inner=$max_inner inference_backend=$inference_backend")
+    println("RxInfer two-hidden-layer Softplus MLP dataset=$(data.name) classes=$classes")
+    println("train=$(length(data.train_y)) val=$(length(data.val_y)) test=$(length(data.test_y)) image_size=$(data.image_size) channels=$(data.channels) input=$input_count hidden1=$hidden1_count hidden2=$hidden2_count batch=$batch_size epochs=$epochs max_inner=$max_inner inference_backend=$inference_backend")
     println("init_scales=($(round(w1_init_scale, digits=3)), $(round(w2_init_scale, digits=3)), $(round(u_init_scale, digits=3))) direct_weight_site_scale=$direct_weight_site_scale")
 
     for epoch in 1:epochs
