@@ -4,6 +4,7 @@ models/*
 !models/.keep
 data/*
 !data/.data
+/.data/
 /cache/
 /results/
 notebooks/vmp_vs_ngmp/dynamic_etth1_h96_cache.jld2
