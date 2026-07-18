@@ -3,6 +3,9 @@ uuid = "513372d4-95e9-4230-b2b4-50eda1674c50"
 authors = ["Mykola Lukashchuk <nikola.lukashuk@gmail.com>"]
 version = "0.1.0"
 
+[sources]
+ProbabilisticEnsembling = {path = "../new_prob/probabilistic_ensemble_forecasting"}
+
 [deps]
 BayesBase = "b4ee3484-f114-42fe-b91c-797d54a0c67e"
 CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
