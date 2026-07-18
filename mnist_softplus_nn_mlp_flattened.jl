@@ -11,9 +11,10 @@ include("mnist_softplus_rxinfer_mlp_flattened.jl")
 # Architecture matches mnist_softplus_rxinfer_mlp_flattened.jl:
 #
 #   input[n,k]  = vec(downsample14(image))[k]
-#   a[n,h]      = dot(W[h, :], input[n, :])
-#   x[n,h]      = softplus(a[n,h])
-#   logits[n,c] = c[c] + dot(U[c, :], x[n, :])
+#   x[0]        = input
+#   a[l]        = W[l] * x[l - 1]
+#   x[l]        = softplus(a[l])
+#   logits      = c + U * x[end]
 #   label[n]    = softmax(logits[n, :])
 #
 # This file uses the same flattened MNIST loader and same parameter shapes as
@@ -21,9 +22,16 @@ include("mnist_softplus_rxinfer_mlp_flattened.jl")
 # Adam. It is dependency-free beyond the packages already used by the demos.
 # ============================================================================
 
+struct NNMLP
+    hidden_weights::Vector{Matrix{Float64}}
+    u_m::Matrix{Float64}
+    c_m::Vector{Float64}
+    classes::Vector{Int}
+end
+
 mutable struct MLPAdamState
-    m_w::Matrix{Float64}
-    v_w::Matrix{Float64}
+    m_w::Vector{Matrix{Float64}}
+    v_w::Vector{Matrix{Float64}}
     m_u::Matrix{Float64}
     v_u::Matrix{Float64}
     m_c::Vector{Float64}
@@ -33,7 +41,8 @@ end
 
 function MLPAdamState(model)
     return MLPAdamState(
-        zeros(size(model.w_m)), zeros(size(model.w_m)),
+        [zeros(size(w)) for w in model.hidden_weights],
+        [zeros(size(w)) for w in model.hidden_weights],
         zeros(size(model.u_m)), zeros(size(model.u_m)),
         zeros(size(model.c_m)), zeros(size(model.c_m)),
         0,
@@ -41,32 +50,50 @@ function MLPAdamState(model)
 end
 
 function init_nn_mlp(input_count, hidden_count, classes;
+    hidden_layers=1,
     w_init_scale=0.01, u_init_scale=0.1, seed=1)
-    return init_mlp_priors(input_count, hidden_count, classes;
-        w_init_scale, u_init_scale, seed)
+    hidden_layers >= 1 || throw(ArgumentError("hidden_layers must be at least 1"))
+    hidden_count >= 1 || throw(ArgumentError("hidden_count must be at least 1"))
+    rng = MersenneTwister(seed)
+    weights = Matrix{Float64}[]
+    push!(weights, w_init_scale .* randn(rng, hidden_count, input_count))
+    for _ in 2:hidden_layers
+        push!(weights, w_init_scale .* randn(rng, hidden_count, hidden_count))
+    end
+    return NNMLP(
+        weights,
+        u_init_scale .* randn(rng, length(classes), hidden_count),
+        zeros(length(classes)),
+        collect(classes),
+    )
 end
 
-copy_nn_mlp(model) = copy_mlp_priors(model)
+copy_nn_mlp(model) = NNMLP(
+    copy.(model.hidden_weights), copy(model.u_m), copy(model.c_m), copy(model.classes))
 
 function forward_nn_mlp(model, batch_x)
     input_count, n_count = size(batch_x)
-    @assert input_count == size(model.w_m, 2)
-    hidden_count = size(model.w_m, 1)
+    @assert input_count == size(first(model.hidden_weights), 2)
     class_count = length(model.classes)
 
-    preactivation = zeros(Float64, hidden_count, n_count)
-    hidden = zeros(Float64, hidden_count, n_count)
-    logits = zeros(Float64, class_count, n_count)
-    probs = zeros(Float64, class_count, n_count)
+    preactivations = Matrix{Float64}[]
+    hidden_activations = Matrix{Float64}[]
+    activation = batch_x
+    for weights in model.hidden_weights
+        preactivation = weights * activation
+        activation = softplus.(preactivation)
+        push!(preactivations, preactivation)
+        push!(hidden_activations, activation)
+    end
 
-    preactivation .= model.w_m * batch_x
-    hidden .= softplus.(preactivation)
-    logits .= model.c_m .+ model.u_m * hidden
+    logits = model.c_m .+ model.u_m * activation
+    probs = zeros(Float64, class_count, n_count)
     for n in 1:n_count
         probs[:, n] .= softmax_probs(@view logits[:, n])
     end
 
-    return (preactivation=preactivation, hidden=hidden,
+    return (preactivations=preactivations, hidden_activations=hidden_activations,
+        preactivation=last(preactivations), hidden=last(hidden_activations),
         logits=logits, probs=probs)
 end
 
@@ -87,11 +114,18 @@ function nn_mlp_loss_and_grads(model, batch_x, batch_y)
     loss /= n_count
     dlogits ./= n_count
 
-    grad_u = dlogits * transpose(cache.hidden)
+    grad_u = dlogits * transpose(last(cache.hidden_activations))
     grad_c = vec(sum(dlogits; dims=2))
     dhidden = transpose(model.u_m) * dlogits
-    dpreactivation = dhidden .* sigmoid.(cache.preactivation)
-    grad_w = dpreactivation * transpose(batch_x)
+    grad_w = Vector{Matrix{Float64}}(undef, length(model.hidden_weights))
+    for layer in length(model.hidden_weights):-1:1
+        dpreactivation = dhidden .* sigmoid.(cache.preactivations[layer])
+        previous = layer == 1 ? batch_x : cache.hidden_activations[layer - 1]
+        grad_w[layer] = dpreactivation * transpose(previous)
+        if layer > 1
+            dhidden = transpose(model.hidden_weights[layer]) * dpreactivation
+        end
+    end
 
     return loss, (w=grad_w, u=grad_u, c=grad_c), correct / n_count
 end
@@ -113,7 +147,10 @@ function train_nn_mlp_batch!(model, opt, batch_x, batch_y;
     lr=1e-3, weight_decay=0.0)
     loss, grads, acc = nn_mlp_loss_and_grads(model, batch_x, batch_y)
     opt.t += 1
-    nn_mlp_adam_update!(model.w_m, grads.w, opt.m_w, opt.v_w, opt.t; lr, weight_decay)
+    for layer in eachindex(model.hidden_weights)
+        nn_mlp_adam_update!(model.hidden_weights[layer], grads.w[layer],
+            opt.m_w[layer], opt.v_w[layer], opt.t; lr, weight_decay)
+    end
     nn_mlp_adam_update!(model.u_m, grads.u, opt.m_u, opt.v_u, opt.t; lr, weight_decay)
     nn_mlp_adam_update!(model.c_m, grads.c, opt.m_c, opt.v_c, opt.t; lr, weight_decay)
     return (loss=loss, acc=acc)
@@ -147,6 +184,7 @@ end
 
 function train_nn_mlp_demo(; ntrain=1000, nval=100, ntest=100,
     hidden_count=32,
+    hidden_layers=7,
     batch_size=32,
     epochs=50,
     seed=1,
@@ -159,12 +197,13 @@ function train_nn_mlp_demo(; ntrain=1000, nval=100, ntest=100,
     data = select_flattened_mnist(; ntrain, nval, ntest, seed, digits=classes)
     input_count = size(data.train_x, 1)
     model = init_nn_mlp(input_count, hidden_count, classes;
+        hidden_layers,
         w_init_scale, u_init_scale, seed=seed + 20)
     opt = MLPAdamState(model)
     rng = MersenneTwister(seed + 30)
 
     println("Neural flattened softplus MLP MNIST classes=$(classes)")
-    println("train=$(length(data.train_y)) val=$(length(data.val_y)) test=$(length(data.test_y)) input=$input_count hidden=$hidden_count batch=$batch_size epochs=$epochs lr=$lr weight_decay=$weight_decay w_init_scale=$w_init_scale u_init_scale=$u_init_scale")
+    println("train=$(length(data.train_y)) val=$(length(data.val_y)) test=$(length(data.test_y)) input=$input_count hidden_layers=$hidden_layers hidden_count=$hidden_count batch=$batch_size epochs=$epochs lr=$lr weight_decay=$weight_decay w_init_scale=$w_init_scale u_init_scale=$u_init_scale")
 
     history = NamedTuple[]
     best_val_acc = -Inf
