@@ -17,8 +17,8 @@ images**. All runs use a batch size of 32.
 
 | Model | Epochs | Final train accuracy | Best validation accuracy | Best validation epoch | Test accuracy |
 |---|---:|---:|---:|---:|---:|
-| RxInfer MLP with vector transport | 10 | 94.7% | **88.0%** | 10 | **88.0%** |
-| RxInfer two-hidden-layer MLP (32/32) with vector transport | 10 | 92.0% | 82.0% | 5 | 86.0% |
+| RxInfer MLP with vector transport | 50 | 95.4% | **88.0%** | 37 | **89.0%** |
+| RxInfer two-hidden-layer MLP (32/32) with vector transport | 50 | 92.5% | 83.0% | 22 | 83.0% |
 | RxInfer MLP without vector transport | 10 | 91.3% | 86.0% | 5 | 80.0% |
 | RxInfer MLP with projected Nesterov | 10 | 93.6% | 86.0% | 6 | 84.0% |
 | Neural MLP, 1 hidden layer (32) | 50 | 94.7% | 86.0% | 14 | 83.0% |
@@ -38,15 +38,15 @@ classified image corresponds to one percentage point of test accuracy.
 ## Test-Set Comparison
 
 The one-hidden-layer RxInfer MLP with vector transport achieved the highest test
-accuracy at **88.0%**. The two-hidden-layer RxInfer MLP was second at 86.0%, two
-percentage points behind the best model. The two-hidden-layer neural MLP and
-neural categorical CNN both reached 84.0% test accuracy, followed by the
-one-hidden-layer neural MLP at 83.0%.
+accuracy at **89.0%**. The two-hidden-layer neural MLP and neural categorical
+CNN both reached 84.0% test accuracy, followed by the one-hidden-layer neural
+MLP and the 50-epoch two-hidden-layer RxInfer MLP at 83.0%.
 
-Vector transport also reached 88.0% validation accuracy after 10 epochs. The
+The one-hidden-layer RxInfer MLP reached 88.0% validation accuracy at epoch 37,
+finished with 95.4% training accuracy, and achieved 89.0% test accuracy. The
 two-hidden-layer RxInfer MLP, using 32 units in each hidden layer and three inner
-site-update iterations, reached its best validation accuracy of 82.0% at epoch
-5, finished with 92.0% training accuracy, and achieved 86.0% test accuracy. The
+site-update iterations, reached its best validation accuracy of 83.0% at epoch
+22, finished with 92.5% training accuracy, and achieved 83.0% test accuracy. The
 one-hidden-layer neural MLP reached 86.0% validation accuracy after 14 epochs,
 while RxInfer without vector transport first reached 86.0% validation accuracy
 after 5 epochs.
