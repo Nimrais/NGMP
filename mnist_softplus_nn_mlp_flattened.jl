@@ -182,7 +182,7 @@ function evaluate_nn_mlp(model, x, y; max_images=size(x, 2), batch_size=256)
     return correct / seen
 end
 
-function train_nn_mlp_demo(; ntrain=1000, nval=100, ntest=100,
+function train_nn_mlp_demo(; ntrain=10000, nval=1000, ntest=1000,
     hidden_count=32,
     hidden_layers=7,
     batch_size=32,

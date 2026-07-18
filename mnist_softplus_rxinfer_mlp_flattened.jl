@@ -596,10 +596,10 @@ function evaluate_mlp_rx(priors, x, y; max_images=size(x, 2))
     return correct / n
 end
 
-function train_mlp_rxinfer_demo(; ntrain=1000, nval=100, ntest=100,
+function train_mlp_rxinfer_demo(; ntrain=10000, nval=1000, ntest=1000,
     hidden_count=32,
     batch_size=32,
-    epochs=10,
+    epochs=50,
     seed=1,
     alpha=0.2,
     sigma_sp2=0.05^2,

@@ -557,11 +557,11 @@ function balanced_two_hidden_epoch_order(labels, classes, rng)
 end
 
 function train_two_hidden_mlp_rxinfer_demo(
-    ; ntrain=1000, nval=100, ntest=100,
+    ; ntrain=10000, nval=1000, ntest=1000,
     hidden1_count=32,
     hidden2_count=32,
     batch_size=32,
-    epochs=10,
+    epochs=50,
     seed=1,
     alpha=0.2,
     sigma_sp2=0.05^2,
