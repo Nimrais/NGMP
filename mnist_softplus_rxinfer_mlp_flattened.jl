@@ -182,6 +182,80 @@ end
 
 extract_mlp_marginals(result) = extract_mlp_marginals_from_posteriors(result.posteriors)
 
+function effective_observation_natural(xi, lambda; scale=1.0)
+    scaled_precision = scale * max(lambda, 0.0)
+    scaled_precision <= SITE_EPS && return 0.0, SITE_EPS
+    precision = max(scaled_precision, SITE_EPS)
+    observation_xi = xi / max(lambda, SITE_EPS) * precision
+    return observation_xi, precision
+end
+
+function local_gaussian_marginals(xi_sites, lambda_sites; weak_precision=1e-6)
+    posterior_xi = zeros(size(first(xi_sites)))
+    posterior_precision = fill(weak_precision, size(first(lambda_sites)))
+    for (xi, lambda) in zip(xi_sites, lambda_sites)
+        for i in eachindex(xi, lambda)
+            observation_xi, observation_precision =
+                effective_observation_natural(xi[i], lambda[i])
+            posterior_xi[i] += observation_xi
+            posterior_precision[i] += observation_precision
+        end
+    end
+    variance = inv.(posterior_precision)
+    return posterior_xi .* variance, variance
+end
+
+function global_gaussian_marginals(
+    prior_m, prior_precision, site_xi, site_precision;
+    global_site_scale=1.0,
+)
+    posterior_xi = prior_m .* prior_precision
+    posterior_precision = copy(prior_precision)
+    for global_index in CartesianIndices(prior_m)
+        site_tail = Tuple(global_index)
+        for n in axes(site_xi, 1)
+            index = (n, site_tail...)
+            observation_xi, observation_precision = effective_observation_natural(
+                site_xi[index...], site_precision[index...];
+                scale=global_site_scale)
+            posterior_xi[global_index] += observation_xi
+            posterior_precision[global_index] += observation_precision
+        end
+    end
+    variance = inv.(posterior_precision)
+    return posterior_xi .* variance, variance
+end
+
+function direct_mlp_marginals(site, priors; global_site_scale=1.0)
+    ma, va = local_gaussian_marginals(
+        (site.a_link_xi, site.a_sp_xi),
+        (site.a_link_Λ, site.a_sp_Λ))
+    mx, vx = local_gaussian_marginals(
+        (site.x_sp_xi, site.x_cls_xi),
+        (site.x_sp_Λ, site.x_cls_Λ))
+    mw, vw = global_gaussian_marginals(
+        priors.w_m, priors.w_Λ, site.w_link_xi, site.w_link_Λ;
+        global_site_scale)
+    mu, vu = global_gaussian_marginals(
+        priors.u_m, priors.u_Λ, site.u_cls_xi, site.u_cls_Λ;
+        global_site_scale)
+    mc, vc = global_gaussian_marginals(
+        priors.c_m, priors.c_Λ, site.c_cls_xi, site.c_cls_Λ;
+        global_site_scale)
+    return (; ma, va, mx, vx, mw, vw, mu, vu, mc, vc)
+end
+
+function compute_mlp_marginals(site, priors;
+    global_site_scale=1.0, inference_backend=:direct)
+    if inference_backend === :direct
+        return direct_mlp_marginals(site, priors; global_site_scale)
+    elseif inference_backend === :rxinfer
+        return extract_mlp_marginals(
+            run_mlp_surrogate_bp(site, priors; global_site_scale))
+    end
+    throw(ArgumentError("inference_backend must be :direct or :rxinfer"))
+end
+
 function mlp_posterior_as_priors(m, old_priors)
     return (
         w_m=m.mw, w_Λ=inv.(m.vw),
@@ -209,6 +283,11 @@ function refresh_mlp_sites(batch_x, batch_y, marginals, old_site;
     mu, vu = marginals.mu, marginals.vu
     mc, vc = marginals.mc, marginals.vc
 
+    batch_x_squared = abs2.(batch_x)
+    linear_mean = batch_x * transpose(mw)
+    linear_var = batch_x_squared * transpose(vw)
+    linear_var .+= sigma_hidden2
+
     for n in 1:n_count, h in 1:hidden_count
         x_cav_xi = mx[n, h] / vx[n, h] - old_site.x_sp_xi[n, h]
         x_cav_Λ = inv(vx[n, h]) - old_site.x_sp_Λ[n, h]
@@ -226,17 +305,8 @@ function refresh_mlp_sites(batch_x, batch_y, marginals, old_site;
     # Deterministic-input linear hidden layer:
     #   a[n,h] ~= sum_k hidden_weight[h,k] * batch_x[n,k]
     for n in 1:n_count, h in 1:hidden_count
-        prod_mean = zeros(input_count)
-        prod_var = zeros(input_count)
-        total_mean = 0.0
-        total_var = sigma_hidden2
-        for k in 1:input_count
-            xnk = batch_x[n, k]
-            prod_mean[k] = xnk * mw[h, k]
-            prod_var[k] = xnk^2 * vw[h, k]
-            total_mean += prod_mean[k]
-            total_var += prod_var[k]
-        end
+        total_mean = linear_mean[n, h]
+        total_var = linear_var[n, h]
 
         noise_a = max(total_var, sigma_hidden2)
         target.a_link_xi[n, h] = total_mean / noise_a
@@ -246,10 +316,12 @@ function refresh_mlp_sites(batch_x, batch_y, marginals, old_site;
             a_pseudo = target.a_sp_xi[n, h] / target.a_sp_Λ[n, h]
             a_noise = inv(target.a_sp_Λ[n, h])
             for k in 1:input_count
-                residual = a_pseudo - (total_mean - prod_mean[k])
-                noise = max(total_var - prod_var[k] + a_noise, sigma_hidden2)
                 xnk = batch_x[n, k]
                 if abs(xnk) > 1e-12
+                    product_mean = xnk * mw[h, k]
+                    product_var = batch_x_squared[n, k] * vw[h, k]
+                    residual = a_pseudo - (total_mean - product_mean)
+                    noise = max(total_var - product_var + a_noise, sigma_hidden2)
                     target.w_link_Λ[n, h, k] = min(xnk^2 / noise, 1e3)
                     target.w_link_xi[n, h, k] = xnk * residual / noise
                 end
@@ -261,20 +333,16 @@ function refresh_mlp_sites(batch_x, batch_y, marginals, old_site;
     # learns its first layer from image reconstruction; this flattened MLP has
     # no reconstruction term, so W, U, and c need a direct supervised site.
     if discriminative_site_scale > 0
+        x_det = softplus.(linear_mean)
+        s_det = sigmoid.(linear_mean)
+        logits_det = x_det * transpose(mu)
+        logits_det .+= transpose(mc)
         for n in 1:n_count
-            a_det = zeros(hidden_count)
-            x_det = zeros(hidden_count)
-            s_det = zeros(hidden_count)
-            for h in 1:hidden_count
-                a_det[h] = sum(mw[h, k] * batch_x[n, k] for k in 1:input_count)
-                x_det[h] = softplus(a_det[h])
-                s_det[h] = sigmoid(a_det[h])
-            end
-
-            logits = mc .+ mu * x_det
-            probs = softmax_probs(logits)
-            target_label = Float64.(classes .== batch_y[n])
-            grad_logits = target_label .- probs
+            probs = softmax_probs(@view logits_det[n, :])
+            grad_logits = .-probs
+            target_index = findfirst(==(batch_y[n]), classes)
+            isnothing(target_index) && error("Unknown class label $(batch_y[n])")
+            grad_logits[target_index] += 1.0
             lambda_logits = probs .* (1 .- probs)
 
             for cls in 1:class_count
@@ -284,16 +352,16 @@ function refresh_mlp_sites(batch_x, batch_y, marginals, old_site;
                 target.c_cls_Λ[n, cls] += lambda_c
 
                 for h in 1:hidden_count
-                    grad_u = discriminative_site_scale * grad_logits[cls] * x_det[h]
-                    lambda_u = min(discriminative_site_scale * lambda_logits[cls] * x_det[h]^2, 1e3)
+                    grad_u = discriminative_site_scale * grad_logits[cls] * x_det[n, h]
+                    lambda_u = min(discriminative_site_scale * lambda_logits[cls] * x_det[n, h]^2, 1e3)
                     target.u_cls_xi[n, cls, h] += grad_u + lambda_u * mu[cls, h]
                     target.u_cls_Λ[n, cls, h] += lambda_u
                 end
             end
 
             for h in 1:hidden_count
-                grad_a = s_det[h] * sum(grad_logits[cls] * mu[cls, h] for cls in 1:class_count)
-                lambda_a = s_det[h]^2 * sum(lambda_logits[cls] * (mu[cls, h]^2 + vu[cls, h]) for cls in 1:class_count)
+                grad_a = s_det[n, h] * sum(grad_logits[cls] * mu[cls, h] for cls in 1:class_count)
+                lambda_a = s_det[n, h]^2 * sum(lambda_logits[cls] * (mu[cls, h]^2 + vu[cls, h]) for cls in 1:class_count)
                 for k in 1:input_count
                     xnk = batch_x[n, k]
                     abs(xnk) <= 1e-12 && continue
@@ -385,7 +453,8 @@ function infer_batch_mlp_rxinfer(priors, batch_x, batch_y;
     vector_transport_damping=1e-6,
     max_inner=1,
     tol=1e-4,
-    verbose=false)
+    verbose=false,
+    inference_backend=:direct)
     n_count, input_count = size(batch_x)
     hidden_count = size(priors.w_m, 1)
     class_count = length(priors.classes)
@@ -395,12 +464,12 @@ function infer_batch_mlp_rxinfer(priors, batch_x, batch_y;
     has_previous_direction = false
     previous_update = zero_like_sites(site)
     previous_metric = diagonal_site_metric(site; damping=vector_transport_damping)
-    local result, marginals
+    local marginals
     last_delta = Inf
 
     for inner in 1:max_inner
-        result = run_mlp_surrogate_bp(site, priors; global_site_scale)
-        marginals = extract_mlp_marginals(result)
+        marginals = compute_mlp_marginals(site, priors;
+            global_site_scale, inference_backend)
         target = refresh_mlp_sites(batch_x, batch_y, marginals, site;
             sigma_sp2, sigma_hidden2, direct_weight_site_scale,
             discriminative_site_scale, product_classifier_site_scale,
@@ -411,8 +480,8 @@ function infer_batch_mlp_rxinfer(priors, batch_x, batch_y;
             lookahead_site = clamp_site_precisions(nesterov_projected_lookahead(
                 site, direction, previous_direction, has_previous_direction;
                 alpha, beta=nesterov_beta, eps=nesterov_eps))
-            lookahead_result = run_mlp_surrogate_bp(lookahead_site, priors; global_site_scale)
-            lookahead_marginals = extract_mlp_marginals(lookahead_result)
+            lookahead_marginals = compute_mlp_marginals(lookahead_site, priors;
+                global_site_scale, inference_backend)
             lookahead_target = refresh_mlp_sites(batch_x, batch_y, lookahead_marginals, lookahead_site;
                 sigma_sp2, sigma_hidden2, direct_weight_site_scale,
                 discriminative_site_scale, product_classifier_site_scale,
@@ -433,8 +502,8 @@ function infer_batch_mlp_rxinfer(priors, batch_x, batch_y;
         last_delta < tol && break
     end
 
-    result = run_mlp_surrogate_bp(site, priors; global_site_scale)
-    marginals = extract_mlp_marginals(result)
+    marginals = compute_mlp_marginals(site, priors;
+        global_site_scale, inference_backend)
     return mlp_posterior_as_priors(marginals, priors), (delta=last_delta, marginals=marginals)
 end
 
@@ -517,10 +586,12 @@ end
 function evaluate_mlp_rx(priors, x, y; max_images=size(x, 2))
     n = min(max_images, size(x, 2))
     n == 0 && return 0.0
+    hidden = softplus.(priors.w_m * @view(x[:, 1:n]))
+    logits = priors.c_m .+ priors.u_m * hidden
     correct = 0
     for i in 1:n
-        pred, _ = predict_mlp_rx(priors, @view x[:, i])
-        correct += pred == y[i]
+        prediction = priors.classes[argmax(@view logits[:, i])]
+        correct += prediction == y[i]
     end
     return correct / n
 end
@@ -546,7 +617,8 @@ function train_mlp_rxinfer_demo(; ntrain=1000, nval=100, ntest=100,
     vector_transport_momentum=0.5,
     vector_transport_damping=1e-6,
     max_inner=3,
-    eval_max_images=1000)
+    eval_max_images=1000,
+    inference_backend=:direct)
     data = select_flattened_mnist(; ntrain, nval, ntest, seed, digits=classes)
     input_count = size(data.train_x, 1)
     priors = init_mlp_priors(input_count, hidden_count, classes;
@@ -555,7 +627,7 @@ function train_mlp_rxinfer_demo(; ntrain=1000, nval=100, ntest=100,
     site_scale = inv(epochs)
 
     println("RxInfer flattened softplus MLP MNIST classes=$(classes)")
-    println("train=$(length(data.train_y)) val=$(length(data.val_y)) test=$(length(data.test_y)) input=$input_count hidden=$hidden_count batch=$batch_size epochs=$epochs alpha=$alpha sigma_sp2=$sigma_sp2 sigma_hidden2=$sigma_hidden2 direct_weight_site_scale=$direct_weight_site_scale discriminative_site_scale=$discriminative_site_scale product_classifier_site_scale=$product_classifier_site_scale w_init_scale=$w_init_scale u_init_scale=$u_init_scale projected_nesterov=$projected_nesterov nesterov_beta=$nesterov_beta nesterov_eps=$nesterov_eps vector_transport=$vector_transport site_scale=$(round(site_scale, digits=4))")
+    println("train=$(length(data.train_y)) val=$(length(data.val_y)) test=$(length(data.test_y)) input=$input_count hidden=$hidden_count batch=$batch_size epochs=$epochs alpha=$alpha sigma_sp2=$sigma_sp2 sigma_hidden2=$sigma_hidden2 direct_weight_site_scale=$direct_weight_site_scale discriminative_site_scale=$discriminative_site_scale product_classifier_site_scale=$product_classifier_site_scale w_init_scale=$w_init_scale u_init_scale=$u_init_scale projected_nesterov=$projected_nesterov nesterov_beta=$nesterov_beta nesterov_eps=$nesterov_eps vector_transport=$vector_transport inference_backend=$inference_backend site_scale=$(round(site_scale, digits=4))")
 
     history = NamedTuple[]
     best_val_acc = -Inf
@@ -580,7 +652,8 @@ function train_mlp_rxinfer_demo(; ntrain=1000, nval=100, ntest=100,
                 vector_transport,
                 vector_transport_momentum,
                 vector_transport_damping,
-                max_inner)
+                max_inner,
+                inference_backend)
             push!(deltas, stats.delta)
             ProgressMeter.next!(progress)
         end
