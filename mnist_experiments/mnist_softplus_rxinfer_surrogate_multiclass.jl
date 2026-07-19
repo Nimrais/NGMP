@@ -5,7 +5,7 @@ using Random
 using Statistics
 using ProgressMeter
 
-include("mnist_softplus_ngmp_demo.jl")
+include(joinpath(@__DIR__, "mnist_softplus_ngmp_demo.jl"))
 
 # ============================================================================
 # RxInfer surrogate version of the softplus image model.

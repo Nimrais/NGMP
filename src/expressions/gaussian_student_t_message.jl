@@ -29,13 +29,16 @@ struct GaussianStudentTMessage{T <: Real} <: ClosedFormExpectations.Expression
     v::T
     a::T
     b::T
+    function GaussianStudentTMessage{T}(m::T, v::T, a::T, b::T) where {T <: Real}
+        v >= 0 || throw(DomainError(v, "Gaussian cavity variance must be nonnegative"))
+        a > 0 || throw(DomainError(a, "Gamma cavity shape must be positive"))
+        b > 0 || throw(DomainError(b, "Gamma cavity rate must be positive"))
+        return new{T}(m, v, a, b)
+    end
 end
 
 function GaussianStudentTMessage(m::Real, v::Real, a::Real, b::Real)
     mp, vp, ap, bp = promote(m, v, a, b)
-    vp >= 0 || throw(DomainError(v, "Gaussian cavity variance must be nonnegative"))
-    ap > 0 || throw(DomainError(a, "Gamma cavity shape must be positive"))
-    bp > 0 || throw(DomainError(b, "Gamma cavity rate must be positive"))
     return GaussianStudentTMessage{typeof(mp)}(mp, vp, ap, bp)
 end
 
@@ -94,4 +97,3 @@ function _gaussian_student_t_logderivatives(p::GaussianStudentTMessage, x)
     second = second_total / total - first^2
     return first, second
 end
-

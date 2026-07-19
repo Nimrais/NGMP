@@ -13,6 +13,7 @@ using SurrogateModelling
 # the RxInfer graph and lets NGMPDependencies refresh its messages.
 
 const DEFAULT_CLASSES = collect(0:9)
+const DEFAULT_SEED = 1
 
 stable_softplus(x::Real) = max(x, zero(x)) + log1p(exp(-abs(x)))
 
@@ -347,7 +348,14 @@ function materialize_split(images, labels, indices, classes)
     return (features=features, targets=targets, labels=output_labels)
 end
 
-function load_mnist_splits(; ntrain=1000, nval=100, ntest=100, classes=DEFAULT_CLASSES, seed=1)
+function load_mnist_splits(
+    ;
+    ntrain=1000,
+    nval=100,
+    ntest=100,
+    classes=DEFAULT_CLASSES,
+    seed=DEFAULT_SEED,
+)
     rng = MersenneTwister(seed)
     train_data = MNIST(split=:train)
     test_data = MNIST(split=:test)
@@ -426,7 +434,7 @@ function train_mnist_softplus_ut_ngmp_mlp(
     epochs=10,
     inference_iterations=3,
     classes=DEFAULT_CLASSES,
-    seed=1,
+    seed=DEFAULT_SEED,
     optimizer=:damped,
     projection=:unscented,
     alpha=0.2,
@@ -434,6 +442,7 @@ function train_mnist_softplus_ut_ngmp_mlp(
     max_step=1.0,
     quadrature_points=32,
 )
+    Random.seed!(seed)
     data = load_mnist_splits(; ntrain, nval, ntest, classes, seed)
     input_count = length(first(data.train.features))
     class_count = length(classes)
@@ -496,6 +505,7 @@ function train_mnist_softplus_ut_ngmp_mlp(
 end
 
 function smoke_test()
+    Random.seed!(DEFAULT_SEED)
     features = [[1.0, -0.5], [1.0, 0.5]]
     targets = [1.0 0.0; 0.0 1.0]
     priors = make_ngmp_mlp_priors(2, 2, 2; seed=7)

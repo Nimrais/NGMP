@@ -30,6 +30,9 @@ StatsPlots = "f3b207a7-027a-5e70-b257-86293d7955fd"
 TupleTools = "9d95972d-f1c8-5527-a6e0-b4b365fa01f6"
 YAML = "ddb6d928-2868-570f-bddf-ab3f9cf99eb6"
 
+[sources]
+ProbabilisticEnsembling = {path = "/Users/ruiite/projects/new_prob/probabilistic_ensemble_forecasting"}
+
 [compat]
 BayesBase = "1.5.9"
 ExponentialFamily = "2.4.0"

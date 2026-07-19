@@ -7,7 +7,7 @@ using ProgressMeter
 # Reuse the MNIST loading, numerical helpers, and generic site optimizers from
 # the one-hidden-layer experiment. Its main program is guarded, so including it
 # does not start training.
-include("mnist_softplus_rxinfer_mlp_flattened.jl")
+include(joinpath(@__DIR__, "mnist_softplus_rxinfer_mlp_flattened.jl"))
 
 # Two-hidden-layer Bayesian surrogate MLP:
 #
@@ -217,6 +217,46 @@ function extract_two_hidden_marginals(result)
         mw1, vw1, mw2, vw2, mu, vu, mc, vc)
 end
 
+function direct_two_hidden_marginals(site, priors; global_site_scale=1.0)
+    ma1, va1 = local_gaussian_marginals(
+        (site.a1_link_xi, site.a1_sp_xi),
+        (site.a1_link_Λ, site.a1_sp_Λ))
+    mx1, vx1 = local_gaussian_marginals(
+        (site.x1_sp_xi, site.x1_link_xi),
+        (site.x1_sp_Λ, site.x1_link_Λ))
+    ma2, va2 = local_gaussian_marginals(
+        (site.a2_link_xi, site.a2_sp_xi),
+        (site.a2_link_Λ, site.a2_sp_Λ))
+    mx2, vx2 = local_gaussian_marginals(
+        (site.x2_sp_xi, site.x2_cls_xi),
+        (site.x2_sp_Λ, site.x2_cls_Λ))
+    mw1, vw1 = global_gaussian_marginals(
+        priors.w1_m, priors.w1_Λ, site.w1_link_xi, site.w1_link_Λ;
+        global_site_scale)
+    mw2, vw2 = global_gaussian_marginals(
+        priors.w2_m, priors.w2_Λ, site.w2_link_xi, site.w2_link_Λ;
+        global_site_scale)
+    mu, vu = global_gaussian_marginals(
+        priors.u_m, priors.u_Λ, site.u_cls_xi, site.u_cls_Λ;
+        global_site_scale)
+    mc, vc = global_gaussian_marginals(
+        priors.c_m, priors.c_Λ, site.c_cls_xi, site.c_cls_Λ;
+        global_site_scale)
+    return (; ma1, va1, mx1, vx1, ma2, va2, mx2, vx2,
+        mw1, vw1, mw2, vw2, mu, vu, mc, vc)
+end
+
+function compute_two_hidden_marginals(site, priors;
+    global_site_scale=1.0, inference_backend=:direct)
+    if inference_backend === :direct
+        return direct_two_hidden_marginals(site, priors; global_site_scale)
+    elseif inference_backend === :rxinfer
+        return extract_two_hidden_marginals(
+            run_two_hidden_surrogate_bp(site, priors; global_site_scale))
+    end
+    throw(ArgumentError("inference_backend must be :direct or :rxinfer"))
+end
+
 function two_hidden_posterior_as_priors(m, old_priors)
     return (
         w1_m=m.mw1, w1_Λ=inv.(m.vw1),
@@ -242,6 +282,10 @@ function refresh_two_hidden_sites(
     class_count = size(m.mu, 1)
     target = two_hidden_zero_sites(
         n_count, input_count, hidden1_count, hidden2_count, class_count)
+    batch_x_squared = abs2.(batch_x)
+    first_layer_mean = batch_x * transpose(m.mw1)
+    first_layer_var = batch_x_squared * transpose(m.vw1)
+    first_layer_var .+= sigma_hidden1_2
 
     # Gaussian sites for both Softplus transforms.
     for (ma, va, mx, vx, a_stem, x_stem) in (
@@ -273,17 +317,8 @@ function refresh_two_hidden_sites(
 
     # First affine layer: deterministic inputs multiplied by uncertain W1.
     for n in 1:n_count, h in 1:hidden1_count
-        product_mean = zeros(input_count)
-        product_var = zeros(input_count)
-        total_mean = 0.0
-        total_var = sigma_hidden1_2
-        for k in 1:input_count
-            xnk = batch_x[n, k]
-            product_mean[k] = xnk * m.mw1[h, k]
-            product_var[k] = xnk^2 * m.vw1[h, k]
-            total_mean += product_mean[k]
-            total_var += product_var[k]
-        end
+        total_mean = first_layer_mean[n, h]
+        total_var = first_layer_var[n, h]
         target.a1_link_xi[n, h] = total_mean / total_var
         target.a1_link_Λ[n, h] = inv(total_var)
 
@@ -293,8 +328,10 @@ function refresh_two_hidden_sites(
             for k in 1:input_count
                 xnk = batch_x[n, k]
                 abs(xnk) <= 1e-12 && continue
-                residual = pseudo_a - (total_mean - product_mean[k])
-                noise = max(total_var - product_var[k] + pseudo_noise, sigma_hidden1_2)
+                product_mean = xnk * m.mw1[h, k]
+                product_var = batch_x_squared[n, k] * m.vw1[h, k]
+                residual = pseudo_a - (total_mean - product_mean)
+                noise = max(total_var - product_var + pseudo_noise, sigma_hidden1_2)
                 target.w1_link_Λ[n, h, k] = min(xnk^2 / noise, 1e3)
                 target.w1_link_xi[n, h, k] = xnk * residual / noise
             end
@@ -303,9 +340,9 @@ function refresh_two_hidden_sites(
 
     # Second affine layer: both x1 and W2 are uncertain. Moment matching sends
     # a forward site to a2; local product derivatives send sites back to x1/W2.
+    product_mean = zeros(hidden1_count)
+    product_var = zeros(hidden1_count)
     for n in 1:n_count, j in 1:hidden2_count
-        product_mean = zeros(hidden1_count)
-        product_var = zeros(hidden1_count)
         total_mean = 0.0
         total_var = sigma_hidden2_2
         for h in 1:hidden1_count
@@ -346,17 +383,21 @@ function refresh_two_hidden_sites(
     # Supervised Gaussian sites from the softmax gradient and diagonal Fisher
     # curvature, backpropagated through U, W2, and W1.
     if discriminative_site_scale > 0
+        x1_det = softplus.(first_layer_mean)
+        sp1_det = sigmoid.(first_layer_mean)
+        a2_det = x1_det * transpose(m.mw2)
+        x2_det = softplus.(a2_det)
+        sp2_det = sigmoid.(a2_det)
+        logits_det = x2_det * transpose(m.mu)
+        logits_det .+= transpose(m.mc)
+        grad_a2 = zeros(hidden2_count)
+        lambda_a2 = zeros(hidden2_count)
         for n in 1:n_count
-            a1 = m.mw1 * @view(batch_x[n, :])
-            x1 = softplus.(a1)
-            sp1 = sigmoid.(a1)
-            a2 = m.mw2 * x1
-            x2 = softplus.(a2)
-            sp2 = sigmoid.(a2)
-            logits = m.mc .+ m.mu * x2
-            probs = softmax_probs(logits)
-            target_label = Float64.(classes .== batch_y[n])
-            grad_logits = target_label .- probs
+            probs = softmax_probs(@view logits_det[n, :])
+            grad_logits = .-probs
+            target_index = findfirst(==(batch_y[n]), classes)
+            isnothing(target_index) && error("Unknown class label $(batch_y[n])")
+            grad_logits[target_index] += 1.0
             lambda_logits = probs .* (1 .- probs)
             scale = discriminative_site_scale
 
@@ -366,25 +407,23 @@ function refresh_two_hidden_sites(
                 target.c_cls_xi[n, cls] += grad_c + lambda_c * m.mc[cls]
                 target.c_cls_Λ[n, cls] += lambda_c
                 for j in 1:hidden2_count
-                    grad_u = scale * grad_logits[cls] * x2[j]
-                    lambda_u = min(scale * lambda_logits[cls] * x2[j]^2, 1e3)
+                    grad_u = scale * grad_logits[cls] * x2_det[n, j]
+                    lambda_u = min(scale * lambda_logits[cls] * x2_det[n, j]^2, 1e3)
                     target.u_cls_xi[n, cls, j] += grad_u + lambda_u * m.mu[cls, j]
                     target.u_cls_Λ[n, cls, j] += lambda_u
                 end
             end
 
-            grad_a2 = zeros(hidden2_count)
-            lambda_a2 = zeros(hidden2_count)
             for j in 1:hidden2_count
-                grad_a2[j] = sp2[j] * sum(
+                grad_a2[j] = sp2_det[n, j] * sum(
                     grad_logits[cls] * m.mu[cls, j] for cls in 1:class_count)
-                lambda_a2[j] = sp2[j]^2 * sum(
+                lambda_a2[j] = sp2_det[n, j]^2 * sum(
                     lambda_logits[cls] * (m.mu[cls, j]^2 + m.vu[cls, j])
                     for cls in 1:class_count)
                 for h in 1:hidden1_count
-                    grad_w2 = direct_weight_site_scale * scale * grad_a2[j] * x1[h]
+                    grad_w2 = direct_weight_site_scale * scale * grad_a2[j] * x1_det[n, h]
                     lambda_w2 = min(
-                        direct_weight_site_scale * scale * lambda_a2[j] * x1[h]^2,
+                        direct_weight_site_scale * scale * lambda_a2[j] * x1_det[n, h]^2,
                         1e3,
                     )
                     target.w2_link_xi[n, j, h] +=
@@ -394,9 +433,9 @@ function refresh_two_hidden_sites(
             end
 
             for h in 1:hidden1_count
-                grad_a1 = sp1[h] * sum(
+                grad_a1 = sp1_det[n, h] * sum(
                     grad_a2[j] * m.mw2[j, h] for j in 1:hidden2_count)
-                lambda_a1 = sp1[h]^2 * sum(
+                lambda_a1 = sp1_det[n, h]^2 * sum(
                     lambda_a2[j] * (m.mw2[j, h]^2 + m.vw2[j, h])
                     for j in 1:hidden2_count)
                 for k in 1:input_count
@@ -432,6 +471,7 @@ function infer_batch_two_hidden_mlp(
     max_inner=3,
     tol=1e-4,
     verbose=false,
+    inference_backend=:direct,
 )
     n_count, input_count = size(batch_x)
     hidden1_count = size(priors.w1_m, 1)
@@ -441,12 +481,12 @@ function infer_batch_two_hidden_mlp(
         n_count, input_count, hidden1_count, hidden2_count, class_count)
     previous_update = zero_like_sites(site)
     previous_metric = diagonal_site_metric(site; damping=vector_transport_damping)
-    local result, marginals
+    local marginals
     last_delta = Inf
 
     for inner in 1:max_inner
-        result = run_two_hidden_surrogate_bp(site, priors; global_site_scale)
-        marginals = extract_two_hidden_marginals(result)
+        marginals = compute_two_hidden_marginals(site, priors;
+            global_site_scale, inference_backend)
         target = refresh_two_hidden_sites(batch_x, batch_y, marginals, site;
             sigma_sp2, sigma_hidden1_2, sigma_hidden2_2,
             direct_weight_site_scale, discriminative_site_scale,
@@ -466,8 +506,8 @@ function infer_batch_two_hidden_mlp(
         last_delta < tol && break
     end
 
-    result = run_two_hidden_surrogate_bp(site, priors; global_site_scale)
-    marginals = extract_two_hidden_marginals(result)
+    marginals = compute_two_hidden_marginals(site, priors;
+        global_site_scale, inference_backend)
     return two_hidden_posterior_as_priors(marginals, priors),
         (delta=last_delta, marginals=marginals)
 end
@@ -483,8 +523,11 @@ end
 function evaluate_two_hidden_mlp(priors, x, y; max_images=size(x, 2))
     n = min(max_images, size(x, 2))
     n == 0 && return 0.0
+    hidden1 = softplus.(priors.w1_m * @view(x[:, 1:n]))
+    hidden2 = softplus.(priors.w2_m * hidden1)
+    logits = priors.c_m .+ priors.u_m * hidden2
     correct = count(1:n) do i
-        prediction, _ = predict_two_hidden_mlp(priors, @view x[:, i])
+        prediction = priors.classes[argmax(@view logits[:, i])]
         prediction == y[i]
     end
     return correct / n
@@ -514,11 +557,13 @@ function balanced_two_hidden_epoch_order(labels, classes, rng)
 end
 
 function train_two_hidden_mlp_rxinfer_demo(
-    ; ntrain=1000, nval=100, ntest=100,
+    ; ntrain=10000, nval=1000, ntest=1000,
+    dataset=:mnist,
+    image_size=nothing,
     hidden1_count=32,
     hidden2_count=32,
     batch_size=32,
-    epochs=10,
+    epochs=50,
     seed=1,
     alpha=0.2,
     sigma_sp2=0.05^2,
@@ -526,18 +571,27 @@ function train_two_hidden_mlp_rxinfer_demo(
     sigma_hidden2_2=0.05^2,
     direct_weight_site_scale=1.0,
     discriminative_site_scale=2.0,
-    classes=collect(0:9),
-    w1_init_scale=sqrt(2 / (14 * 14 + hidden1_count)),
-    w2_init_scale=sqrt(2 / (hidden1_count + hidden2_count)),
-    u_init_scale=sqrt(2 / (hidden2_count + length(classes))),
+    classes=nothing,
+    w1_init_scale=nothing,
+    w2_init_scale=nothing,
+    u_init_scale=nothing,
     vector_transport=true,
     vector_transport_momentum=0.5,
     vector_transport_damping=1e-6,
     max_inner=3,
     eval_max_images=1000,
+    inference_backend=:direct,
 )
-    data = select_flattened_mnist(; ntrain, nval, ntest, seed, digits=classes)
+    data = load_flattened_image_dataset(
+        dataset; ntrain, nval, ntest, seed, classes, image_size)
+    classes = data.classes
     input_count = size(data.train_x, 1)
+    w1_init_scale = something(
+        w1_init_scale, sqrt(2 / (input_count + hidden1_count)))
+    w2_init_scale = something(
+        w2_init_scale, sqrt(2 / (hidden1_count + hidden2_count)))
+    u_init_scale = something(
+        u_init_scale, sqrt(2 / (hidden2_count + length(classes))))
     priors = init_two_hidden_priors(
         input_count, hidden1_count, hidden2_count, classes;
         w1_init_scale, w2_init_scale, u_init_scale, seed=seed + 20)
@@ -548,8 +602,8 @@ function train_two_hidden_mlp_rxinfer_demo(
     best_priors = copy_two_hidden_priors(priors)
     best_epoch = 0
 
-    println("RxInfer two-hidden-layer Softplus MLP MNIST classes=$classes")
-    println("train=$(length(data.train_y)) val=$(length(data.val_y)) test=$(length(data.test_y)) input=$input_count hidden1=$hidden1_count hidden2=$hidden2_count batch=$batch_size epochs=$epochs max_inner=$max_inner")
+    println("RxInfer two-hidden-layer Softplus MLP dataset=$(data.name) classes=$classes")
+    println("train=$(length(data.train_y)) val=$(length(data.val_y)) test=$(length(data.test_y)) image_size=$(data.image_size) channels=$(data.channels) input=$input_count hidden1=$hidden1_count hidden2=$hidden2_count batch=$batch_size epochs=$epochs max_inner=$max_inner inference_backend=$inference_backend")
     println("init_scales=($(round(w1_init_scale, digits=3)), $(round(w2_init_scale, digits=3)), $(round(u_init_scale, digits=3))) direct_weight_site_scale=$direct_weight_site_scale")
 
     for epoch in 1:epochs
@@ -566,7 +620,7 @@ function train_two_hidden_mlp_rxinfer_demo(
                 direct_weight_site_scale, discriminative_site_scale,
                 alpha, global_site_scale=site_scale,
                 vector_transport, vector_transport_momentum,
-                vector_transport_damping, max_inner)
+                vector_transport_damping, max_inner, inference_backend)
             push!(deltas, stats.delta)
             ProgressMeter.next!(progress)
         end

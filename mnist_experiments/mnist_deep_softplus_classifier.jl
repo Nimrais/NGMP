@@ -3,7 +3,7 @@ using Random
 using Statistics
 using ProgressMeter
 
-include("mnist_softplus_rxinfer_surrogate_multiclass.jl")
+include(joinpath(@__DIR__, "mnist_softplus_rxinfer_surrogate_multiclass.jl"))
 
 # ============================================================================
 # Experimental deeper MNIST classifier on top of the existing softplus image

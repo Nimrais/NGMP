@@ -3,7 +3,7 @@ using Random
 using Statistics
 using ProgressMeter
 
-include("mnist_softplus_rxinfer_surrogate_multiclass.jl")
+include(joinpath(@__DIR__, "mnist_softplus_rxinfer_surrogate_multiclass.jl"))
 
 # ============================================================================
 # Neural-network baseline with the same global parameter shapes as the
