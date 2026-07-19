@@ -48,6 +48,9 @@ const CONFIG = (
     ngmp_alpha = env_float("NGMP_ALPHA", 0.2),
     ngmp_beta = env_float("NGMP_BETA", 0.0),
     ngmp_max_step = env_float("NGMP_MAX_STEP", 1.0),
+    mvsoftplus_projection = lowercase(get(ENV, "MVSOFTPLUS_PROJECTION", "unscented")),
+    softplus_output_initial_mean = env_float("SP_OUTPUT_INITIAL_MEAN", log(2.0)),
+    softplus_output_initial_variance = env_float("SP_OUTPUT_INITIAL_VARIANCE", 0.04),
     prediction_iterations = env_int("PREDICTION_ITERATIONS", SMOKE ? 3 : 20),
     prediction_batch_size = env_int("PREDICTION_BATCH_SIZE", SMOKE ? 64 : 1_024),
     prediction_prior_variance = env_float("PREDICTION_PRIOR_VARIANCE", 1e12),
@@ -71,6 +74,12 @@ CONFIG.prediction_batch_size > 0 || throw(ArgumentError("PREDICTION_BATCH_SIZE m
 CONFIG.prediction_prior_variance > 0 ||
     throw(ArgumentError("PREDICTION_PRIOR_VARIANCE must be positive"))
 CONFIG.grid_size > 1 || throw(ArgumentError("GRID_SIZE must exceed one"))
+CONFIG.mvsoftplus_projection in ("unscented", "delta") ||
+    throw(ArgumentError("MVSOFTPLUS_PROJECTION must be `unscented` or `delta`"))
+CONFIG.softplus_output_initial_mean > 0 ||
+    throw(ArgumentError("SP_OUTPUT_INITIAL_MEAN must be positive"))
+CONFIG.softplus_output_initial_variance > 0 ||
+    throw(ArgumentError("SP_OUTPUT_INITIAL_VARIANCE must be positive"))
 
 # --- Data: 2x2 checkerboard = XOR on [-2, 2]^2 (same generator as
 # --- notebooks/xor_softplus_ut_ngmp.jl).
@@ -146,7 +155,12 @@ function make_priors(; d_h, d_f, seed, ct_precision_mean)
     )
 end
 
-function make_initialization(priors, d_h)
+function make_initialization(
+    priors,
+    d_h;
+    softplus_output_initial_mean = log(2.0),
+    softplus_output_initial_variance = 0.04,
+)
     return @initialization begin
         q(a_map) = priors[:a_map]
         q(a_pred) = priors[:a_pred]
@@ -155,8 +169,11 @@ function make_initialization(priors, d_h)
         q(Gamma2) = priors[:Gamma2]
         q(gamma_obs) = priors[:gamma_obs]
         q(h1) = MvNormalMeanCovariance(zeros(d_h), Diagonal(ones(d_h)))
-        # Positive-mean, tight init keeps the layer-2 input in the softplus range.
-        q(s) = MvNormalMeanCovariance(fill(log(2.0), d_h), Diagonal(fill(0.04, d_h)))
+        # The delta forward projection requires a strictly positive q(s) mean.
+        q(s) = MvNormalMeanCovariance(
+            fill(softplus_output_initial_mean, d_h),
+            Diagonal(fill(softplus_output_initial_variance, d_h)),
+        )
         q(h2) = MvNormalMeanCovariance(zeros(d_h), Diagonal(ones(d_h)))
     end
 end
@@ -207,7 +224,14 @@ end
     q(gamma_obs)::RxInfer.FixedMarginalFormConstraint(priors[:gamma_obs])
 end
 
-function make_prediction_initialization(priors, d_h, output_mean, y_prior_variance)
+function make_prediction_initialization(
+    priors,
+    d_h,
+    output_mean,
+    y_prior_variance;
+    softplus_output_initial_mean = log(2.0),
+    softplus_output_initial_variance = 0.04,
+)
     return @initialization begin
         q(a_map) = priors[:a_map]
         q(a_pred) = priors[:a_pred]
@@ -216,7 +240,10 @@ function make_prediction_initialization(priors, d_h, output_mean, y_prior_varian
         q(Gamma2) = priors[:Gamma2]
         q(gamma_obs) = priors[:gamma_obs]
         q(h1) = MvNormalMeanCovariance(zeros(d_h), Diagonal(ones(d_h)))
-        q(s) = MvNormalMeanCovariance(fill(log(2.0), d_h), Diagonal(fill(0.04, d_h)))
+        q(s) = MvNormalMeanCovariance(
+            fill(softplus_output_initial_mean, d_h),
+            Diagonal(fill(softplus_output_initial_variance, d_h)),
+        )
         q(h2) = MvNormalMeanCovariance(zeros(d_h), Diagonal(ones(d_h)))
         q(y) = NormalMeanVariance(output_mean, y_prior_variance)
         μ(y) = NormalMeanVariance(output_mean, y_prior_variance)
@@ -230,16 +257,27 @@ function prediction_priors(result)
     )
 end
 
-function run_prediction_batch(priors, features; config, d_h, d_f, output_mean)
+function make_mvsoftplus_dependencies(config)
+    projection = config.mvsoftplus_projection == "delta" ?
+        TangentProjection(type = DeltaApproximation) :
+        TangentProjection(type = Unscented)
+    return NGMPDependencies(out = nothing, in = nothing, projection = projection)
+end
+
+function run_prediction_batch(
+    priors,
+    features;
+    config,
+    d_h,
+    d_f,
+    output_mean,
+    constraints_factory = xor_ct_prediction_constraints,
+)
     isempty(features) && return Any[]
 
     # NGMPDependencies keeps mutable edge state, so every batch receives a
     # fresh instance rather than inheriting damping state from another batch.
-    sp_deps = NGMPDependencies(
-        out = nothing,
-        in = nothing,
-        projection = TangentProjection(type = Unscented),
-    )
+    sp_deps = make_mvsoftplus_dependencies(config)
     sp_damping = DampingMeta(
         alpha = config.ngmp_alpha,
         beta = config.ngmp_beta,
@@ -249,19 +287,21 @@ function run_prediction_batch(priors, features; config, d_h, d_f, output_mean)
         model = xor_ct_mvsoftplus_prediction(
             priors = priors,
             feature_cov = Matrix(Diagonal(fill(config.feature_jitter, d_f))),
-            meta_map = CTMeta(a -> reshape(a, d_h, d_f)),
-            meta_pred = CTMeta(a -> reshape(a, d_h, d_h)),
+            meta_map = LinearReshapeMeta(d_h, d_f),
+            meta_pred = LinearReshapeMeta(d_h, d_h),
             sp_deps = sp_deps,
             sp_damping = sp_damping,
             y_prior_variance = config.prediction_prior_variance,
         ),
         data = (features = features,),
-        constraints = xor_ct_prediction_constraints(priors),
+        constraints = constraints_factory(priors),
         initialization = make_prediction_initialization(
             priors,
             d_h,
             output_mean,
             config.prediction_prior_variance,
+            softplus_output_initial_mean = config.softplus_output_initial_mean,
+            softplus_output_initial_variance = config.softplus_output_initial_variance,
         ),
         iterations = config.prediction_iterations,
         free_energy = false,
@@ -370,7 +410,11 @@ end
 
 # --- Run
 
-function run_experiment(config)
+function run_experiment(
+    config;
+    training_constraints = xor_ct_constraints(),
+    prediction_constraints_factory = xor_ct_prediction_constraints,
+)
     d_h = config.d_hidden
     d_f = 3
 
@@ -387,10 +431,7 @@ function run_experiment(config)
         d_h = d_h, d_f = d_f, seed = config.prior_seed,
         ct_precision_mean = config.ct_precision_mean,
     )
-    sp_deps = NGMPDependencies(
-        out = nothing, in = nothing,
-        projection = TangentProjection(type = Unscented),
-    )
+    sp_deps = make_mvsoftplus_dependencies(config)
     sp_damping = DampingMeta(
         alpha = config.ngmp_alpha, beta = config.ngmp_beta,
         max_step = config.ngmp_max_step,
@@ -400,14 +441,19 @@ function run_experiment(config)
         model = xor_ct_mvsoftplus(
             priors = priors,
             feature_cov = Matrix(Diagonal(fill(config.feature_jitter, d_f))),
-            meta_map = CTMeta(a -> reshape(a, d_h, d_f)),
-            meta_pred = CTMeta(a -> reshape(a, d_h, d_h)),
+            meta_map = LinearReshapeMeta(d_h, d_f),
+            meta_pred = LinearReshapeMeta(d_h, d_h),
             sp_deps = sp_deps,
             sp_damping = sp_damping,
         ),
         data = (y = train_data.OT, features = train_features),
-        constraints = xor_ct_constraints(),
-        initialization = make_initialization(priors, d_h),
+        constraints = training_constraints,
+        initialization = make_initialization(
+            priors,
+            d_h,
+            softplus_output_initial_mean = config.softplus_output_initial_mean,
+            softplus_output_initial_variance = config.softplus_output_initial_variance,
+        ),
         iterations = config.iterations,
         free_energy = true,
         options = (limit_stack_depth = 100,),
@@ -423,6 +469,7 @@ function run_experiment(config)
         d_h = d_h,
         d_f = d_f,
         output_mean = prediction_output_mean,
+        constraints_factory = prediction_constraints_factory,
     )
     train_prediction = predictive_statistics(predict_marginals(
         priors_for_prediction,
@@ -455,7 +502,7 @@ function run_experiment(config)
 
     fe = result.free_energy
     println()
-    println("=== xor_ctransition_mvsoftplus (d_h = $d_h, iterations = $(config.iterations), " *
+    println("=== xor_ctransition_mvsoftplus (projection = $(config.mvsoftplus_projection), d_h = $d_h, iterations = $(config.iterations), " *
             "n_train = $(nrow(train_data)), n_test = $(nrow(test_data)), $(round(elapsed, digits = 1))s)")
     println("free energy first/last : ", first(fe), " / ", last(fe))
     println("free energy finite     : ", all(isfinite, fe),
@@ -508,9 +555,12 @@ function run_experiment(config)
             mean = mean(test_prediction.variance),
             maximum = maximum(test_prediction.variance),
         ),
+        prediction_output_mean = prediction_output_mean,
         surface_path = surface_path,
         free_energy = fe,
     )
 end
 
-result, metrics = run_experiment(CONFIG)
+if abspath(PROGRAM_FILE) == @__FILE__
+    result, metrics = run_experiment(CONFIG)
+end
