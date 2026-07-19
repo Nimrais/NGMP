@@ -89,4 +89,40 @@ import SurrogateModelling: NaturalGradientMP
         @test shape(msg) ≈ 2.5
         @test rate(msg) ≈ 4.0
     end
+
+    @testset "projected Nesterov update uses consecutive natural directions" begin
+        state = NGMPEdgeState(DampingMeta(
+            alpha=0.5,
+            beta=0.4,
+            method=:projected_nesterov,
+        ))
+        NaturalGradientMP.apply_damping!(state, 2.0, 4.0)
+        message = NaturalGradientMP.apply_damping!(state, 3.0, 6.0)
+        @test weightedmean(message) ≈ 2.4
+        @test precision(message) ≈ 4.8
+        @test state.previous_direction ≈ [2.0, -2.0]
+    end
+
+    @testset "vector transport rescales momentum with the Fisher metric" begin
+        state = NGMPEdgeState(DampingMeta(
+            alpha=0.5,
+            beta=0.25,
+            method=:vector_transport,
+            metric_damping=0.25,
+        ))
+        NaturalGradientMP.apply_damping!(state, 2.0, 4.0)
+        message = NaturalGradientMP.apply_damping!(state, 3.0, 6.0)
+        transported = [1.0, -1.0] .* sqrt.([0.25, 0.25] ./ [0.5, 1.0])
+        expected_eta = [1.0, -1.0] .+ 0.25 .* transported .+
+                       0.5 .* [2.0, -2.0]
+        @test weightedmean(message) ≈ expected_eta[1]
+        @test precision(message) ≈ -2expected_eta[2]
+        @test state.metric ≈ [0.5, 1.0]
+    end
+
+    @testset "optimizer metadata validation" begin
+        @test_throws ArgumentError DampingMeta(method=:unknown)
+        @test_throws ArgumentError DampingMeta(eps=0.0)
+        @test_throws ArgumentError DampingMeta(metric_damping=0.0)
+    end
 end
