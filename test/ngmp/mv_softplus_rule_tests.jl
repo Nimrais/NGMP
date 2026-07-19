@@ -160,8 +160,8 @@ end
             NaturalGradientMessage(TangentProjection(type = DeltaApproximation)),
         ) (m_in = m_in, q_out = q_out_far, meta = NGMPEdgeState(DampingMeta(alpha = 1.0, beta = 0.0)))
 
-        η_near = getnaturalparameters(forward_near)
-        η_far = getnaturalparameters(forward_far)
+        _, η_near = NaturalGradientMP.natural_parameters(forward_near)
+        _, η_far = NaturalGradientMP.natural_parameters(forward_far)
         @test all(isfinite, η_near)
         @test all(isfinite, η_far)
         @test !isapprox(η_near, η_far; atol = 1e-8, rtol = 1e-8)

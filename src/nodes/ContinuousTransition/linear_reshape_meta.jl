@@ -201,6 +201,51 @@ end
     return MvNormalWeightedMeanPrecision(xi, Lambda)
 end
 
+function _linear_reshape_meta(state::NGMPEdgeState)
+    state.usermeta isa LinearReshapeMeta || throw(ArgumentError(
+        "ContinuousTransition(:a, NaturalGradientMessage) requires " *
+        "LinearReshapeMeta as node metadata, got $(typeof(state.usermeta))",
+    ))
+    return state.usermeta
+end
+
+# Stateful adapter around the exact optimized structured VMP target. The
+# receiving q(a) is supplied because the stock rule uses it to validate the
+# vectorized matrix dimension; it does not otherwise alter the target.
+@rule ContinuousTransition(:a, NaturalGradientMessage) (
+    q_y_x::MultivariateNormalDistributionsFamily,
+    q_a::MultivariateNormalDistributionsFamily,
+    q_W::Any,
+    meta::NGMPEdgeState,
+) = begin
+    stock_vmp_message = @call_rule ContinuousTransition(:a, Marginalisation) (
+        q_y_x = q_y_x,
+        q_a = q_a,
+        q_W = q_W,
+        meta = _linear_reshape_meta(meta),
+    )
+    return NaturalGradientMP.apply_damping!(meta, stock_vmp_message)
+end
+
+# Fully mean-field twin of the adapter above. The optimized Kronecker
+# calculation remains centralized in the Marginalisation rule.
+@rule ContinuousTransition(:a, NaturalGradientMessage) (
+    q_y::Any,
+    q_x::Any,
+    q_a::Any,
+    q_W::Any,
+    meta::NGMPEdgeState,
+) = begin
+    stock_vmp_message = @call_rule ContinuousTransition(:a, Marginalisation) (
+        q_y = q_y,
+        q_x = q_x,
+        q_a = q_a,
+        q_W = q_W,
+        meta = _linear_reshape_meta(meta),
+    )
+    return NaturalGradientMP.apply_damping!(meta, stock_vmp_message)
+end
+
 # VMP: structured message to W.
 @rule ContinuousTransition(:W, Marginalisation) (
     q_y_x::MultivariateNormalDistributionsFamily,

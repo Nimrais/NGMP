@@ -1,6 +1,44 @@
 import SurrogateModelling: NaturalGradientMP
 
 @testset "generic exponential-family damping" begin
+    @testset "dependency override precedence and constructor compatibility" begin
+        node_damping = DampingMeta(alpha = 0.8, beta = 0.1, max_step = 4.0)
+        override = DampingMeta(alpha = 0.3, beta = 0.6, max_step = 1.5)
+        usermeta = LinearReshapeMeta(2, 3)
+
+        state = NGMPEdgeState(usermeta; damping = override)
+        @test state.usermeta === usermeta
+        @test state.damping === override
+        @test NaturalGradientMP.damping_parameters(state) == (0.3, 0.6)
+        @test NaturalGradientMP.damping_max_step(state) == 1.5
+
+        overridden_node_state = NGMPEdgeState(node_damping; damping = override)
+        @test overridden_node_state.usermeta === node_damping
+        @test NaturalGradientMP.damping_parameters(overridden_node_state) == (0.3, 0.6)
+        @test NaturalGradientMP.damping_max_step(overridden_node_state) == 1.5
+
+        # Existing one-argument and full-state constructors keep node-level and
+        # fallback behavior unchanged.
+        @test NaturalGradientMP.damping_parameters(NGMPEdgeState(node_damping)) == (0.8, 0.1)
+        legacy_state = NGMPEdgeState(nothing, nothing, Float64[], Float64[], 0)
+        @test legacy_state.damping === nothing
+        @test NaturalGradientMP.damping_parameters(legacy_state) == (0.5, 0.2)
+
+        legacy_dependencies = NGMPDependencies(a = nothing)
+        @test legacy_dependencies.damping === nothing
+        states = NGMPEdgeState[]
+        positional_dependencies = NGMPDependencies(
+            (a = nothing,), NaturalGradientMP.ClosedFormDefault(), states
+        )
+        @test positional_dependencies.damping === nothing
+        @test positional_dependencies.states === states
+
+        dependencies = NGMPDependencies(a = nothing, damping = override)
+        @test dependencies.specification == (a = nothing,)
+        @test dependencies.damping === override
+        @test_throws ArgumentError NGMPDependencies(a = nothing, damping = :invalid)
+    end
+
     @testset "optional natural-step bound" begin
         state = NGMPEdgeState(
             DampingMeta(alpha = 1.0, beta = 0.0, max_step = 0.25),

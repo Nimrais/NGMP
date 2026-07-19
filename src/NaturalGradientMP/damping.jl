@@ -40,7 +40,7 @@ end
 DampingMeta(alpha::Real, beta::Real) = DampingMeta(; alpha = alpha, beta = beta)
 
 """
-    NGMPEdgeState(usermeta)
+    NGMPEdgeState(usermeta; damping = nothing)
 
 Per-node, per-edge mutable state of a natural-gradient message: the previously
 sent message (as a distribution and as its natural-parameter vector `η`), the
@@ -52,22 +52,46 @@ Normal and Gamma are provided).
 One instance is created for every NGMP-constrained interface inside
 `ReactiveMP.activate!(::NGMPDependencies, ...)` and passed to the rule as `meta`;
 `usermeta` holds whatever meta the user attached to the node (e.g. a
-[`DampingMeta`](@ref), or `nothing`).
+[`DampingMeta`](@ref), `LinearReshapeMeta`, or `nothing`). The optional
+`damping` override is kept separately so a dependency policy can choose damping
+parameters without hiding metadata needed by the underlying factor rule.
 """
-mutable struct NGMPEdgeState{M}
+mutable struct NGMPEdgeState{M, D}
     const usermeta::M
+    const damping::D
     message::Any               # last sent Distribution (nothing before the first firing)
     η::Vector{Float64}         # natural parameters of the last sent message
     momentum::Vector{Float64}  # heavy-ball momentum in natural-parameter space
     nfired::Int
 end
 
-NGMPEdgeState(usermeta) = NGMPEdgeState(usermeta, nothing, Float64[], Float64[], 0)
+NGMPEdgeState(usermeta; damping = nothing) =
+    NGMPEdgeState(usermeta, damping, nothing, Float64[], Float64[], 0)
 
-damping_parameters(state::NGMPEdgeState{<:DampingMeta}) = (state.usermeta.α, state.usermeta.β)
-damping_parameters(state::NGMPEdgeState) = (0.5, 0.2)
-damping_max_step(state::NGMPEdgeState{<:DampingMeta}) = state.usermeta.max_step
-damping_max_step(state::NGMPEdgeState) = Inf
+# Preserve the original full-state positional constructor for callers that
+# checkpoint or construct edge state explicitly.
+NGMPEdgeState(usermeta, message, η, momentum, nfired) =
+    NGMPEdgeState(usermeta, nothing, message, η, momentum, nfired)
+
+function damping_configuration(state::NGMPEdgeState)
+    if !isnothing(state.damping)
+        return state.damping
+    elseif state.usermeta isa DampingMeta
+        return state.usermeta
+    else
+        return nothing
+    end
+end
+
+function damping_parameters(state::NGMPEdgeState)
+    damping = damping_configuration(state)
+    return isnothing(damping) ? (0.5, 0.2) : (damping.α, damping.β)
+end
+
+function damping_max_step(state::NGMPEdgeState)
+    damping = damping_configuration(state)
+    return isnothing(damping) ? Inf : damping.max_step
+end
 
 """
     natural_parameters(target) -> (family_tag, η::Vector{Float64})
