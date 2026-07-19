@@ -146,6 +146,33 @@ end
         @test state_in.nfired == 1
     end
 
+    @testset "delta forward projection uses q(out)" begin
+        m_in = MvNormalMeanCovariance([0.2, -0.4], [0.6 0.1; 0.1 0.9])
+        q_out_near = MvNormalMeanCovariance([0.7, 0.8], Diagonal(fill(0.04, 2)))
+        q_out_far = MvNormalMeanCovariance([1.1, 1.3], Diagonal(fill(0.04, 2)))
+
+        forward_near = @call_rule MvSoftplus(
+            :out,
+            NaturalGradientMessage(TangentProjection(type = DeltaApproximation)),
+        ) (m_in = m_in, q_out = q_out_near, meta = NGMPEdgeState(DampingMeta(alpha = 1.0, beta = 0.0)))
+        forward_far = @call_rule MvSoftplus(
+            :out,
+            NaturalGradientMessage(TangentProjection(type = DeltaApproximation)),
+        ) (m_in = m_in, q_out = q_out_far, meta = NGMPEdgeState(DampingMeta(alpha = 1.0, beta = 0.0)))
+
+        η_near = getnaturalparameters(forward_near)
+        η_far = getnaturalparameters(forward_far)
+        @test all(isfinite, η_near)
+        @test all(isfinite, η_far)
+        @test !isapprox(η_near, η_far; atol = 1e-8, rtol = 1e-8)
+
+        q_out_invalid = MvNormalMeanCovariance([0.7, -0.1], Diagonal(fill(0.04, 2)))
+        @test_throws DomainError @call_rule MvSoftplus(
+            :out,
+            NaturalGradientMessage(TangentProjection(type = DeltaApproximation)),
+        ) (m_in = m_in, q_out = q_out_invalid, meta = NGMPEdgeState(DampingMeta(alpha = 1.0, beta = 0.0)))
+    end
+
     @testset "scoring marginal is proper with finite entropy" begin
         for m_out in (
             MvNormalWeightedMeanPrecision([1.5, 0.8], [2.0 0.0; 0.0 1.2]),

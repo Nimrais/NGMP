@@ -2,15 +2,17 @@ export MvSoftplus
 
 import ExponentialFamily: getnaturalparameters, weightedmean_precision
 import BayesBase: mean_cov
-import LinearAlgebra: Cholesky, Symmetric, cholesky, dot, logdet
+import LinearAlgebra: Cholesky, Diagonal, I, Symmetric, cholesky, dot, logdet
 
 """
     MvSoftplus
 
 Deterministic elementwise positive transform `out = softplus.(in)` with
-interfaces `[out, in]`; both edges are multivariate Gaussian. Messages in both
-directions are non-Gaussian, so the NGMP rules project them onto the receiving
-edge's Gaussian tangent space (`TangentProjection(type = Unscented)`).
+interfaces `[out, in]`; both edges are multivariate Gaussian. The `:in` NGMP
+message is always a tangent projection of its exact log-message. For `:out`,
+`TangentProjection(type = DeltaApproximation)` is likewise an exact-log-message
+local quadratic at `mean(q(out))`; `TangentProjection(type = Unscented)` uses a
+support-safe moment-matched Gaussian pushforward instead.
 """
 struct MvSoftplus end
 
@@ -50,6 +52,34 @@ end
 
 (message::MvSoftplusForwardMessage)(y::AbstractVector) = exp(log(message, y))
 
+# Analytic derivatives of the exact forward log-message.  They make the
+# `DeltaApproximation` a genuine tangent projection: its touching quadratic is
+# evaluated at mean(q(out)), rather than solely from the incoming message.  The
+# exact pushforward has positive-orthant support, so that expansion point must
+# remain strictly positive.
+function _mv_softplus_forward_logderivatives(
+    message::MvSoftplusForwardMessage,
+    y::AbstractVector,
+)
+    all(>(0), y) || throw(DomainError(
+        y,
+        "MvSoftplus forward delta projection requires mean(q_out) in the positive orthant",
+    ))
+    d = length(y)
+    x = _inverse_softplus.(y)
+    invcov = Matrix(message.chol \ Matrix{eltype(message.mean)}(I, d, d))
+    residual_precision = invcov * (x .- message.mean)
+    expneg = exp.(-y)
+    denominator = .-expm1.(-y)             # 1 - exp(-y), stable near zero
+    inverse_slope = inv.(denominator)
+    jacobian_term = expneg ./ denominator
+
+    gradient = .-inverse_slope .* residual_precision .- jacobian_term
+    hessian = -Diagonal(inverse_slope) * invcov * Diagonal(inverse_slope) +
+        Diagonal(inverse_slope .* jacobian_term .* (residual_precision .+ 1))
+    return gradient, Matrix((hessian .+ hessian') ./ 2)
+end
+
 """
     MvSoftplusGaussianBackwardMessage(ξ, Λ)
 
@@ -78,3 +108,19 @@ function Base.log(message::MvSoftplusGaussianBackwardMessage, x::AbstractVector)
 end
 
 (message::MvSoftplusGaussianBackwardMessage)(x::AbstractVector) = exp(log(message, x))
+
+# Analytic derivatives of the exact backward log-message
+#   ξᵀ softplus(x) - 1/2 softplus(x)ᵀΛ softplus(x).
+function _mv_softplus_backward_logderivatives(
+    message::MvSoftplusGaussianBackwardMessage,
+    x::AbstractVector,
+)
+    s = _softplus.(x)
+    slope = ifelse.(x .>= 0, inv.(1 .+ exp.(-x)), exp.(x) ./ (1 .+ exp.(x)))
+    curvature = slope .* (1 .- slope)
+    residual_precision = message.xi .- message.Lambda * s
+    gradient = slope .* residual_precision
+    hessian = -Diagonal(slope) * message.Lambda * Diagonal(slope) +
+        Diagonal(curvature .* residual_precision)
+    return gradient, Matrix((hessian .+ hessian') ./ 2)
+end

@@ -11,6 +11,8 @@
 # quadratic ℓ. Reduces exactly to the univariate sigma-point route at d = 1
 # (identical points, identical Fisher map).
 
+export project_to_mvnormal
+
 import ExponentialFamily: MvNormalMeanCovariance, MultivariateNormalDistributionsFamily
 import BayesBase: mean_cov
 import LinearAlgebra: Symmetric, cholesky, vec
@@ -23,6 +25,39 @@ const _MvGaussianProjectionPoint = Union{
 _mv_mean_cov(q::MultivariateNormalDistributionsFamily) = mean_cov(q)
 _mv_mean_cov(q::ExponentialFamilyDistribution{MvNormalMeanCovariance}) =
     mean_cov(convert(Distribution, q))
+
+"""
+    project_to_mvnormal(f::DerivativeEnhancedFunction, q) -> (ξ, Λ)
+
+Second-order (delta-method) tangent projection of a multivariate log-message
+onto a Gaussian receiving edge.  The local quadratic expansion of ``ℓ`` at
+`f.expansion_point` is
+
+```
+ℓ(z) ≈ ℓ(z₀) + gᵀ(z - z₀) + 1/2 (z - z₀)ᵀ H (z - z₀),
+```
+
+which is the canonical Gaussian site ``ξᵀz - 1/2 zᵀΛz`` with
+`Λ = -H` and `ξ = g + Λ * z₀`.  As with the scalar delta implementation, this
+is exact for quadratic log-messages and intentionally depends on the receiving
+belief through its expansion point (normally `mean(q)`).
+"""
+function project_to_mvnormal(f::DerivativeEnhancedFunction, q::_MvGaussianProjectionPoint)
+    m, _ = _mv_mean_cov(q)
+    z0 = collect(float.(f.expansion_point))
+    length(z0) == length(m) || throw(DimensionMismatch(
+        "delta expansion point has length $(length(z0)); expected $(length(m))",
+    ))
+    g = collect(float.(f.first_derivative(z0)))
+    H = Matrix(float.(f.second_derivative(z0)))
+    size(H) == (length(m), length(m)) || throw(DimensionMismatch(
+        "delta Hessian has size $(size(H)); expected ($(length(m)), $(length(m)))",
+    ))
+    H = (H .+ H') ./ 2
+    Λ = -H
+    ξ = g .+ Λ * z0
+    return ξ, Λ
+end
 
 """
     project(TangentProjection(type = Unscented), q::MultivariateNormalDistributionsFamily, f::Logpdf)
@@ -71,8 +106,8 @@ end
 
 function project(::TangentProjection{<:DeltaApproximation}, ::_MvGaussianProjectionPoint, ::Logpdf)
     return error(
-        "No analytic-derivative delta projection for multivariate Gaussian edges. ",
-        "Use `TangentProjection(type = Unscented)` (2d+1 sigma points).",
+        "No analytic-derivative delta projection is registered for this multivariate log-message. ",
+        "Use `TangentProjection(type = Unscented)` or provide analytic derivatives.",
     )
 end
 

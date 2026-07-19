@@ -1,30 +1,92 @@
-import ExponentialFamily: MultivariateNormalDistributionsFamily, MvNormalMeanCovariance
+import ExponentialFamily: ExponentialFamilyDistribution, MultivariateNormalDistributionsFamily, MvNormalMeanCovariance
+import ClosedFormExpectations: Logpdf
 
-# Forward (:out): moment-matched Gaussian pushforward of m_in through
-# softplus, via the 2d+1 scaled-UT points of m_in (all mapped into the
-# positive orthant by construction, all weights positive -> PSD covariance).
-# The EXACT pushforward log-density (MvSoftplusForwardMessage) is supported
-# only on the positive orthant, and nothing constrains the receiving Gaussian
-# q(out) to stay inside it: as soon as one cubature point of q(out) leaves the
-# orthant the exact Williams product is -Inf-contaminated (E_q[l] = -infinity),
-# so the exact-log-message tangent projection is undefined there. The
-# moment-matched pushforward is the projection of the GAUSSIANIZED forward
-# message (projecting a quadratic log-message recovers it exactly) and is
-# well-defined for any receiving marginal.
+# Forward (:out): the exact pushforward log-density is supported only on the
+# positive orthant. `DeltaApproximation` uses its finite local quadratic at
+# mean(q_out), whereas Unscented uses the support-safe moment-matched Gaussian
+# pushforward of m_in (its sigma points are mapped through softplus first).
 @rule MvSoftplus(:out, NaturalGradientMessage) (
     m_in::MultivariateNormalDistributionsFamily,
     q_out::MultivariateNormalDistributionsFamily,
     meta::NGMPEdgeState,
 ) = begin
-    α, β, κ = UnscentedTransforms.ut_parameters(UnscentedTransform)
-    m, V = mean_cov(m_in)
-    x, wm, wc = UnscentedTransforms.gaussian_sigma_points(α, β, κ, m, V)
-    s = map(xk -> _softplus.(xk), x)
-    μ = sum(wm .* s)
-    Σ = sum(wc[k] .* ((s[k] .- μ) * (s[k] .- μ)') for k in eachindex(s))
-    Σ = (Σ .+ Σ') ./ 2
-    site = MvNormalMeanCovariance(μ, Σ)
+    projection = resolve_projection(getprojection(vconstraint))
+    site = if projection isa TangentProjection{<:DeltaApproximation}
+        # A genuine q(out)-dependent tangent projection of the exact forward
+        # pushforward. It intentionally raises a clear error if mean(q_out)
+        # leaves softplus' positive support.
+        exact = Logpdf(MvSoftplusForwardMessage(mean_cov(m_in)...))
+        project(projection, q_out, exact)
+    elseif projection isa TangentProjection{<:UnscentedTransform}
+        # Moment-matched Gaussian pushforward, used by the Unscented strategy.
+        α, β, κ = UnscentedTransforms.ut_parameters(UnscentedTransform)
+        m, V = mean_cov(m_in)
+        x, wm, wc = UnscentedTransforms.gaussian_sigma_points(α, β, κ, m, V)
+        s = map(xk -> _softplus.(xk), x)
+        μ = sum(wm .* s)
+        Σ = sum(wc[k] .* ((s[k] .- μ) * (s[k] .- μ)') for k in eachindex(s))
+        Σ = (Σ .+ Σ') ./ 2
+        MvNormalMeanCovariance(μ, Σ)
+    else
+        throw(ArgumentError(
+            "MvSoftplus(:out) supports `TangentProjection(type = DeltaApproximation)` " *
+            "or `TangentProjection(type = Unscented)`; got $(typeof(projection))",
+        ))
+    end
     return NaturalGradientMP.apply_damping!(meta, site)
+end
+
+# Delta-method path: unlike the moment-matched forward path above, this is a
+# genuine tangent projection of the exact pushforward message at mean(q_out).
+# It is valid only while the Gaussian q_out mean lies in softplus' positive
+# support; the derivative bundle raises a domain error otherwise rather than
+# silently taking a projection of an undefined log-density.
+function DerivativeEnhancedFunction(
+    p::Logpdf{<:MvSoftplusForwardMessage},
+    expansion_point::AbstractVector,
+)
+    all(>(0), expansion_point) || throw(DomainError(
+        expansion_point,
+        "MvSoftplus forward delta projection requires mean(q_out) in the positive orthant",
+    ))
+    return DerivativeEnhancedFunction(
+        p,
+        expansion_point,
+        x -> first(_mv_softplus_forward_logderivatives(p.dist, x)),
+        x -> last(_mv_softplus_forward_logderivatives(p.dist, x)),
+    )
+end
+
+function DerivativeEnhancedFunction(
+    p::Logpdf{<:MvSoftplusGaussianBackwardMessage},
+    expansion_point::AbstractVector,
+)
+    return DerivativeEnhancedFunction(
+        p,
+        expansion_point,
+        x -> first(_mv_softplus_backward_logderivatives(p.dist, x)),
+        x -> last(_mv_softplus_backward_logderivatives(p.dist, x)),
+    )
+end
+
+const _MvSoftplusGaussianLogMessage = Union{
+    MvSoftplusForwardMessage,
+    MvSoftplusGaussianBackwardMessage,
+}
+
+function project(
+    ::TangentProjection{<:DeltaApproximation},
+    q::_MvGaussianProjectionPoint,
+    exact::Logpdf{<:_MvSoftplusGaussianLogMessage},
+)
+    qmean, _ = _mv_mean_cov(q)
+    ξ, Λ = project_to_mvnormal(DerivativeEnhancedFunction(exact, qmean), q)
+    return ExponentialFamilyDistribution(
+        MvNormalMeanCovariance,
+        vcat(ξ, vec(-Λ ./ 2)),
+        nothing,
+        nothing,
+    )
 end
 
 # Backward (:in): genuine tangent projection of the EXACT backward
