@@ -385,9 +385,14 @@ end
 
 function prediction_priors(result, iteration = nothing)
     return Dict{Symbol, Any}(
-        key => deepcopy(isnothing(iteration) ? last(result.posteriors[key]) : result.posteriors[key][iteration]) for
+        key => deepcopy(isnothing(iteration) ? latest_global_posterior(result, key) : result.posteriors[key][iteration]) for
         key in (:a_map, :a_pred, :theta, :P, :Gamma2, :gamma_obs)
     )
+end
+
+function latest_global_posterior(result, key)
+    posterior = result.posteriors[key]
+    return posterior isa AbstractVector ? last(posterior) : posterior
 end
 
 function make_mvsoftplus_dependencies(config)
@@ -439,8 +444,13 @@ function run_prediction_batch(
     d_f,
     output_mean,
     constraints_factory = xor_ct_prediction_constraints,
+    meta_map = nothing,
+    meta_pred = nothing,
 )
     isempty(features) && return Any[]
+
+    meta_map = isnothing(meta_map) ? LinearReshapeMeta(d_h, d_f) : meta_map
+    meta_pred = isnothing(meta_pred) ? LinearReshapeMeta(d_h, d_h) : meta_pred
 
     # NGMPDependencies keeps mutable edge state, so every batch receives a
     # fresh instance rather than inheriting damping state from another batch.
@@ -454,8 +464,8 @@ function run_prediction_batch(
         xor_ct_mvsoftplus_prediction_exact(
             priors = priors,
             feature_cov = Matrix(Diagonal(fill(config.feature_jitter, d_f))),
-            meta_map = LinearReshapeMeta(d_h, d_f),
-            meta_pred = LinearReshapeMeta(d_h, d_h),
+            meta_map = meta_map,
+            meta_pred = meta_pred,
             sp_deps = sp_deps,
             sp_damping = sp_damping,
             # `a` is NGMP-constrained as well: a custom dependencies policy
@@ -474,8 +484,8 @@ function run_prediction_batch(
         xor_ct_mvsoftplus_prediction(
             priors = priors,
             feature_cov = Matrix(Diagonal(fill(config.feature_jitter, d_f))),
-            meta_map = LinearReshapeMeta(d_h, d_f),
-            meta_pred = LinearReshapeMeta(d_h, d_h),
+            meta_map = meta_map,
+            meta_pred = meta_pred,
             sp_deps = sp_deps,
             sp_damping = sp_damping,
             y_prior_variance = config.prediction_prior_variance,
@@ -526,9 +536,9 @@ function predictive_statistics(marginals)
 end
 
 function plugin_prediction_means(result, features, d_h, d_f)
-    A_map = reshape(mean(last(result.posteriors[:a_map])), d_h, d_f)
-    A_pred = reshape(mean(last(result.posteriors[:a_pred])), d_h, d_h)
-    theta_hat = mean(last(result.posteriors[:theta]))
+    A_map = reshape(mean(latest_global_posterior(result, :a_map)), d_h, d_f)
+    A_pred = reshape(mean(latest_global_posterior(result, :a_pred)), d_h, d_h)
+    theta_hat = mean(latest_global_posterior(result, :theta))
     return [dot(theta_hat, A_pred * _softplus.(A_map * feature)) for feature in features]
 end
 
@@ -603,6 +613,11 @@ function run_experiment(
     config;
     training_constraints = nothing,
     prediction_constraints_factory = nothing,
+    priors = nothing,
+    meta_map = nothing,
+    meta_pred = nothing,
+    experiment_label = "xor_ctransition_mvsoftplus",
+    compact_posteriors = false,
 )
     exact = config.mvsoftplus_projection == "exact"
     training_constraints = something(
@@ -615,6 +630,8 @@ function run_experiment(
     )
     d_h = config.d_hidden
     d_f = 3
+    meta_map = isnothing(meta_map) ? LinearReshapeMeta(d_h, d_f) : meta_map
+    meta_pred = isnothing(meta_pred) ? LinearReshapeMeta(d_h, d_h) : meta_pred
 
     dataset = make_checkerboard_dataset(
         n = config.n_samples, noise_std = config.noise_std, seed = config.data_seed
@@ -625,16 +642,20 @@ function run_experiment(
     train_features = build_features(train_data)
     test_features = build_features(test_data)
 
-    priors = make_priors(
-        d_h = d_h, d_f = d_f, seed = config.prior_seed,
-        ct_precision_mean = config.ct_precision_mean,
-        a_prior_mean_scale = config.a_prior_mean_scale,
-        a_prior_variance = config.a_prior_variance,
-        theta_prior_mean_scale = config.theta_prior_mean_scale,
-        theta_prior_variance = config.theta_prior_variance,
-        gamma_obs_mean = config.gamma_obs_mean,
-        gamma_obs_concentration = config.gamma_obs_concentration,
-    )
+    priors = if isnothing(priors)
+        make_priors(
+            d_h = d_h, d_f = d_f, seed = config.prior_seed,
+            ct_precision_mean = config.ct_precision_mean,
+            a_prior_mean_scale = config.a_prior_mean_scale,
+            a_prior_variance = config.a_prior_variance,
+            theta_prior_mean_scale = config.theta_prior_mean_scale,
+            theta_prior_variance = config.theta_prior_variance,
+            gamma_obs_mean = config.gamma_obs_mean,
+            gamma_obs_concentration = config.gamma_obs_concentration,
+        )
+    else
+        priors
+    end
     sp_deps = make_mvsoftplus_dependencies(config)
     sp_damping = DampingMeta(
         alpha = config.ngmp_alpha, beta = config.ngmp_beta,
@@ -650,12 +671,24 @@ function run_experiment(
     )
     ct2_deps = make_ct2_dependencies(config)
 
+    # Large hidden widths cannot retain every local d_h-dimensional posterior
+    # at every iteration. Comparisons only need the final global marginals.
+    training_returnvars = compact_posteriors && !config.diagnostics ?
+        (
+            a_map = KeepLast(),
+            a_pred = KeepLast(),
+            theta = KeepLast(),
+            P = KeepLast(),
+            Gamma2 = KeepLast(),
+            gamma_obs = KeepLast(),
+        ) : nothing
+
     elapsed = @elapsed result = infer(
         model = xor_ct_mvsoftplus(
             priors = priors,
             feature_cov = Matrix(Diagonal(fill(config.feature_jitter, d_f))),
-            meta_map = LinearReshapeMeta(d_h, d_f),
-            meta_pred = LinearReshapeMeta(d_h, d_h),
+            meta_map = meta_map,
+            meta_pred = meta_pred,
             ct_a_deps = ct_a_deps,
             ct2_deps = ct2_deps,
             sp_deps = sp_deps,
@@ -669,6 +702,7 @@ function run_experiment(
         options = (limit_stack_depth = 100,),
         showprogress = config.show_progress,
         disable_inference_error_hint = true,
+        returnvars = training_returnvars,
     )
 
     priors_for_prediction = prediction_priors(result)
@@ -680,17 +714,21 @@ function run_experiment(
         d_f = d_f,
         output_mean = prediction_output_mean,
         constraints_factory = prediction_constraints_factory,
+        meta_map = meta_map,
+        meta_pred = meta_pred,
     )
-    train_prediction = predictive_statistics(predict_marginals(
-        priors_for_prediction,
-        train_features;
-        prediction_kwargs...,
-    ))
-    test_prediction = predictive_statistics(predict_marginals(
-        priors_for_prediction,
-        test_features;
-        prediction_kwargs...,
-    ))
+    prediction_elapsed = @elapsed begin
+        train_prediction = predictive_statistics(predict_marginals(
+            priors_for_prediction,
+            train_features;
+            prediction_kwargs...,
+        ))
+        test_prediction = predictive_statistics(predict_marginals(
+            priors_for_prediction,
+            test_features;
+            prediction_kwargs...,
+        ))
+    end
     train_mse = mean(abs2, train_prediction.mean .- train_data.OT)
     test_mse = mean(abs2, test_prediction.mean .- test_data.OT)
     baseline = mean(abs2, mean(train_data.OT) .- test_data.OT)
@@ -718,15 +756,16 @@ function run_experiment(
     )
     prior_a_map = mean(priors[:a_map])
     prior_a_pred = mean(priors[:a_pred])
-    posterior_a_map = mean(last(result.posteriors[:a_map]))
-    posterior_a_pred = mean(last(result.posteriors[:a_pred]))
+    posterior_a_map = mean(latest_global_posterior(result, :a_map))
+    posterior_a_pred = mean(latest_global_posterior(result, :a_pred))
     a_map_movement = sqrt(sum(abs2, posterior_a_map .- prior_a_map)) /
         sqrt(sum(abs2, prior_a_map))
     a_pred_movement = sqrt(sum(abs2, posterior_a_pred .- prior_a_pred)) /
         sqrt(sum(abs2, prior_a_pred))
     println()
-    println("=== xor_ctransition_mvsoftplus (projection = $(config.mvsoftplus_projection), d_h = $d_h, iterations = $(config.iterations), " *
+    println("=== $experiment_label (projection = $(config.mvsoftplus_projection), d_h = $d_h, iterations = $(config.iterations), " *
             "n_train = $(nrow(train_data)), n_test = $(nrow(test_data)), $(round(elapsed, digits = 1))s)")
+    println("prediction elapsed     : ", round(prediction_elapsed, digits = 2), "s")
     println("free energy first/last : ", first(fe), " / ", last(fe))
     println("free energy finite     : ", all(isfinite, fe),
             "   decreasing steps: ", count(<(0), diff(fe)), "/", length(fe) - 1)
@@ -742,11 +781,11 @@ function run_experiment(
     isnothing(surface_path) || println("predictive surface     : ", surface_path)
 
     if config.diagnostics
-        theta_hat = mean(last(result.posteriors[:theta]))
+        theta_hat = mean(latest_global_posterior(result, :theta))
         preds = test_prediction.mean
         plugin_train_prediction = plugin_prediction_means(result, train_features, d_h, d_f)
         plugin_test_prediction = plugin_prediction_means(result, test_features, d_h, d_f)
-        qγ = last(result.posteriors[:gamma_obs])
+        qγ = latest_global_posterior(result, :gamma_obs)
         s_means = [mean(q) for q in last(result.posteriors[:s])]
         h1_means = [mean(q) for q in last(result.posteriors[:h1])]
         println("--- diagnostics")
@@ -783,6 +822,8 @@ function run_experiment(
         ct_a_firings = ct_a_firings,
         a_map_movement = a_map_movement,
         a_pred_movement = a_pred_movement,
+        training_elapsed = elapsed,
+        prediction_elapsed = prediction_elapsed,
     )
 end
 

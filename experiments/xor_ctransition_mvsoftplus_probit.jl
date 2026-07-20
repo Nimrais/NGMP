@@ -371,7 +371,16 @@ function make_ct_dependencies(config)
     return NGMPDependencies(a = nothing, damping = damping)
 end
 
-function fit_probit_arm(config, features, labels; iterations = config.iterations)
+function fit_probit_arm(
+    config,
+    features,
+    labels;
+    iterations = config.iterations,
+    priors = nothing,
+    meta_map = nothing,
+    meta_pred = nothing,
+    compute_free_energy = true,
+)
     validate_config(config)
     all(label -> label == 0.0 || label == 1.0, labels) ||
         error("Probit observations must be exact binary labels")
@@ -380,7 +389,10 @@ function fit_probit_arm(config, features, labels; iterations = config.iterations
     ))
 
     d_f = length(first(features))
-    priors = make_priors(config; d_f = d_f)
+    priors = isnothing(priors) ? make_priors(config; d_f = d_f) : priors
+    meta_map = isnothing(meta_map) ? LinearReshapeMeta(config.d_hidden, d_f) : meta_map
+    meta_pred = isnothing(meta_pred) ?
+        LinearReshapeMeta(config.d_hidden, config.d_hidden) : meta_pred
     ct_a_deps = make_ct_dependencies(config)
     ct2_deps = make_ct_dependencies(config)
     sp_deps = make_mvsoftplus_dependencies()
@@ -394,8 +406,8 @@ function fit_probit_arm(config, features, labels; iterations = config.iterations
         model = xor_ct_mvsoftplus_probit(
             priors = priors,
             feature_cov = Matrix(Diagonal(fill(config.feature_jitter, d_f))),
-            meta_map = LinearReshapeMeta(config.d_hidden, d_f),
-            meta_pred = LinearReshapeMeta(config.d_hidden, config.d_hidden),
+            meta_map = meta_map,
+            meta_pred = meta_pred,
             ct_a_deps = ct_a_deps,
             ct2_deps = ct2_deps,
             sp_deps = sp_deps,
@@ -405,7 +417,7 @@ function fit_probit_arm(config, features, labels; iterations = config.iterations
         constraints = xor_ct_mvsoftplus_probit_constraints(),
         initialization = make_initialization(config, priors),
         iterations = iterations,
-        free_energy = true,
+        free_energy = compute_free_energy,
         showprogress = config.show_progress,
         returnvars = (
             a_map = KeepEach(),
@@ -425,8 +437,11 @@ function fit_probit_arm(config, features, labels; iterations = config.iterations
         ct_a_deps = ct_a_deps,
         ct2_deps = ct2_deps,
         sp_deps = sp_deps,
+        meta_map = meta_map,
+        meta_pred = meta_pred,
         iterations = iterations,
         elapsed = elapsed,
+        compute_free_energy = compute_free_energy,
     )
     validate_training_fit(fit, length(labels))
     return fit
@@ -444,9 +459,18 @@ function prediction_priors(fit, iteration = nothing)
     )
 end
 
-function run_score_prediction_batch(priors, features; config)
+function run_score_prediction_batch(
+    priors,
+    features;
+    config,
+    meta_map = nothing,
+    meta_pred = nothing,
+)
     isempty(features) && return Any[]
     d_f = length(first(features))
+    meta_map = isnothing(meta_map) ? LinearReshapeMeta(config.d_hidden, d_f) : meta_map
+    meta_pred = isnothing(meta_pred) ?
+        LinearReshapeMeta(config.d_hidden, config.d_hidden) : meta_pred
     sp_deps = make_mvsoftplus_dependencies()
     sp_damping = DampingMeta(
         alpha = config.ngmp_alpha,
@@ -457,8 +481,8 @@ function run_score_prediction_batch(priors, features; config)
         model = xor_ct_mvsoftplus_score_prediction(
             priors = priors,
             feature_cov = Matrix(Diagonal(fill(config.feature_jitter, d_f))),
-            meta_map = LinearReshapeMeta(config.d_hidden, d_f),
-            meta_pred = LinearReshapeMeta(config.d_hidden, config.d_hidden),
+            meta_map = meta_map,
+            meta_pred = meta_pred,
             sp_deps = sp_deps,
             sp_damping = sp_damping,
             score_prior_variance = config.prediction_prior_variance,
@@ -491,6 +515,8 @@ function predict_score_marginals(fit, features; config, iteration = nothing)
             priors,
             features[indices];
             config = config,
+            meta_map = fit.meta_map,
+            meta_pred = fit.meta_pred,
         )
     end
     return marginals
@@ -561,7 +587,9 @@ function score_statistics(marginals; verify_native = true)
 end
 
 function validate_training_fit(fit, n_train)
-    all(isfinite, fit.result.free_energy) || error("training free energy is non-finite")
+    if fit.compute_free_energy
+        all(isfinite, fit.result.free_energy) || error("training free energy is non-finite")
+    end
     for key in GLOBAL_KEYS
         posterior_mean = mean(last(fit.result.posteriors[key]))
         all(isfinite, posterior_mean) || error("posterior mean for $key is non-finite")
