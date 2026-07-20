@@ -59,6 +59,8 @@ include("expressions/student_t_message.jl")
 
 include("expressions/gaussian_student_t_message.jl")
 
+include("distributions/mv_inverse_softplus_normal.jl")
+
 include("tangent_projections/common.jl")
 
 include("tangent_projections/closed_form_tangent.jl")
@@ -70,6 +72,8 @@ include("tangent_projections/normal.jl")
 include("tangent_projections/unscented.jl")
 
 include("tangent_projections/mv_normal.jl")
+
+include("tangent_projections/mv_inverse_softplus_normal.jl")
 
 include("nodes/softplus/softplus.jl")
 include("nodes/mv_softplus/node.jl")

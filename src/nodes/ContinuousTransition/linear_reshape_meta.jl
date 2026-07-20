@@ -203,7 +203,7 @@ end
 
 function _linear_reshape_meta(state::NGMPEdgeState)
     state.usermeta isa LinearReshapeMeta || throw(ArgumentError(
-        "ContinuousTransition(:a, NaturalGradientMessage) requires " *
+        "ContinuousTransition NaturalGradientMessage rules require " *
         "LinearReshapeMeta as node metadata, got $(typeof(state.usermeta))",
     ))
     return state.usermeta
@@ -244,6 +244,34 @@ end
         meta = _linear_reshape_meta(meta),
     )
     return NaturalGradientMP.apply_damping!(meta, stock_vmp_message)
+end
+
+# Backward message onto an MvInverseSoftplusNormal x-edge: the stock mean-field
+# VMP target is Gaussian in x, whose support (all of R^d) is incompatible with
+# the positive-orthant edge family — so it is tangent-projected onto the
+# receiving belief q(x) instead. The Gaussian log-message pulls back through
+# softplus to the exact `MvSoftplusGaussianBackwardMessage`, making both the
+# delta and the cubature strategies available (see
+# tangent_projections/mv_inverse_softplus_normal.jl).
+@rule ContinuousTransition(:x, NaturalGradientMessage) (
+    q_y::Any,
+    q_x::_MvISNPoint,
+    q_a::Any,
+    q_W::Any,
+    meta::NGMPEdgeState,
+) = begin
+    stock_vmp_message = @call_rule ContinuousTransition(:x, Marginalisation) (
+        q_y = q_y,
+        q_a = q_a,
+        q_W = q_W,
+        meta = _linear_reshape_meta(meta),
+    )
+    site = project(
+        resolve_projection(getprojection(vconstraint)),
+        q_x,
+        ClosedFormExpectations.Logpdf(stock_vmp_message),
+    )
+    return NaturalGradientMP.apply_damping!(meta, site)
 end
 
 # VMP: structured message to W.

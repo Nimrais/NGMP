@@ -36,6 +36,26 @@ import ClosedFormExpectations: Logpdf
     return NaturalGradientMP.apply_damping!(meta, site)
 end
 
+# Forward (:out) onto an MvInverseSoftplusNormal edge: the exact pushforward of
+# the Gaussian m_in through softplus IS a member of the receiving family, with
+# m_in's own natural parameters. The projection is closed-form and exact
+# (KL = 0) — no strategy, no support workaround; q_out only selects the edge
+# family. Damping still applies in natural-parameter space.
+@rule MvSoftplus(:out, NaturalGradientMessage) (
+    m_in::MultivariateNormalDistributionsFamily,
+    q_out::_MvISNPoint,
+    meta::NGMPEdgeState,
+) = begin
+    ξ, Λ = weightedmean_precision(m_in)
+    site = ExponentialFamilyDistribution(
+        MvInverseSoftplusNormal,
+        vcat(collect(Float64, ξ), vec(collect(Float64, -Λ ./ 2))),
+        nothing,
+        nothing,
+    )
+    return NaturalGradientMP.apply_damping!(meta, site)
+end
+
 # Delta-method path: unlike the moment-matched forward path above, this is a
 # genuine tangent projection of the exact pushforward message at mean(q_out).
 # It is valid only while the Gaussian q_out mean lies in softplus' positive
@@ -100,5 +120,39 @@ end
     ξ, Λ = weightedmean_precision(m_out)
     exact = Logpdf(MvSoftplusGaussianBackwardMessage(ξ, Λ))
     site = project(resolve_projection(getprojection(vconstraint)), q_in, exact)
+    return NaturalGradientMP.apply_damping!(meta, site)
+end
+
+# Backward (:in) from an MvInverseSoftplusNormal out-edge: the message is an
+# exponential tilt exp(ηᵀ T(y)) with T(y) = (invsoftplus.(y), ⋯). Substituting
+# y = softplus.(x) collapses T to the plain Gaussian statistics (x, x xᵀ), so
+# the exact backward message is the Gaussian tilt with the SAME natural
+# parameters — closed form, no projection. The softplus nonlinearity is a pure
+# change of coordinates between the two edge families.
+@rule MvSoftplus(:in, NaturalGradientMessage) (
+    m_out::ExponentialFamilyDistribution{MvInverseSoftplusNormal},
+    q_in::MultivariateNormalDistributionsFamily,
+    meta::NGMPEdgeState,
+) = begin
+    site = ExponentialFamilyDistribution(
+        MvNormalMeanCovariance,
+        collect(Float64, getnaturalparameters(m_out)),
+        nothing,
+        nothing,
+    )
+    return NaturalGradientMP.apply_damping!(meta, site)
+end
+
+@rule MvSoftplus(:in, NaturalGradientMessage) (
+    m_out::MvInverseSoftplusNormal,
+    q_in::MultivariateNormalDistributionsFamily,
+    meta::NGMPEdgeState,
+) = begin
+    site = ExponentialFamilyDistribution(
+        MvNormalMeanCovariance,
+        collect(Float64, getnaturalparameters(_mvisn_site(m_out))),
+        nothing,
+        nothing,
+    )
     return NaturalGradientMP.apply_damping!(meta, site)
 end

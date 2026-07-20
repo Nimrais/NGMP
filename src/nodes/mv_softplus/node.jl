@@ -8,11 +8,16 @@ import LinearAlgebra: Cholesky, Diagonal, I, Symmetric, cholesky, dot, logdet
     MvSoftplus
 
 Deterministic elementwise positive transform `out = softplus.(in)` with
-interfaces `[out, in]`; both edges are multivariate Gaussian. The `:in` NGMP
-message is always a tangent projection of its exact log-message. For `:out`,
+interfaces `[out, in]`. With a multivariate Gaussian out-edge, the `:in` NGMP
+message is a tangent projection of its exact log-message, and for `:out`
 `TangentProjection(type = DeltaApproximation)` is likewise an exact-log-message
-local quadratic at `mean(q(out))`; `TangentProjection(type = Unscented)` uses a
-support-safe moment-matched Gaussian pushforward instead.
+local quadratic at `mean(q(out))` while `TangentProjection(type = Unscented)`
+uses a support-safe moment-matched Gaussian pushforward instead.
+
+With an [`MvInverseSoftplusNormal`](@ref) out-edge both NGMP messages are exact
+closed-form in-family sites — the pushforward family shares the Gaussian
+natural parameters, so softplus becomes a pure change of coordinates between
+the two edges and no approximation is made at this node at all.
 """
 struct MvSoftplus end
 
@@ -24,9 +29,11 @@ struct MvSoftplus end
 Exact forward log-message: the pushforward density of `y = softplus.(x)` for
 `x ~ N(mean, covariance)`, including the per-element inverse-Jacobian term
 `-∑ₖ log(1 - exp(-yₖ))`. Zero (log = -Inf) off the positive orthant — which is
-why the `:out` NGMP rule sends the moment-matched Gaussian pushforward instead
-of tangent-projecting this expression (see rules/natural_gradient.jl); the
-exact expression is kept as the reference density.
+why, on a Gaussian out-edge, the `:out` NGMP rule sends the moment-matched
+Gaussian pushforward instead of tangent-projecting this expression (see
+rules/natural_gradient.jl). This density IS the [`MvInverseSoftplusNormal`](@ref)
+distribution; constraining the out-edge to that family makes the forward
+message exact and in-family.
 """
 struct MvSoftplusForwardMessage{T <: Real} <: ClosedFormExpectations.Expression
     mean::Vector{T}

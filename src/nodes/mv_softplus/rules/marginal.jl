@@ -24,7 +24,29 @@ import LinearAlgebra: Diagonal, eigen
     # locally non-concave projected site can be improper while the variable
     # belief remains valid; floor the eigenvalues to keep -H(q_in) finite
     # (multivariate analogue of the scalar `max(precision, sqrt(eps))`).
-    F = eigen(Matrix(Λ_q))
-    Λ_scoring = F.vectors * Diagonal(max.(F.values, sqrt(eps(Float64)))) * F.vectors'
-    return MvNormalWeightedMeanPrecision(ξ_q, Λ_scoring)
+    return MvNormalWeightedMeanPrecision(ξ_q, _mv_softplus_scoring_precision(Λ_q))
+end
+
+function _mv_softplus_scoring_precision(Λ)
+    F = eigen(Matrix(Λ))
+    return F.vectors * Diagonal(max.(F.values, sqrt(eps(Float64)))) * F.vectors'
+end
+
+# MvInverseSoftplusNormal out-edge: the site's exponential tilt exp(ηᵀ T(y))
+# pulls back through y = softplus.(x) to the Gaussian tilt with the SAME
+# natural parameters, so the local input marginal is closed-form — no
+# projection at all.
+@marginalrule MvSoftplus(:in) (
+    m_out::ExponentialFamilyDistribution{MvInverseSoftplusNormal},
+    m_in::MultivariateNormalDistributionsFamily,
+    meta::Any,
+) = begin
+    η = getnaturalparameters(m_out)
+    d = length(mean(m_in))
+    ξ_site = η[1:d]
+    Λ_site = -2 .* reshape(η[(d + 1):end], d, d)
+    ξ_cavity, Λ_cavity = weightedmean_precision(m_in)
+    ξ_q = ξ_cavity .+ ξ_site
+    Λ_q = Symmetric(Matrix(Λ_cavity) .+ Λ_site)
+    return MvNormalWeightedMeanPrecision(ξ_q, _mv_softplus_scoring_precision(Λ_q))
 end
