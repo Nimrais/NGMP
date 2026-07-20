@@ -64,6 +64,7 @@ end
     include("ngmp/mv_softplus_rule_tests.jl")
     include("ngmp/mv_inverse_softplus_normal_tests.jl")
     include("ngmp/linear_reshape_meta_tests.jl")
+    include("ngmp/linear_low_rank_meta_tests.jl")
     include("ngmp/normal_mean_precision_rule_tests.jl")
     include("ngmp/normal_mean_precision_joint_belief_tests.jl")
     include("ngmp/softdot_info_form_tests.jl")

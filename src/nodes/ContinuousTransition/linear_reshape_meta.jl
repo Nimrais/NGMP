@@ -201,10 +201,11 @@ end
     return MvNormalWeightedMeanPrecision(xi, Lambda)
 end
 
-function _linear_reshape_meta(state::NGMPEdgeState)
-    state.usermeta isa LinearReshapeMeta || throw(ArgumentError(
+function _continuous_transition_linear_meta(state::NGMPEdgeState)
+    state.usermeta isa Union{LinearReshapeMeta, LinearLowRankMeta} || throw(ArgumentError(
         "ContinuousTransition NaturalGradientMessage rules require " *
-        "LinearReshapeMeta as node metadata, got $(typeof(state.usermeta))",
+        "LinearReshapeMeta or LinearLowRankMeta as node metadata, " *
+        "got $(typeof(state.usermeta))",
     ))
     return state.usermeta
 end
@@ -222,7 +223,7 @@ end
         q_y_x = q_y_x,
         q_a = q_a,
         q_W = q_W,
-        meta = _linear_reshape_meta(meta),
+        meta = _continuous_transition_linear_meta(meta),
     )
     return NaturalGradientMP.apply_damping!(meta, stock_vmp_message)
 end
@@ -241,7 +242,7 @@ end
         q_x = q_x,
         q_a = q_a,
         q_W = q_W,
-        meta = _linear_reshape_meta(meta),
+        meta = _continuous_transition_linear_meta(meta),
     )
     return NaturalGradientMP.apply_damping!(meta, stock_vmp_message)
 end
@@ -264,7 +265,7 @@ end
         q_y = q_y,
         q_a = q_a,
         q_W = q_W,
-        meta = _linear_reshape_meta(meta),
+        meta = _continuous_transition_linear_meta(meta),
     )
     site = project(
         resolve_projection(getprojection(vconstraint)),
