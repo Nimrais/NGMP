@@ -13,6 +13,7 @@ import SurrogateModelling:
     MvResidualSineGaussianBackwardMessage,
     NaturalGradientMP,
     _inverse_residual_sine,
+    _mv_mean_cov,
     _mv_residual_sine_forward_site,
     _mv_residual_sine_forward_logderivatives,
     _mv_residual_sine_mean_cov,
@@ -242,7 +243,9 @@ end
                 m_in,
                 q_out,
             )
-            @test all(isfinite, getnaturalparameters(direct_forward))
+            direct_mean, direct_covariance = _mv_mean_cov(direct_forward)
+            @test all(isfinite, direct_mean)
+            @test all(isfinite, direct_covariance)
 
             forward_state = NGMPEdgeState(
                 activation;
@@ -286,7 +289,6 @@ end
             q_out,
         )
     end
-
 
     @testset "ContinuousTransition integration" begin
         hidden_dimension = 2
