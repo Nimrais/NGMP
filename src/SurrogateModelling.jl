@@ -76,6 +76,7 @@ include("tangent_projections/mv_normal.jl")
 include("tangent_projections/mv_inverse_softplus_normal.jl")
 
 include("nodes/softplus/softplus.jl")
+include("nodes/squareplus/squareplus.jl")
 include("nodes/mv_softplus/node.jl")
 include("nodes/mv_softplus/rules/natural_gradient.jl")
 include("nodes/mv_softplus/rules/marginal.jl")

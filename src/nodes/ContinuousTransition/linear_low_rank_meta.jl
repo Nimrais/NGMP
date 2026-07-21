@@ -250,6 +250,34 @@ function _linear_low_rank_parameter_message(meta::LinearLowRankMeta, Eyx, Exx, W
     return MvNormalWeightedMeanPrecision(xi, Lambda)
 end
 
+# Point-mass input specialization of the parameter message. For x fixed,
+# V' * E[xx'] * V = p * p' with p = V' * x, and
+# E[yx'] - A0 * E[xx'] = (E[y] - A0 * x) * x'. Keeping the calculation in
+# this factorized form avoids materializing the input_dim × input_dim outer
+# product at every observation and iteration.
+function _linear_low_rank_pointmass_parameter_message(
+    meta::LinearLowRankMeta,
+    my,
+    x,
+    W,
+)
+    length(x) == _linear_low_rank_input_dim(meta) || throw(
+        DimensionMismatch(
+            "LinearLowRankMeta requires a point-mass input of length " *
+            "$(_linear_low_rank_input_dim(meta)), got $(length(x))",
+        ),
+    )
+    residual_mean = collect(my)
+    @inbounds for i in eachindex(meta.a0_diagonal)
+        residual_mean[i] -= meta.a0_diagonal[i] * x[i]
+    end
+    projected_x = transpose(meta.V) * x
+    UW = transpose(meta.U) * W
+    xi = (UW * residual_mean) .* projected_x
+    Lambda = (UW * meta.U) .* (projected_x * transpose(projected_x))
+    return MvNormalWeightedMeanPrecision(xi, Lambda)
+end
+
 function _linear_low_rank_delta(my, Vy, mx, Vx, Cyx, ma, Va, meta)
     Eyy = ReactiveMP.rank1update(Vy, my)
     Eyx = ReactiveMP.rank1update(Cyx, my, mx)
@@ -258,6 +286,17 @@ function _linear_low_rank_delta(my, Vy, mx, Vx, Cyx, ma, Va, meta)
     EAxxA = _linear_low_rank_ASAt(meta, ma, Exx) +
             _linear_low_rank_output_uncertainty(meta, Exx, Va)
     return Eyy - (cross + transpose(cross)) .+ LinearAlgebra.Symmetric(EAxxA)
+end
+
+# Expected residual covariance for a fixed input. Only output_dim × output_dim
+# and rank × rank matrices are formed.
+function _linear_low_rank_pointmass_delta(my, Vy, x, ma, Va, meta)
+    projected_x = transpose(meta.V) * x
+    mean_residual = my - _linear_low_rank_mul(meta, ma, x)
+    parameter_uncertainty = meta.U *
+        (Va .* (projected_x * transpose(projected_x))) * transpose(meta.U)
+    return Vy + mean_residual * transpose(mean_residual) +
+           LinearAlgebra.Symmetric(parameter_uncertainty)
 end
 
 # VMP: structured message to y.
@@ -342,6 +381,22 @@ end
 
 # VMP: mean-field message to a.
 @rule ContinuousTransition(:a, Marginalisation) (
+    q_y::Any,
+    q_x::PointMass,
+    q_a::Any,
+    q_W::Any,
+    meta::LinearLowRankMeta,
+) = begin
+    _linear_low_rank_check_parameter(meta, mean(q_a))
+    return _linear_low_rank_pointmass_parameter_message(
+        meta,
+        mean(q_y),
+        mean(q_x),
+        mean(q_W),
+    )
+end
+
+@rule ContinuousTransition(:a, Marginalisation) (
     q_y::Any, q_x::Any, q_a::Any, q_W::Any, meta::LinearLowRankMeta
 ) = begin
     _linear_low_rank_check_parameter(meta, mean(q_a))
@@ -371,6 +426,26 @@ end
 end
 
 # VMP: mean-field message to W.
+@rule ContinuousTransition(:W, Marginalisation) (
+    q_y::Any,
+    q_x::PointMass,
+    q_a::Any,
+    meta::LinearLowRankMeta,
+) = begin
+    ma, Va = mean_cov(q_a)
+    _linear_low_rank_check_parameter(meta, ma)
+    my, Vy = mean_cov(q_y)
+    Delta = _linear_low_rank_pointmass_delta(
+        my,
+        Vy,
+        mean(q_x),
+        ma,
+        Va,
+        meta,
+    )
+    return WishartFast(_linear_low_rank_output_dim(meta) + 2, Delta)
+end
+
 @rule ContinuousTransition(:W, Marginalisation) (
     q_y::Any, q_x::Any, q_a::Any, meta::LinearLowRankMeta
 ) = begin
@@ -445,6 +520,31 @@ end
 end
 
 # Average energy: mean-field q(y)q(x).
+@average_energy ContinuousTransition (
+    q_y::Any,
+    q_x::PointMass,
+    q_a::Any,
+    q_W::Any,
+    meta::LinearLowRankMeta,
+) = begin
+    ma, Va = mean_cov(q_a)
+    _linear_low_rank_check_parameter(meta, ma)
+    my, Vy = mean_cov(q_y)
+    mW = mean(q_W)
+    n = div(ndims(q_y), 2)
+    Delta = _linear_low_rank_pointmass_delta(
+        my,
+        Vy,
+        mean(q_x),
+        ma,
+        Va,
+        meta,
+    )
+
+    return n / 2 * ReactiveMP.log2π - mean(LinearAlgebra.logdet, q_W) +
+           LinearAlgebra.tr(mW * Delta) / 2
+end
+
 @average_energy ContinuousTransition (
     q_y::Any, q_x::Any, q_a::Any, q_W::Any, meta::LinearLowRankMeta
 ) = begin
