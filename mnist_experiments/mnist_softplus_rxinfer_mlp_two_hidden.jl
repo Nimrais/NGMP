@@ -465,7 +465,10 @@ function infer_batch_two_hidden_mlp(
     discriminative_site_scale=2.0,
     alpha=0.2,
     global_site_scale=1.0,
-    vector_transport=true,
+    projected_nesterov=false,
+    nesterov_beta=0.9,
+    nesterov_eps=1e-8,
+    vector_transport=false,
     vector_transport_momentum=0.5,
     vector_transport_damping=1e-6,
     max_inner=3,
@@ -479,6 +482,10 @@ function infer_batch_two_hidden_mlp(
     class_count = length(priors.classes)
     site = two_hidden_zero_sites(
         n_count, input_count, hidden1_count, hidden2_count, class_count)
+    projected_nesterov && vector_transport &&
+        error("Use either projected_nesterov or vector_transport, not both.")
+    previous_direction = zero_like_sites(site)
+    has_previous_direction = false
     previous_update = zero_like_sites(site)
     previous_metric = diagonal_site_metric(site; damping=vector_transport_damping)
     local marginals
@@ -493,7 +500,24 @@ function infer_batch_two_hidden_mlp(
             classes=priors.classes)
         direction = site_direction(site, target)
         old_site = site
-        if vector_transport
+        if projected_nesterov
+            lookahead_site = clamp_site_precisions(nesterov_projected_lookahead(
+                site, direction, previous_direction, has_previous_direction;
+                alpha, beta=nesterov_beta, eps=nesterov_eps))
+            lookahead_marginals = compute_two_hidden_marginals(
+                lookahead_site, priors; global_site_scale, inference_backend)
+            lookahead_target = refresh_two_hidden_sites(
+                batch_x, batch_y, lookahead_marginals, lookahead_site;
+                sigma_sp2, sigma_hidden1_2, sigma_hidden2_2,
+                direct_weight_site_scale, discriminative_site_scale,
+                classes=priors.classes)
+            lookahead_direction = site_direction(
+                lookahead_site, lookahead_target)
+            site = clamp_site_precisions(
+                add_scaled_sites(site, lookahead_direction, alpha))
+            previous_direction = direction
+            has_previous_direction = true
+        elseif vector_transport
             site, previous_update, previous_metric = vector_transport_site_step(
                 site, direction, previous_update, previous_metric;
                 alpha, momentum=vector_transport_momentum,
@@ -557,7 +581,7 @@ function balanced_two_hidden_epoch_order(labels, classes, rng)
 end
 
 function train_two_hidden_mlp_rxinfer_demo(
-    ; ntrain=10000, nval=1000, ntest=1000,
+    ; ntrain=1000, nval=100, ntest=100,
     dataset=:mnist,
     image_size=nothing,
     hidden1_count=32,
@@ -575,7 +599,10 @@ function train_two_hidden_mlp_rxinfer_demo(
     w1_init_scale=nothing,
     w2_init_scale=nothing,
     u_init_scale=nothing,
-    vector_transport=true,
+    projected_nesterov=true,
+    nesterov_beta=0.9,
+    nesterov_eps=1e-8,
+    vector_transport=false,
     vector_transport_momentum=0.5,
     vector_transport_damping=1e-6,
     max_inner=3,
@@ -604,7 +631,7 @@ function train_two_hidden_mlp_rxinfer_demo(
 
     println("RxInfer two-hidden-layer Softplus MLP dataset=$(data.name) classes=$classes")
     println("train=$(length(data.train_y)) val=$(length(data.val_y)) test=$(length(data.test_y)) image_size=$(data.image_size) channels=$(data.channels) input=$input_count hidden1=$hidden1_count hidden2=$hidden2_count batch=$batch_size epochs=$epochs max_inner=$max_inner inference_backend=$inference_backend")
-    println("init_scales=($(round(w1_init_scale, digits=3)), $(round(w2_init_scale, digits=3)), $(round(u_init_scale, digits=3))) direct_weight_site_scale=$direct_weight_site_scale")
+    println("init_scales=($(round(w1_init_scale, digits=3)), $(round(w2_init_scale, digits=3)), $(round(u_init_scale, digits=3))) direct_weight_site_scale=$direct_weight_site_scale projected_nesterov=$projected_nesterov nesterov_beta=$nesterov_beta nesterov_eps=$nesterov_eps vector_transport=$vector_transport")
 
     for epoch in 1:epochs
         order = balanced_two_hidden_epoch_order(data.train_y, classes, rng)
@@ -619,6 +646,7 @@ function train_two_hidden_mlp_rxinfer_demo(
                 sigma_sp2, sigma_hidden1_2, sigma_hidden2_2,
                 direct_weight_site_scale, discriminative_site_scale,
                 alpha, global_site_scale=site_scale,
+                projected_nesterov, nesterov_beta, nesterov_eps,
                 vector_transport, vector_transport_momentum,
                 vector_transport_damping, max_inner, inference_backend)
             push!(deltas, stats.delta)

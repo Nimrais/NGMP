@@ -528,7 +528,7 @@ function evaluate_mlp_rx(priors, x, y; max_images=size(x, 2))
     return correct / n
 end
 
-function train_mlp_rxinfer_demo(; ntrain=10000, nval=1000, ntest=1000,
+function train_mlp_rxinfer_demo(; ntrain=1000, nval=100, ntest=100,
     dataset=:mnist,
     image_size=nothing,
     hidden_count=32,
@@ -544,10 +544,10 @@ function train_mlp_rxinfer_demo(; ntrain=10000, nval=1000, ntest=1000,
     w_init_scale=0.01,
     u_init_scale=0.1,
     classes=nothing,
-    projected_nesterov=false,
+    projected_nesterov=true,
     nesterov_beta=0.9,
     nesterov_eps=1e-8,
-    vector_transport=true,
+    vector_transport=false,
     vector_transport_momentum=0.5,
     vector_transport_damping=1e-6,
     max_inner=3,
