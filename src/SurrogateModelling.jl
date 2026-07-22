@@ -29,6 +29,10 @@ include("NaturalGradientMP/NaturalGradientMP.jl")
 using .NaturalGradientMP: NaturalGradientMessage, NGMPDependencies, DampingMeta, NGMPEdgeState, ClosedFormDefault, getprojection
 export NaturalGradientMP, NaturalGradientMessage, NGMPDependencies, DampingMeta, NGMPEdgeState, getprojection
 
+include("ManyPlusNode/ManyPlusNode.jl")
+using .ManyPlusNode: ManyPlus
+export ManyPlusNode, ManyPlus
+
 # NOTE: the strategy struct `UnscentedTransforms.UnscentedTransform` is deliberately
 # NOT re-exported — ReactiveMP already exports `Unscented`/`UnscentedTransform` for
 # its Delta-node approximations and re-exporting ours would make the name ambiguous.
@@ -59,6 +63,8 @@ include("expressions/student_t_message.jl")
 
 include("expressions/gaussian_student_t_message.jl")
 
+include("distributions/mv_inverse_softplus_normal.jl")
+
 include("tangent_projections/common.jl")
 
 include("tangent_projections/closed_form_tangent.jl")
@@ -69,9 +75,23 @@ include("tangent_projections/normal.jl")
 
 include("tangent_projections/unscented.jl")
 
+include("tangent_projections/mv_normal.jl")
+
+include("tangent_projections/mv_inverse_softplus_normal.jl")
+
 include("nodes/softplus/softplus.jl")
+include("nodes/squareplus/squareplus.jl")
+include("nodes/mv_softplus/node.jl")
+include("nodes/mv_softplus/rules/natural_gradient.jl")
+include("nodes/mv_softplus/rules/marginal.jl")
+include("nodes/mv_residual_sine/node.jl")
+include("nodes/mv_residual_sine/rules/natural_gradient.jl")
+include("nodes/mv_residual_sine/rules/marginal.jl")
+include("nodes/ContinuousTransition/linear_low_rank_meta.jl")
+include("nodes/ContinuousTransition/linear_reshape_meta.jl")
 include("nodes/exp/rules/natural_gradient.jl")
 include("nodes/log/rules/natural_gradient.jl")
+include("nodes/probit/categorical_message.jl")
 include("nodes/normal_mean_precision/joint_belief.jl")
 include("nodes/normal_mean_precision/rules/natural_gradient.jl")
 include("nodes/softdot/rules/structured_info_form.jl")
@@ -80,6 +100,8 @@ include("nodes/softdot/rules/relaxed_structure.jl")
 include("nodes/softdot/rules/natural_gradient.jl")
 
 include("moment_form.jl")
+
+include("kl_divergences.jl")
 
 function __init__()
     __init__sunspots()

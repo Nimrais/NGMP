@@ -55,12 +55,23 @@ end
     @test improper_η[2] ≈ 0.5
 end
 
+@testset "ManyPlusNode" begin
+    include("manyplus_tests.jl")
+end
+
 @testset "NaturalGradientMP integration" begin
     include("ngmp/reference.jl")
     include("ngmp/damping_tests.jl")
     include("ngmp/integration_tests.jl")
     include("ngmp/log_rule_tests.jl")
+    include("ngmp/probit_categorical_rule_tests.jl")
     include("ngmp/softplus_rule_tests.jl")
+    include("ngmp/squareplus_rule_tests.jl")
+    include("ngmp/mv_softplus_rule_tests.jl")
+    include("ngmp/mv_residual_sine_rule_tests.jl")
+    include("ngmp/mv_inverse_softplus_normal_tests.jl")
+    include("ngmp/linear_reshape_meta_tests.jl")
+    include("ngmp/linear_low_rank_meta_tests.jl")
     include("ngmp/normal_mean_precision_rule_tests.jl")
     include("ngmp/normal_mean_precision_joint_belief_tests.jl")
     include("ngmp/softdot_info_form_tests.jl")

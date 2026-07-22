@@ -1,6 +1,6 @@
 """
-    NGMPDependencies(specification::NamedTuple)
-    NGMPDependencies(; specification...)
+    NGMPDependencies(specification::NamedTuple; projection = ClosedFormDefault(), damping = nothing)
+    NGMPDependencies(; projection = ClosedFormDefault(), damping = nothing, specification...)
 
 A `ReactiveMP.FunctionalDependencies` policy for natural-gradient message passing.
 Behaves as `DefaultFunctionalDependencies` (messages from the same factorization
@@ -15,6 +15,10 @@ specification it additionally:
   - wraps the node meta into a fresh per-edge [`NGMPEdgeState`](@ref) so the rule
     can apply stateful damping/momentum.
 
+An explicit `damping = DampingMeta(...)` overrides node-level damping for the
+constrained edges without replacing node metadata. If it is omitted, node-level
+`DampingMeta` and the existing fallback defaults retain their previous behavior.
+
 Keys of the specification are the constrained interface names; values are optional
 initial marginals used to break the message ↔ marginal cycle (pass `nothing` and use
 `@initialization q(x) = ...` instead, which seeds the same stream).
@@ -23,22 +27,38 @@ initial marginals used to break the message ↔ marginal cycle (pass `nothing` a
 y[k] ~ PoissonExp(z[k]) where { dependencies = NGMPDependencies(in = nothing), meta = DampingMeta(0.5, 0.2) }
 ```
 """
-struct NGMPDependencies{S <: NamedTuple, P} <: ReactiveMP.FunctionalDependencies
+struct NGMPDependencies{S <: NamedTuple, P, D} <: ReactiveMP.FunctionalDependencies
     specification::S
     # Tangent-projection strategy carried into every `NaturalGradientMessage` this
     # policy dispatches (rules resolve it via `resolve_projection`); the sentinel
     # default resolves to `TangentProjection(type = ClosedForm)`.
     projection::P
+    # Optional policy-level damping override. This is copied into every fresh
+    # edge state; mutable message/momentum buffers themselves are never shared.
+    damping::D
     # Diagnostic registry of the per-edge states created at activation (one per
     # constrained interface per node); lets tests and users inspect damping state
     # and firing counts after inference.
     states::Vector{NGMPEdgeState}
 end
 
-NGMPDependencies(specification::NamedTuple; projection = ClosedFormDefault()) =
-    NGMPDependencies(specification, projection, NGMPEdgeState[])
-NGMPDependencies(; projection = ClosedFormDefault(), kwargs...) =
-    NGMPDependencies((; kwargs...); projection = projection)
+function NGMPDependencies(
+    specification::NamedTuple;
+    projection = ClosedFormDefault(),
+    damping = nothing,
+)
+    isnothing(damping) || damping isa DampingMeta ||
+        throw(ArgumentError("damping must be a DampingMeta or nothing"))
+    return NGMPDependencies(specification, projection, damping, NGMPEdgeState[])
+end
+
+NGMPDependencies(; projection = ClosedFormDefault(), damping = nothing, kwargs...) =
+    NGMPDependencies((; kwargs...); projection = projection, damping = damping)
+
+# Preserve the original positional constructor used before dependency-level
+# damping was introduced.
+NGMPDependencies(specification::NamedTuple, projection, states::Vector{NGMPEdgeState}) =
+    NGMPDependencies(specification, projection, nothing, states)
 
 is_ngmp_interface(dependencies::NGMPDependencies, iname::Symbol) = iname ∈ keys(dependencies.specification)
 
@@ -105,7 +125,7 @@ function ReactiveMP.activate!(dependencies::NGMPDependencies, factornode, option
                 vtag        = ReactiveMP.tag(interface)
                 constrained = is_ngmp_interface(dependencies, ReactiveMP.name(interface))
                 vconstraint = constrained ? NaturalGradientMessage(dependencies.projection) : ReactiveMP.Marginalisation()
-                mappingmeta = constrained ? NGMPEdgeState(meta) : meta
+                mappingmeta = constrained ? NGMPEdgeState(meta; damping = dependencies.damping) : meta
                 constrained && push!(dependencies.states, mappingmeta)
 
                 stream_of_outbound_messages = Rocket.combineLatest((messages, marginals), Rocket.PushNew())

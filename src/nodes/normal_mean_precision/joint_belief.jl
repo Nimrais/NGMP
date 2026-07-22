@@ -232,3 +232,205 @@ end
 ) = begin
     return _normal_mean_precision_joint_statistics!(q_out_μ_τ).average_energy
 end
+
+# Local belief for the dynamic-ensemble consensus factor
+#
+#     out ~ NormalMeanPrecision(fixed_mean, τ)
+#
+# when `out` and `τ` belong to the same variational cluster.  Conditional on τ,
+# the product between the Gaussian cavity on `out` and the factor is Gaussian,
+# so only a scalar integral over log(τ) remains.  This is deliberately separate
+# from `NormalMeanPrecisionJointBelief`: the fixed mean has no entropy and the
+# joint belief is two-dimensional rather than three-dimensional.
+
+struct FixedMeanNormalPrecisionJointStatistics{T <: AbstractFloat}
+    log_normalizer::T
+    average_energy::T
+    entropy::T
+end
+
+mutable struct FixedMeanNormalPrecisionJointBelief{T <: AbstractFloat}
+    const out_mean::T
+    const out_variance::T
+    const fixed_mean::T
+    const τ_shape::T
+    const τ_rate::T
+    statistics::Union{Nothing, FixedMeanNormalPrecisionJointStatistics{T}}
+end
+
+function FixedMeanNormalPrecisionJointBelief(
+    m_out::UnivariateNormalDistributionsFamily,
+    m_μ::PointMass,
+    m_τ::GammaDistributionsFamily,
+)
+    out_mean, out_variance = mean_var(m_out)
+    parameters = promote(
+        float(out_mean),
+        float(out_variance),
+        float(mean(m_μ)),
+        float(shape(m_τ)),
+        float(rate(m_τ)),
+    )
+    T = eltype(parameters)
+    return FixedMeanNormalPrecisionJointBelief{T}(parameters..., nothing)
+end
+
+function _compute_fixed_mean_normal_precision_joint_statistics(
+    belief::FixedMeanNormalPrecisionJointBelief{T},
+) where {T}
+    m_out = belief.out_mean
+    v_out = belief.out_variance
+    fixed_mean = belief.fixed_mean
+    a = belief.τ_shape
+    b = belief.τ_rate
+
+    if !(
+        isfinite(m_out) &&
+        isfinite(v_out) &&
+        isfinite(fixed_mean) &&
+        isfinite(a) &&
+        isfinite(b) &&
+        v_out > zero(T) &&
+        a > zero(T) &&
+        b > zero(T)
+    )
+        throw(DomainError(
+            (m_out, v_out, fixed_mean, a, b),
+            "fixed-mean NormalMeanPrecision joint scoring requires finite " *
+            "means and positive finite variances, shape, and rate",
+        ))
+    end
+
+    residual = m_out - fixed_mean
+    logb = log(b)
+    log2π = T(_NORMAL_MEAN_PRECISION_LOG2PI)
+    half = inv(T(2))
+    oneT = one(T)
+    log_gamma_constant = a * logb - T(loggamma(a))
+    logτ_mean = T(SpecialFunctions.digamma(a)) - logb
+    logτ_std = sqrt(T(SpecialFunctions.trigamma(a)))
+    logτ_step = T(_NORMAL_MEAN_PRECISION_JOINT_LOG_STEP) * logτ_std
+    endpoint_logweight = T(_NORMAL_MEAN_PRECISION_ENDPOINT_LOGWEIGHT)
+
+    maximum_logweight = T(-Inf)
+    weight_sum = zero(T)
+    energy_sum = zero(T)
+    log_gamma_overlap_sum = zero(T)
+    conditional_entropy_sum = zero(T)
+
+    for index in eachindex(_NORMAL_MEAN_PRECISION_JOINT_LOG_NODES)
+        standardized_logτ = T(_NORMAL_MEAN_PRECISION_JOINT_LOG_NODES[index])
+        logτ = logτ_mean + logτ_std * standardized_logτ
+        τ = exp(logτ)
+        vτ = v_out + inv(τ)
+        log_overlap = -half * (log2π + log(vτ) + abs2(residual) / vτ)
+        log_gamma_density =
+            log_gamma_constant + (a - oneT) * logτ - exp(logb + logτ)
+        logweight = log_gamma_density + log_overlap + logτ
+        if index == firstindex(_NORMAL_MEAN_PRECISION_JOINT_LOG_NODES) ||
+           index == lastindex(_NORMAL_MEAN_PRECISION_JOINT_LOG_NODES)
+            logweight += endpoint_logweight
+        end
+
+        if !isfinite(logweight)
+            logweight == T(Inf) && error(
+                "fixed-mean NormalMeanPrecision quadrature produced an infinite weight",
+            )
+            continue
+        end
+
+        conditional_variance = inv(inv(v_out) + τ)
+        conditional_mean = conditional_variance * (
+            m_out / v_out + τ * fixed_mean
+        )
+        conditional_squared_error =
+            conditional_variance + abs2(conditional_mean - fixed_mean)
+        energy = half * (
+            log2π - logτ + τ * conditional_squared_error
+        )
+        conditional_entropy = half * (
+            log2π + oneT + log(conditional_variance)
+        )
+        log_gamma_overlap = log_gamma_density + log_overlap
+
+        if logweight > maximum_logweight
+            rescale = isfinite(maximum_logweight) ?
+                      exp(maximum_logweight - logweight) : zero(T)
+            weight_sum = weight_sum * rescale + oneT
+            energy_sum = energy_sum * rescale + energy
+            log_gamma_overlap_sum =
+                log_gamma_overlap_sum * rescale + log_gamma_overlap
+            conditional_entropy_sum =
+                conditional_entropy_sum * rescale + conditional_entropy
+            maximum_logweight = logweight
+        else
+            weight = exp(logweight - maximum_logweight)
+            weight_sum += weight
+            energy_sum += weight * energy
+            log_gamma_overlap_sum += weight * log_gamma_overlap
+            conditional_entropy_sum += weight * conditional_entropy
+        end
+    end
+
+    if !(isfinite(weight_sum) && weight_sum > zero(T))
+        error("fixed-mean NormalMeanPrecision joint quadrature has no finite mass")
+    end
+
+    inverse_weight_sum = inv(weight_sum)
+    log_normalizer = maximum_logweight + log(weight_sum) + log(logτ_step)
+    average_energy = energy_sum * inverse_weight_sum
+    τ_entropy =
+        log_normalizer - log_gamma_overlap_sum * inverse_weight_sum
+    joint_entropy =
+        τ_entropy + conditional_entropy_sum * inverse_weight_sum
+
+    return FixedMeanNormalPrecisionJointStatistics{T}(
+        log_normalizer,
+        average_energy,
+        joint_entropy,
+    )
+end
+
+function _fixed_mean_normal_precision_joint_statistics!(
+    belief::FixedMeanNormalPrecisionJointBelief,
+)
+    statistics = belief.statistics
+    if statistics === nothing
+        computed =
+            _compute_fixed_mean_normal_precision_joint_statistics(belief)
+        belief.statistics = computed
+        return computed
+    end
+    return statistics
+end
+
+BayesBase.entropy(belief::FixedMeanNormalPrecisionJointBelief) =
+    _fixed_mean_normal_precision_joint_statistics!(belief).entropy
+
+@marginalrule NormalMeanPrecision(:out_τ) (
+    m_out::UnivariateNormalDistributionsFamily,
+    m_μ::PointMass,
+    m_τ::GammaDistributionsFamily,
+    meta::Any,
+) = begin
+    return FixedMeanNormalPrecisionJointBelief(m_out, m_μ, m_τ)
+end
+
+# A data-valued mean lies outside q(out, τ), so GraphPPL exposes it as a
+# PointMass marginal after the two within-cluster cavity messages.
+@marginalrule NormalMeanPrecision(:out_τ) (
+    m_out::UnivariateNormalDistributionsFamily,
+    m_τ::GammaDistributionsFamily,
+    q_μ::PointMass,
+    meta::Any,
+) = begin
+    return FixedMeanNormalPrecisionJointBelief(m_out, q_μ, m_τ)
+end
+
+@average_energy NormalMeanPrecision (
+    q_out_τ::FixedMeanNormalPrecisionJointBelief,
+    q_μ::PointMass,
+    meta::Any,
+) = begin
+    return _fixed_mean_normal_precision_joint_statistics!(q_out_τ).average_energy
+end

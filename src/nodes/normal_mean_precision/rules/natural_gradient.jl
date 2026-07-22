@@ -68,6 +68,96 @@ end
     return NaturalGradientMP.apply_damping!(meta, site)
 end
 
+# Fixed-mean consensus specialization.  Integrating the Gamma precision cavity
+# produces a Student-t message toward the latent consensus output.
+@rule NormalMeanPrecision(:out, NaturalGradientMessage) (m_μ::PointMass, m_τ::GammaDistributionsFamily, q_out::UnivariateNormalDistributionsFamily, meta::NGMPEdgeState) = begin
+    exact = Logpdf(StudentTMessage(mean(m_μ), shape(m_τ), rate(m_τ)))
+    site = project(resolve_projection(getprojection(vconstraint)), q_out, exact)
+    return NaturalGradientMP.apply_damping!(meta, site)
+end
+
+# Conversely, integrating the Gaussian output cavity gives the existing
+# NormalPrecisionMessage.  The fixed mean has zero cavity variance.
+@rule NormalMeanPrecision(:τ, NaturalGradientMessage) (m_out::UnivariateNormalDistributionsFamily, m_μ::PointMass, q_τ::GammaDistributionsFamily, meta::NGMPEdgeState) = begin
+    out_mean, out_variance = mean_var(m_out)
+    exact = Logpdf(
+        NormalPrecisionMessage(
+            out_mean,
+            mean(m_μ),
+            out_variance,
+        ),
+    )
+    site = project(resolve_projection(getprojection(vconstraint)), q_τ, exact)
+    return NaturalGradientMP.apply_damping!(meta, site)
+end
+
+# The same fixed-mean factor under a mean-field q(out)q(τ) constraint supplies
+# local marginals (rather than within-cluster cavity messages) for all three
+# interfaces.  Keep this as an explicit dispatch: it is the factorized control
+# for the structured q(out, τ) rules above, and avoids conditionals in the
+# experiment model.
+@rule NormalMeanPrecision(:out, NaturalGradientMessage) (
+    q_out::UnivariateNormalDistributionsFamily,
+    q_μ::PointMass,
+    q_τ::GammaDistributionsFamily,
+    meta::NGMPEdgeState,
+) = begin
+    exact = Logpdf(StudentTMessage(mean(q_μ), shape(q_τ), rate(q_τ)))
+    site = project(resolve_projection(getprojection(vconstraint)), q_out, exact)
+    return NaturalGradientMP.apply_damping!(meta, site)
+end
+
+@rule NormalMeanPrecision(:τ, NaturalGradientMessage) (
+    q_out::UnivariateNormalDistributionsFamily,
+    q_μ::PointMass,
+    q_τ::GammaDistributionsFamily,
+    meta::NGMPEdgeState,
+) = begin
+    out_mean, out_variance = mean_var(q_out)
+    exact = Logpdf(
+        NormalPrecisionMessage(
+            out_mean,
+            mean(q_μ),
+            out_variance,
+        ),
+    )
+    site = project(resolve_projection(getprojection(vconstraint)), q_τ, exact)
+    return NaturalGradientMP.apply_damping!(meta, site)
+end
+
+# In q(out, τ), the fixed data-valued mean is outside the joint cluster and is
+# therefore exposed by ReactiveMP as `q_μ`, while the other stochastic
+# interface remains a cavity message.  These two dispatches are mathematically
+# identical to the `m_μ::PointMass` variants, but match that structured graph.
+@rule NormalMeanPrecision(:out, NaturalGradientMessage) (
+    m_τ::GammaDistributionsFamily,
+    q_out::UnivariateNormalDistributionsFamily,
+    q_μ::PointMass,
+    meta::NGMPEdgeState,
+) = begin
+    exact = Logpdf(StudentTMessage(mean(q_μ), shape(m_τ), rate(m_τ)))
+    site = project(resolve_projection(getprojection(vconstraint)), q_out, exact)
+    return NaturalGradientMP.apply_damping!(meta, site)
+end
+
+@rule NormalMeanPrecision(:τ, NaturalGradientMessage) (
+    m_out::UnivariateNormalDistributionsFamily,
+    q_μ::PointMass,
+    q_τ::GammaDistributionsFamily,
+    meta::NGMPEdgeState,
+) = begin
+    out_mean, out_variance = mean_var(m_out)
+    exact = Logpdf(
+        NormalPrecisionMessage(
+            out_mean,
+            mean(q_μ),
+            out_variance,
+        ),
+    )
+    site = project(resolve_projection(getprojection(vconstraint)), q_τ, exact)
+    return NaturalGradientMP.apply_damping!(meta, site)
+end
+
 # --- product-of-experts usage: ALL THREE edges latent (out in a structured cluster
 # --- with μ; τ mean-field apart) — the ReLU-diffusion model's gate consumer.
 #

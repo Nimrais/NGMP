@@ -77,6 +77,81 @@ function make_normal_mean_precision_joint_belief(
     )
 end
 
+function fixed_mean_normal_precision_joint_reference(
+    m_out,
+    v_out,
+    fixed_mean,
+    a,
+    b;
+    order = 32_768,
+)
+    logτ_mean = digamma(a) - log(b)
+    logτ_std = sqrt(trigamma(a))
+    logτ = range(
+        logτ_mean - 16 * logτ_std,
+        logτ_mean + 16 * logτ_std;
+        length = order,
+    )
+    logτ_step = step(logτ)
+    τ = exp.(logτ)
+    residual = m_out - fixed_mean
+
+    log_gamma_density =
+        a * log(b) - loggamma(a) .+ (a - 1) .* logτ .- b .* τ
+    overlap_variance = v_out .+ inv.(τ)
+    log_overlap = -0.5 .* (
+        log(2π) .+ log.(overlap_variance) .+
+        abs2(residual) ./ overlap_variance
+    )
+    logweight = log_gamma_density .+ log_overlap .+ logτ
+    maximum_logweight = maximum(logweight)
+    weights = exp.(logweight .- maximum_logweight)
+    weights[firstindex(weights)] *= 0.5
+    weights[lastindex(weights)] *= 0.5
+    weight_sum = sum(weights)
+    weights ./= weight_sum
+
+    log_normalizer =
+        maximum_logweight + log(weight_sum) + log(logτ_step)
+    conditional_variance = inv.(inv(v_out) .+ τ)
+    conditional_mean = conditional_variance .* (
+        m_out / v_out .+ τ .* fixed_mean
+    )
+    conditional_squared_error =
+        conditional_variance .+ abs2.(conditional_mean .- fixed_mean)
+    average_energy = sum(weights .* (
+        0.5 .* (
+            log(2π) .- logτ .+ τ .* conditional_squared_error
+        )
+    ))
+    τ_entropy = log_normalizer - sum(
+        weights .* (log_gamma_density .+ log_overlap),
+    )
+    conditional_entropy = sum(weights .* (
+        0.5 .* log.(2π * exp(1) .* conditional_variance)
+    ))
+    return (;
+        log_normalizer,
+        average_energy,
+        entropy = τ_entropy + conditional_entropy,
+    )
+end
+
+function make_fixed_mean_normal_precision_joint_belief(
+    m_out,
+    v_out,
+    fixed_mean,
+    a,
+    b,
+)
+    return @call_marginalrule NormalMeanPrecision(:out_τ) (
+        m_out = NormalMeanVariance(m_out, v_out),
+        m_μ = PointMass(fixed_mean),
+        m_τ = GammaShapeRate(a, b),
+        meta = DampingMeta(alpha = 0.2, beta = 0.0),
+    )
+end
+
 @model function scored_latent_ngbp_normal_toy(y, deps, damping)
     out ~ NormalMeanVariance(0.5, 1.0)
     μ ~ NormalMeanVariance(0.0, 1.0)
@@ -115,6 +190,40 @@ function run_scored_latent_ngbp_normal_toy(free_energy; iterations = 8)
 end
 
 @testset "NormalMeanPrecision joint belief scoring" begin
+    @testset "fixed-mean out/precision belief matches dense quadrature" begin
+        cases = (
+            (0.8, 0.4, 0.2, 2.5, 1.4),
+            (4.0, 0.01, 0.0, 0.7, 0.5),
+            (0.2, 3.0, 0.2, 100.0, 0.5),
+            (-1.5, 0.05, 1.0, 10.0, 2.0),
+        )
+        for parameters in cases
+            belief = make_fixed_mean_normal_precision_joint_belief(parameters...)
+            @test belief isa
+                  SurrogateModelling.FixedMeanNormalPrecisionJointBelief
+            computed =
+                SurrogateModelling._fixed_mean_normal_precision_joint_statistics!(belief)
+            reference =
+                fixed_mean_normal_precision_joint_reference(parameters...)
+            @test computed.log_normalizer ≈ reference.log_normalizer atol = 2e-4
+            @test computed.average_energy ≈ reference.average_energy atol = 2e-4
+            @test computed.entropy ≈ reference.entropy atol = 2e-4
+
+            average_energy = score(
+                AverageEnergy(),
+                NormalMeanPrecision,
+                Val((:out_τ, :μ)),
+                (
+                    Marginal(belief, false, false),
+                    Marginal(PointMass(parameters[3]), false, false),
+                ),
+                DampingMeta(alpha = 0.2, beta = 0.0),
+            )
+            @test average_energy === computed.average_energy
+            @test entropy(belief) === computed.entropy
+        end
+    end
+
     @testset "exact dispatch and shared lazy cache" begin
         belief = make_normal_mean_precision_joint_belief(
             0.8,

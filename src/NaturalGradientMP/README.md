@@ -35,7 +35,9 @@ outer loop rebuilding surrogate pseudo-observations.
   `NaturalGradientMessage` rule; all other interfaces behave exactly as with
   `DefaultFunctionalDependencies`. Because dependencies are derived from the node's
   local factorization clusters, this composes freely with BP / structured / mean-field
-  factorization constraints.
+  factorization constraints. An optional `damping = DampingMeta(...)` keyword sets
+  damping for the policy's constrained edges while preserving node metadata needed
+  by delegated factor rules.
 
 - **`DampingMeta(; alpha, beta, max_step=Inf)`** — heavy-ball damping in
   natural-parameter coordinates, `v ← β·v + α·(η⋆ − η); η ← η + v`, optionally
