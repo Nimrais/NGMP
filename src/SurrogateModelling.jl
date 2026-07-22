@@ -29,6 +29,10 @@ include("NaturalGradientMP/NaturalGradientMP.jl")
 using .NaturalGradientMP: NaturalGradientMessage, NGMPDependencies, DampingMeta, NGMPEdgeState, ClosedFormDefault, getprojection
 export NaturalGradientMP, NaturalGradientMessage, NGMPDependencies, DampingMeta, NGMPEdgeState, getprojection
 
+include("ManyPlusNode/ManyPlusNode.jl")
+using .ManyPlusNode: ManyPlus
+export ManyPlusNode, ManyPlus
+
 # NOTE: the strategy struct `UnscentedTransforms.UnscentedTransform` is deliberately
 # NOT re-exported — ReactiveMP already exports `Unscented`/`UnscentedTransform` for
 # its Delta-node approximations and re-exporting ours would make the name ambiguous.

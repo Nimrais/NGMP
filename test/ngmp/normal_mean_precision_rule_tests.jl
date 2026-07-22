@@ -1,5 +1,6 @@
 import SurrogateModelling: GaussianStudentTMessage, NaturalGradientMP,
     NormalPrecisionMessage, StudentTMessage, project_to_gamma, project_to_normal
+import ProbabilisticEnsembling: Log
 import FastGaussQuadrature
 import SpecialFunctions: digamma
 import SpecialFunctions: trigamma as sf_trigamma
@@ -41,6 +42,85 @@ end
         meta = damping,
     }
     y ~ NormalMeanVariance(out, 0.5)
+end
+
+@model function fixed_mean_two_expert_consensus_toy(
+    expert_mean_1,
+    expert_mean_2,
+    y,
+    obs_deps,
+    obs_damping,
+    log_deps,
+    log_damping,
+)
+    out ~ NormalMeanVariance(0.0, 10.0)
+    z_1 ~ NormalMeanVariance(0.0, 1.0)
+    z_2 ~ NormalMeanVariance(0.0, 1.0)
+    beta_1 ~ GammaShapeRate(10.0, 10.0)
+    beta_2 ~ GammaShapeRate(10.0, 10.0)
+    gamma_1 ~ GammaShapeRate(1.0, beta_1)
+    gamma_2 ~ GammaShapeRate(1.0, beta_2)
+    z_1 ~ Log(gamma_1) where {
+        dependencies = log_deps,
+        meta = log_damping,
+    }
+    z_2 ~ Log(gamma_2) where {
+        dependencies = log_deps,
+        meta = log_damping,
+    }
+    out ~ NormalMeanPrecision(expert_mean_1, gamma_1) where {
+        dependencies = obs_deps,
+        meta = obs_damping,
+    }
+    out ~ NormalMeanPrecision(expert_mean_2, gamma_2) where {
+        dependencies = obs_deps,
+        meta = obs_damping,
+    }
+    y ~ NormalMeanVariance(out, 0.1)
+end
+
+@constraints function fixed_mean_two_expert_consensus_constraints()
+    q(out, z_1, z_2, gamma_1, gamma_2, beta_1, beta_2) =
+        q(out, z_1, z_2, gamma_1, gamma_2)q(beta_1)q(beta_2)
+end
+
+function run_fixed_mean_two_expert_consensus(expert_mean_1; iterations = 12)
+    observation_dependencies = NGMPDependencies(
+        out = nothing,
+        τ = nothing,
+        projection = TangentProjection(type = DeltaApproximation),
+    )
+    log_dependencies = NGMPDependencies(out = nothing, in = nothing)
+    initialization = @initialization begin
+        q(out) = NormalMeanVariance(1.0, 1.0)
+        q(z_1) = NormalMeanVariance(0.0, 1.0)
+        q(z_2) = NormalMeanVariance(0.0, 1.0)
+        q(gamma_1) = GammaShapeRate(2.0, 2.0)
+        q(gamma_2) = GammaShapeRate(2.0, 2.0)
+        q(beta_1) = GammaShapeRate(10.0, 10.0)
+        q(beta_2) = GammaShapeRate(10.0, 10.0)
+        μ(out) = NormalMeanVariance(1.0, 1.0)
+        μ(gamma_1) = GammaShapeRate(2.0, 2.0)
+        μ(gamma_2) = GammaShapeRate(2.0, 2.0)
+    end
+    result = infer(
+        model = fixed_mean_two_expert_consensus_toy(
+            expert_mean_1 = expert_mean_1,
+            expert_mean_2 = 1.0,
+            obs_deps = observation_dependencies,
+            obs_damping = DampingMeta(alpha = 0.2, beta = 0.0),
+            log_deps = log_dependencies,
+            log_damping = DampingMeta(alpha = 0.2, beta = 0.0),
+        ),
+        data = (y = 1.0,),
+        constraints = fixed_mean_two_expert_consensus_constraints(),
+        initialization = initialization,
+        iterations = iterations,
+        free_energy = false,
+        returnvars = (out = KeepLast(),),
+        disable_inference_error_hint = true,
+    )
+    return result, observation_dependencies
 end
 
 function gaussian_student_t_reference_log(message, x; order = 128)
@@ -221,6 +301,139 @@ end
         @test rate(precision_message) ≈ -getnaturalparameters(precision_target)[2]
     end
 
+    @testset "fixed-mean consensus rules match their tangent projections" begin
+        projection = TangentProjection(type = Unscented)
+        m_out = NormalMeanVariance(0.8, 0.4)
+        m_μ = PointMass(0.2)
+        m_τ = GammaShapeRate(2.5, 1.4)
+        q_out = NormalMeanVariance(0.6, 0.9)
+        q_τ = GammaShapeRate(2.0, 1.7)
+
+        out_state = NGMPEdgeState(DampingMeta(alpha = 1.0, beta = 0.0))
+        out_message = @call_rule NormalMeanPrecision(
+            :out,
+            NaturalGradientMessage(projection),
+        ) (
+            m_μ = m_μ,
+            m_τ = m_τ,
+            q_out = q_out,
+            meta = out_state,
+        )
+        out_target = project(
+            projection,
+            q_out,
+            Logpdf(StudentTMessage(mean(m_μ), shape(m_τ), rate(m_τ))),
+        )
+        @test weightedmean(out_message) ≈ getnaturalparameters(out_target)[1]
+        @test precision(out_message) ≈ -2 * getnaturalparameters(out_target)[2]
+
+        precision_state =
+            NGMPEdgeState(DampingMeta(alpha = 1.0, beta = 0.0))
+        precision_message = @call_rule NormalMeanPrecision(
+            :τ,
+            NaturalGradientMessage(projection),
+        ) (
+            m_out = m_out,
+            m_μ = m_μ,
+            q_τ = q_τ,
+            meta = precision_state,
+        )
+        precision_target = project(
+            projection,
+            q_τ,
+            Logpdf(
+                NormalPrecisionMessage(
+                    mean(m_out),
+                    mean(m_μ),
+                    var(m_out),
+                ),
+            ),
+        )
+        @test shape(precision_message) ≈
+              getnaturalparameters(precision_target)[1] + 1
+        @test rate(precision_message) ≈
+              -getnaturalparameters(precision_target)[2]
+        @test out_state.nfired == 1
+        @test precision_state.nfired == 1
+
+        # Mean-field q(out)q(τ): every interface arrives as a local marginal.
+        factorized_out_state =
+            NGMPEdgeState(DampingMeta(alpha = 1.0, beta = 0.0))
+        factorized_out = @call_rule NormalMeanPrecision(
+            :out,
+            NaturalGradientMessage(projection),
+        ) (
+            q_out = q_out,
+            q_μ = m_μ,
+            q_τ = q_τ,
+            meta = factorized_out_state,
+        )
+        factorized_out_target = project(
+            projection,
+            q_out,
+            Logpdf(StudentTMessage(mean(m_μ), shape(q_τ), rate(q_τ))),
+        )
+        @test weightedmean(factorized_out) ≈
+              getnaturalparameters(factorized_out_target)[1]
+        @test precision(factorized_out) ≈
+              -2 * getnaturalparameters(factorized_out_target)[2]
+
+        factorized_precision_state =
+            NGMPEdgeState(DampingMeta(alpha = 1.0, beta = 0.0))
+        factorized_precision = @call_rule NormalMeanPrecision(
+            :τ,
+            NaturalGradientMessage(projection),
+        ) (
+            q_out = q_out,
+            q_μ = m_μ,
+            q_τ = q_τ,
+            meta = factorized_precision_state,
+        )
+        factorized_precision_target = project(
+            projection,
+            q_τ,
+            Logpdf(
+                NormalPrecisionMessage(mean(q_out), mean(m_μ), var(q_out)),
+            ),
+        )
+        @test shape(factorized_precision) ≈
+              getnaturalparameters(factorized_precision_target)[1] + 1
+        @test rate(factorized_precision) ≈
+              -getnaturalparameters(factorized_precision_target)[2]
+
+        # Structured q(out, τ): the opposite stochastic interface is a cavity
+        # message, while the fixed data mean remains a PointMass marginal.
+        structured_out_state =
+            NGMPEdgeState(DampingMeta(alpha = 1.0, beta = 0.0))
+        structured_out = @call_rule NormalMeanPrecision(
+            :out,
+            NaturalGradientMessage(projection),
+        ) (
+            m_τ = m_τ,
+            q_out = q_out,
+            q_μ = m_μ,
+            meta = structured_out_state,
+        )
+        @test weightedmean(structured_out) ≈
+              getnaturalparameters(out_target)[1]
+        @test precision(structured_out) ≈
+              -2 * getnaturalparameters(out_target)[2]
+
+        structured_precision_state =
+            NGMPEdgeState(DampingMeta(alpha = 1.0, beta = 0.0))
+        structured_precision = @call_rule NormalMeanPrecision(
+            :τ,
+            NaturalGradientMessage(projection),
+        ) (
+            m_out = m_out,
+            q_μ = m_μ,
+            q_τ = q_τ,
+            meta = structured_precision_state,
+        )
+        @test shape(structured_precision) ≈ shape(precision_message)
+        @test rate(structured_precision) ≈ rate(precision_message)
+    end
+
     @testset "damped recursion on the τ edge matches manual η replay" begin
         α, β = 0.5, 0.2
         state = NGMPEdgeState(DampingMeta(alpha = α, beta = β))
@@ -317,5 +530,33 @@ end
             @test length(deps.states) == 3
             @test all(state -> state.nfired == 10, deps.states)
         end
+    end
+
+
+    @testset "integration: a competing expert changes the other gate through out" begin
+        agreeing, agreeing_dependencies =
+            run_fixed_mean_two_expert_consensus(1.0)
+        conflicting, conflicting_dependencies =
+            run_fixed_mean_two_expert_consensus(-3.0)
+
+        agreeing_sites = [
+            state.message for state in agreeing_dependencies.states
+            if state.message isa GammaDistributionsFamily
+        ]
+        conflicting_sites = [
+            state.message for state in conflicting_dependencies.states
+            if state.message isa GammaDistributionsFamily
+        ]
+
+        @test length(agreeing_sites) == 2
+        @test length(conflicting_sites) == 2
+        # Asynchronous equality-chain scheduling leaves a tiny order effect.
+        @test mean(agreeing_sites[1]) ≈ mean(agreeing_sites[2]) rtol = 5e-4
+        @test mean(conflicting_sites[1]) < mean(conflicting_sites[2])
+        @test abs(mean(conflicting_sites[2]) - mean(agreeing_sites[2])) > 1e-4
+        @test length(agreeing_dependencies.states) == 4
+        @test length(conflicting_dependencies.states) == 4
+        @test all(state -> state.nfired >= 1, agreeing_dependencies.states)
+        @test all(state -> state.nfired >= 1, conflicting_dependencies.states)
     end
 end

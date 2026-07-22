@@ -1,7 +1,7 @@
 using Test
 
 using Distributions
-using LinearAlgebra: Diagonal, I, Symmetric, diag, norm
+using LinearAlgebra: Diagonal, I, Symmetric, diag, logdet, norm, tr
 using Random
 using ReactiveMP
 using RxInfer
@@ -379,6 +379,82 @@ end
             (data.q_y_x, data.q_a, data.q_W),
         )
         @test generic_structured_energy ≈ specialized_structured_energy atol = 1e-10 rtol = 1e-10
+    end
+
+    @testset "point-mass input avoids dense feature covariance" begin
+        rng = MersenneTwister(4_219)
+        dy, dx, rank = 6, 65, 10
+        diagonal = randn(rng, min(dy, dx))
+        meta = LinearLowRankMeta(
+            diagonal,
+            randn(rng, dy, rank),
+            randn(rng, dx, rank),
+        )
+        data = _low_rank_test_inputs(rng, dy, dx, rank)
+        x = randn(rng, dx)
+        q_x = PointMass(x)
+        my, Vy = mean_cov(data.q_y)
+        ma, Va = mean_cov(data.q_a)
+        W = mean(data.q_W)
+        Exx = x * x'
+        Eyx = my * x'
+
+        point_a = @call_rule ContinuousTransition(:a, Marginalisation) (
+            q_y = data.q_y,
+            q_x = q_x,
+            q_a = data.q_a,
+            q_W = data.q_W,
+            meta = meta,
+        )
+        dense_a = SurrogateModelling._linear_low_rank_parameter_message(
+            meta,
+            Eyx,
+            Exx,
+            W,
+        )
+        _low_rank_test_same_gaussian(point_a, dense_a)
+
+        point_W = @call_rule ContinuousTransition(:W, Marginalisation) (
+            q_y = data.q_y,
+            q_x = q_x,
+            q_a = data.q_a,
+            meta = meta,
+        )
+        dense_delta = SurrogateModelling._linear_low_rank_delta(
+            my,
+            Vy,
+            x,
+            zeros(dx, dx),
+            zeros(dy, dx),
+            ma,
+            Va,
+            meta,
+        )
+        @test point_W.invS ≈ dense_delta atol = 1e-10 rtol = 1e-10
+
+        point_energy = _low_rank_test_average_energy(
+            meta,
+            Val{(:y, :x, :a, :W)}(),
+            (data.q_y, q_x, data.q_a, data.q_W),
+        )
+        n = div(ndims(data.q_y), 2)
+        expected_energy = n / 2 * ReactiveMP.log2π - logdet(W) +
+                          tr(W * dense_delta) / 2
+        @test point_energy ≈ expected_energy atol = 1e-10 rtol = 1e-10
+
+        SurrogateModelling._linear_low_rank_pointmass_parameter_message(
+            meta,
+            my,
+            x,
+            W,
+        )
+        allocated = @allocated SurrogateModelling._linear_low_rank_pointmass_parameter_message(
+            meta,
+            my,
+            x,
+            W,
+        )
+        @test allocated < sizeof(Float64) * dx^2
     end
 
     @testset "parameter length validation" begin
