@@ -102,12 +102,15 @@ mutable struct NGMPEdgeState{M, D}
 end
 
 NGMPEdgeState(usermeta; damping = nothing) =
-    NGMPEdgeState(usermeta, damping, nothing, Float64[], Float64[], 0)
+    NGMPEdgeState(usermeta, damping, nothing, Float64[], Float64[], Float64[], Float64[], 0)
 
 # Preserve the original full-state positional constructor for callers that
-# checkpoint or construct edge state explicitly.
+# checkpoint or construct edge state explicitly. The optimizer buffers are
+# rebuilt lazily: `apply_damping!` resets them on the first firing, and a
+# restored state with `nfired > 0` gets direction/metric buffers shaped like
+# its momentum.
 NGMPEdgeState(usermeta, message, η, momentum, nfired) =
-    NGMPEdgeState(usermeta, nothing, message, η, momentum, nfired)
+    NGMPEdgeState(usermeta, nothing, message, η, momentum, zero(momentum), zero(momentum), nfired)
 
 function damping_configuration(state::NGMPEdgeState)
     if !isnothing(state.damping)
@@ -127,6 +130,21 @@ end
 function damping_max_step(state::NGMPEdgeState)
     damping = damping_configuration(state)
     return isnothing(damping) ? Inf : damping.max_step
+end
+
+function optimizer_method(state::NGMPEdgeState)
+    damping = damping_configuration(state)
+    return isnothing(damping) ? :damped : damping.method
+end
+
+function optimizer_eps(state::NGMPEdgeState)
+    damping = damping_configuration(state)
+    return isnothing(damping) ? 1e-8 : damping.eps
+end
+
+function optimizer_metric_damping(state::NGMPEdgeState)
+    damping = damping_configuration(state)
+    return isnothing(damping) ? 1e-6 : damping.metric_damping
 end
 
 """
