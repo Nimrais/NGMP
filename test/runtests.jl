@@ -69,6 +69,7 @@ end
     include("ngmp/squareplus_rule_tests.jl")
     include("ngmp/mv_softplus_rule_tests.jl")
     include("ngmp/mv_residual_sine_rule_tests.jl")
+    include("ngmp/residual_sine_rule_tests.jl")
     include("ngmp/mv_inverse_softplus_normal_tests.jl")
     include("ngmp/linear_reshape_meta_tests.jl")
     include("ngmp/linear_low_rank_meta_tests.jl")
