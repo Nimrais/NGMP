@@ -1,6 +1,36 @@
 ENV["GKSwstype"] = "100"
 using Plots
 
+const rx_one_hidden_nesterov_train = [
+    0.877, 0.900, 0.900, 0.906, 0.910, 0.904, 0.912, 0.916, 0.920, 0.922,
+    0.919, 0.926, 0.924, 0.927, 0.927, 0.929, 0.928, 0.931, 0.930, 0.932,
+    0.931, 0.933, 0.933, 0.931, 0.932, 0.934, 0.933, 0.934, 0.936, 0.936,
+    0.934, 0.937, 0.938, 0.934, 0.936, 0.938, 0.940, 0.938, 0.939, 0.939,
+    0.939, 0.939, 0.941, 0.943, 0.941, 0.943, 0.943, 0.944, 0.945, 0.943,
+]
+const rx_one_hidden_nesterov_val = [
+    0.880, 0.888, 0.896, 0.901, 0.909, 0.915, 0.916, 0.917, 0.920, 0.923,
+    0.924, 0.921, 0.926, 0.923, 0.925, 0.923, 0.926, 0.928, 0.928, 0.928,
+    0.929, 0.930, 0.929, 0.931, 0.932, 0.930, 0.931, 0.930, 0.932, 0.934,
+    0.934, 0.933, 0.932, 0.934, 0.934, 0.935, 0.935, 0.934, 0.935, 0.936,
+    0.934, 0.935, 0.936, 0.935, 0.936, 0.934, 0.937, 0.935, 0.935, 0.937,
+]
+
+const rx_two_hidden_nesterov_train = [
+    0.860, 0.884, 0.894, 0.904, 0.906, 0.908, 0.906, 0.916, 0.916, 0.917,
+    0.918, 0.915, 0.917, 0.919, 0.918, 0.921, 0.924, 0.925, 0.925, 0.923,
+    0.924, 0.926, 0.923, 0.925, 0.926, 0.930, 0.929, 0.930, 0.932, 0.929,
+    0.934, 0.933, 0.932, 0.932, 0.933, 0.932, 0.932, 0.937, 0.932, 0.936,
+    0.936, 0.937, 0.935, 0.937, 0.937, 0.938, 0.937, 0.936, 0.936, 0.938,
+]
+const rx_two_hidden_nesterov_val = [
+    0.844, 0.877, 0.890, 0.899, 0.900, 0.900, 0.902, 0.910, 0.910, 0.909,
+    0.912, 0.914, 0.911, 0.914, 0.910, 0.913, 0.915, 0.913, 0.914, 0.916,
+    0.917, 0.922, 0.915, 0.920, 0.916, 0.918, 0.920, 0.919, 0.921, 0.922,
+    0.921, 0.920, 0.922, 0.923, 0.923, 0.923, 0.922, 0.922, 0.923, 0.924,
+    0.925, 0.925, 0.924, 0.925, 0.926, 0.925, 0.926, 0.925, 0.925, 0.925,
+]
+
 const rx_one_hidden_train = [
     0.890, 0.905, 0.901, 0.914, 0.917, 0.916, 0.922, 0.926, 0.927, 0.928,
     0.927, 0.931, 0.931, 0.933, 0.936, 0.934, 0.934, 0.937, 0.936, 0.937,
@@ -15,7 +45,6 @@ const rx_one_hidden_val = [
     0.916, 0.918, 0.918, 0.920, 0.920, 0.920, 0.919, 0.919, 0.919, 0.918,
     0.920, 0.919, 0.919, 0.919, 0.921, 0.921, 0.920, 0.919, 0.921, 0.923,
 ]
-
 const rx_two_hidden_train = [
     0.857, 0.878, 0.888, 0.895, 0.895, 0.900, 0.902, 0.903, 0.904, 0.912,
     0.912, 0.911, 0.911, 0.914, 0.908, 0.914, 0.917, 0.917, 0.918, 0.914,
@@ -135,7 +164,7 @@ const neural_depth_val = [
     ],
 ]
 
-function accuracy_plot(one_hidden, two_hidden, neural_depth; title)
+function accuracy_plot(one_hidden, one_hidden_nesterov, two_hidden, two_hidden_nesterov, neural_depth; title)
     plot(
         1:length(one_hidden), one_hidden;
         label = "RxInfer MLP (1 hidden, vector transport)",
@@ -158,12 +187,29 @@ function accuracy_plot(one_hidden, two_hidden, neural_depth; title)
         bottom_margin = 5Plots.mm,
     )
     plot!(
+        1:length(one_hidden_nesterov), one_hidden_nesterov;
+        label = "RxInfer MLP (1 hidden, projected Nesterov)",
+        color = :black,
+        linewidth = 3,
+        linestyle = :dash,
+        marker = :utriangle,
+        markersize = 4,
+    )
+    plot!(
         1:length(two_hidden), two_hidden;
         label = "RxInfer MLP (2 hidden, vector transport)",
         color = :deeppink3,
         linewidth = 3,
         marker = :xcross,
         markersize = 5,
+    )
+    plot!(
+        1:length(two_hidden_nesterov), two_hidden_nesterov;
+        label = "RxInfer MLP (2 hidden, projected Nesterov)",
+        color = :seagreen4,
+        linewidth = 3,
+        marker = :diamond,
+        markersize = 4,
     )
     neural_colors = [:darkorange, :goldenrod3, :sienna3, :mediumpurple3, :slateblue3, :teal, :firebrick3]
     neural_styles = [:solid, :dash, :dot, :dashdot, :solid, :dash, :dot]
@@ -181,7 +227,9 @@ end
 
 train_plot = accuracy_plot(
     rx_one_hidden_train,
+    rx_one_hidden_nesterov_train,
     rx_two_hidden_train,
+    rx_two_hidden_nesterov_train,
     neural_depth_train;
     title = "MNIST (10,000 Training Images): Training Accuracy",
 )
@@ -192,7 +240,9 @@ Plots.gr()
 
 val_plot = accuracy_plot(
     rx_one_hidden_val,
+    rx_one_hidden_nesterov_val,
     rx_two_hidden_val,
+    rx_two_hidden_nesterov_val,
     neural_depth_val;
     title = "MNIST (10,000 Training Images): Validation Accuracy",
 )

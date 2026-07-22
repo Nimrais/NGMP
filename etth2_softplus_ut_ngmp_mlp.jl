@@ -14,8 +14,11 @@ const ETTH2_MLP_CONFIG = (
     prediction_batch_size=250,
     prediction_iterations=3,
     alpha=0.2,
-    beta=0.0,
+    beta=0.0, # use e.g. 0.9 for :projected_nesterov, 0.5 for :vector_transport
     max_step=1.0,
+    optimizer=:damped, # :damped, :projected_nesterov, or :vector_transport
+    nesterov_eps=1e-8,
+    vector_transport_damping=1e-6,
     arms=ETTH2_MLP_ARMS,
     limit_stack_depth=500,
     show_progress=true,
@@ -277,6 +280,9 @@ function infer_etth2_mlp(
     alpha,
     beta,
     max_step,
+    optimizer,
+    nesterov_eps,
+    vector_transport_damping,
     limit_stack_depth,
     showprogress,
 )
@@ -304,8 +310,22 @@ function infer_etth2_mlp(
         τ=nothing,
         projection=TangentProjection(type=Unscented),
     )
-    damping = DampingMeta(; alpha, beta, max_step)
-    output_damping = DampingMeta(; alpha, beta, max_step)
+    damping = DampingMeta(;
+        alpha,
+        beta,
+        max_step,
+        method=optimizer,
+        eps=nesterov_eps,
+        metric_damping=vector_transport_damping,
+    )
+    output_damping = DampingMeta(;
+        alpha,
+        beta,
+        max_step,
+        method=optimizer,
+        eps=nesterov_eps,
+        metric_damping=vector_transport_damping,
+    )
     model = arm === :ngmp ? etth2_softplus_ngmp_mlp :
             arm === :relaxed ? etth2_softplus_ngmp_mlp_relaxed :
             throw(ArgumentError("unsupported arm $arm"))
@@ -345,6 +365,9 @@ function train_etth2_mlp(
     alpha,
     beta,
     max_step,
+    optimizer,
+    nesterov_eps,
+    vector_transport_damping,
     limit_stack_depth,
     showprogress,
     seed,
@@ -364,6 +387,9 @@ function train_etth2_mlp(
             alpha,
             beta,
             max_step,
+            optimizer,
+            nesterov_eps,
+            vector_transport_damping,
             limit_stack_depth,
             showprogress,
         )
@@ -398,6 +424,9 @@ function train_etth2_mlp(
                 alpha,
                 beta,
                 max_step,
+                optimizer,
+                nesterov_eps,
+                vector_transport_damping,
                 limit_stack_depth,
                 showprogress=false,
             )
@@ -441,6 +470,9 @@ function predict_etth2_mlp_batch(
     alpha,
     beta,
     max_step,
+    optimizer,
+    nesterov_eps,
+    vector_transport_damping,
     limit_stack_depth,
 )
     observation_count = length(inputs)
@@ -453,7 +485,14 @@ function predict_etth2_mlp_batch(
         τ=nothing,
         projection=TangentProjection(type=Unscented),
     )
-    damping = DampingMeta(; alpha, beta, max_step)
+    damping = DampingMeta(;
+        alpha,
+        beta,
+        max_step,
+        method=optimizer,
+        eps=nesterov_eps,
+        metric_damping=vector_transport_damping,
+    )
     result = infer(
         model=etth2_softplus_ngmp_mlp(;
             n_obs=observation_count,
@@ -509,6 +548,7 @@ function write_etth2_mlp_report(path, config, metrics)
         println(io, "Training batch size: **$batch_label**  ")
         println(io, "Inference iterations (complete data passes): **$(config.inference_iterations)**  ")
         println(io, "Prediction batch/iterations: **$(config.prediction_batch_size)/$(config.prediction_iterations)**  ")
+        println(io, "NGMP optimizer: **$(config.optimizer)**  ")
         println(io, "Inputs include expert forecasts: **$(config.include_expert_predictions)**")
         println(io)
         println(io, "| Method | MAE | MSE ± 95% CI | NLL ± 95% CI | Coverage 95% | Pinball |")
@@ -560,7 +600,7 @@ function run_etth2_mlp(; session, prepare_only=false, rebuild_cache=false)
     posteriors = Dict{Symbol,Any}()
     for arm in settings.arms
         batch_label = isnothing(training_batch_size) ? "full" : training_batch_size
-        println("running mlp arm=$arm horizon=$horizon hidden=$(settings.hidden_count) observations=$training_observations batch=$batch_label")
+        println("running mlp arm=$arm optimizer=$(settings.optimizer) horizon=$horizon hidden=$(settings.hidden_count) observations=$training_observations batch=$batch_label")
         learned_priors, _ = train_etth2_mlp(
             arm,
             deepcopy(priors),
@@ -572,6 +612,9 @@ function run_etth2_mlp(; session, prepare_only=false, rebuild_cache=false)
             alpha=settings.alpha,
             beta=settings.beta,
             max_step=settings.max_step,
+            optimizer=settings.optimizer,
+            nesterov_eps=settings.nesterov_eps,
+            vector_transport_damping=settings.vector_transport_damping,
             limit_stack_depth=settings.limit_stack_depth,
             showprogress=settings.show_progress,
             seed=settings.seed,
@@ -585,6 +628,9 @@ function run_etth2_mlp(; session, prepare_only=false, rebuild_cache=false)
             alpha=settings.alpha,
             beta=settings.beta,
             max_step=settings.max_step,
+            optimizer=settings.optimizer,
+            nesterov_eps=settings.nesterov_eps,
+            vector_transport_damping=settings.vector_transport_damping,
             limit_stack_depth=settings.limit_stack_depth,
         )
         metrics[arm] = predictive_metrics(predicted_mean, predicted_std, y_test)
@@ -603,11 +649,12 @@ function run_etth2_mlp(; session, prepare_only=false, rebuild_cache=false)
         inference_iterations=settings.inference_iterations,
         prediction_batch_size=min(settings.prediction_batch_size, length(test_inputs)),
         prediction_iterations=settings.prediction_iterations,
+        optimizer=settings.optimizer,
         arms=collect(settings.arms),
     )
     mkpath(joinpath(ROOT, "results"))
     batch_token = isnothing(training_batch_size) ? "full" : training_batch_size
-    stem = "etth2_softplus_ut_ngmp_mlp_h$(horizon)_h$(settings.hidden_count)_b$(batch_token)_passes$(settings.inference_iterations)"
+    stem = "etth2_softplus_ut_ngmp_mlp_$(settings.optimizer)_h$(horizon)_h$(settings.hidden_count)_b$(batch_token)_passes$(settings.inference_iterations)"
     jld2_path = joinpath(ROOT, "results", "$stem.jld2")
     markdown_path = joinpath(ROOT, "results", "$stem.md")
     jldsave(jld2_path; config, metrics, predictions, posteriors, y_test)

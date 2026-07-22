@@ -3,6 +3,7 @@ module NaturalGradientMP
 using ReactiveMP, Rocket, TupleTools
 using Distributions: Distribution, Gamma, shape, rate
 using BayesBase: weightedmean, precision
+using SpecialFunctions: trigamma
 using ExponentialFamily:
     ExponentialFamilyDistribution,
     getnaturalparameters,
