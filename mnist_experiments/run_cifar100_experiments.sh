@@ -5,7 +5,8 @@ set -uo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 TIMESTAMP="$(date '+%Y%m%d_%H%M%S')"
-OUTPUT_DIR="${OUTPUT_DIR:-${SCRIPT_DIR}/results/fashion_mnist_${TIMESTAMP}}"
+DATASET=cifar100
+OUTPUT_DIR="${OUTPUT_DIR:-${SCRIPT_DIR}/results/${DATASET}_${TIMESTAMP}}"
 LOG_DIR="${OUTPUT_DIR}/logs"
 ALL_RUNS="${OUTPUT_DIR}/all_runs.txt"
 SUMMARY="${OUTPUT_DIR}/summary.tsv"
@@ -22,10 +23,25 @@ mkdir -p "${LOG_DIR}" "${REPO_DIR}/.data"
 export DATADEPS_LOAD_PATH="${DATADEPS_LOAD_PATH:-${REPO_DIR}/.data}"
 export DATADEPS_ALWAYS_ACCEPT="${DATADEPS_ALWAYS_ACCEPT:-true}"
 
+if [[ "${DATASET}" == "cifar100" ]]; then
+    CIFAR100_DIR="${DATADEPS_LOAD_PATH%%:*}/CIFAR100"
+    CIFAR100_ARCHIVE="${CIFAR100_ARCHIVE:-${CIFAR100_DIR}/cifar-100-binary.tar.gz}"
+    CIFAR100_BINARY_DIR="${CIFAR100_DIR}/cifar-100-binary"
+    if [[ ! -f "${CIFAR100_BINARY_DIR}/train.bin" || \
+          ! -f "${CIFAR100_BINARY_DIR}/test.bin" ]]; then
+        if [[ ! -f "${CIFAR100_ARCHIVE}" ]]; then
+            printf 'CIFAR-100 binary archive not found: %s\n' "${CIFAR100_ARCHIVE}" >&2
+            exit 2
+        fi
+        printf 'Extracting CIFAR-100 binary data from %s\n' "${CIFAR100_ARCHIVE}"
+        tar -xzf "${CIFAR100_ARCHIVE}" -C "${CIFAR100_DIR}"
+    fi
+fi
+
 : > "${ALL_RUNS}"
-printf 'model\toptimizer\thidden_layers\thidden_count\tntrain\tnval\tntest\tbest_val_epoch\tbest_val_acc\ttest_acc\telapsed_seconds\tlog\n' \
+printf 'dataset\tmodel\toptimizer\thidden_layers\thidden_count\tntrain\tnval\tntest\tbest_val_epoch\tbest_val_acc\ttest_acc\telapsed_seconds\tlog\n' \
     > "${SUMMARY}"
-printf 'model\toptimizer\thidden_layers\thidden_count\tntrain\tnval\tntest\tstatus\texit_code\telapsed_seconds\tlog\n' \
+printf 'dataset\tmodel\toptimizer\thidden_layers\thidden_count\tntrain\tnval\tntest\tstatus\texit_code\telapsed_seconds\tlog\n' \
     > "${RUN_STATUS}"
 
 run_experiment() {
@@ -74,15 +90,15 @@ run_experiment() {
             ;;
     esac
 
-    run_name="${model}_optimizer-${optimizer}_layers-${hidden_layers}_hidden-${hidden_count}_train-${ntrain}_val-${nval}_test-${ntest}"
+    run_name="${DATASET}_${model}_optimizer-${optimizer}_layers-${hidden_layers}_hidden-${hidden_count}_train-${ntrain}_val-${nval}_test-${ntest}"
     log_file="${LOG_DIR}/${run_name}.txt"
 
     {
         printf '\n================================================================================\n'
         printf 'run=%s\n' "${run_name}"
         printf 'started_at=%s\n' "$(date --iso-8601=seconds 2>/dev/null || date '+%Y-%m-%dT%H:%M:%S%z')"
-        printf 'epochs=%s batch_size=%s hidden_count=%s\n' \
-            "${EPOCHS}" "${BATCH_SIZE}" "${hidden_count}"
+        printf 'dataset=%s epochs=%s batch_size=%s hidden_count=%s\n' \
+            "${DATASET}" "${EPOCHS}" "${BATCH_SIZE}" "${hidden_count}"
         printf '================================================================================\n'
     } | tee -a "${ALL_RUNS}"
 
@@ -91,7 +107,7 @@ run_experiment() {
         "${JULIA_BIN}" --project="${REPO_DIR}" -e "
             include(raw\"${script}\")
             ${function_call}(
-                dataset=:fashion_mnist,
+                dataset=:${DATASET},
                 ntrain=${ntrain},
                 nval=${nval},
                 ntest=${ntest},
@@ -106,7 +122,7 @@ run_experiment() {
         "${JULIA_BIN}" --project="${REPO_DIR}" -e "
             include(raw\"${script}\")
             ${function_call}(
-                dataset=:fashion_mnist,
+                dataset=:${DATASET},
                 ntrain=${ntrain},
                 nval=${nval},
                 ntest=${ntest},
@@ -124,7 +140,7 @@ run_experiment() {
         "${JULIA_BIN}" --project="${REPO_DIR}" -e "
             include(raw\"${script}\")
             ${function_call}(
-                dataset=:fashion_mnist,
+                dataset=:${DATASET},
                 ntrain=${ntrain},
                 nval=${nval},
                 ntest=${ntest},
@@ -151,8 +167,8 @@ run_experiment() {
         best_val="$(sed -n 's/.*best_val_acc=\([^ ]*\).*/\1/p' <<< "${final_line}")"
         test_acc="$(sed -n 's/.*test_acc=\([^ ]*\).*/\1/p' <<< "${final_line}")"
         if [[ -n "${best_epoch}" && -n "${best_val}" && -n "${test_acc}" ]]; then
-            printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
-                "${model}" "${optimizer}" "${hidden_layers}" "${hidden_count}" \
+            printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+                "${DATASET}" "${model}" "${optimizer}" "${hidden_layers}" "${hidden_count}" \
                 "${ntrain}" "${nval}" "${ntest}" \
                 "${best_epoch}" "${best_val}" "${test_acc}" "${elapsed}" "${log_file}" \
                 >> "${SUMMARY}"
@@ -161,8 +177,8 @@ run_experiment() {
         fi
     fi
 
-    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
-        "${model}" "${optimizer}" "${hidden_layers}" "${hidden_count}" \
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+        "${DATASET}" "${model}" "${optimizer}" "${hidden_layers}" "${hidden_count}" \
         "${ntrain}" "${nval}" "${ntest}" \
         "${status}" "${exit_code}" "${elapsed}" "${log_file}" >> "${RUN_STATUS}"
     printf 'finished run=%s status=%s exit_code=%s elapsed_seconds=%s\n' \
@@ -187,7 +203,7 @@ for config in ${EXPERIMENT_CONFIGS}; do
     done
 done
 
-printf '\nAll FashionMNIST experiments finished.\n'
+printf '\nAll %s experiments finished.\n' "${DATASET}"
 printf 'Output directory: %s\n' "${OUTPUT_DIR}"
 printf 'Summary: %s\n' "${SUMMARY}"
 printf 'Run status: %s\n' "${RUN_STATUS}"
