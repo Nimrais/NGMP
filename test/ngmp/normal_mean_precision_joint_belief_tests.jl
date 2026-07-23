@@ -152,6 +152,21 @@ function make_fixed_mean_normal_precision_joint_belief(
     )
 end
 
+function make_observed_normal_mean_precision_joint_belief(
+    observed_out,
+    m_μ,
+    v_μ,
+    a,
+    b,
+)
+    return @call_marginalrule NormalMeanPrecision(:μ_τ) (
+        m_μ = NormalMeanVariance(m_μ, v_μ),
+        m_τ = GammaShapeRate(a, b),
+        q_out = PointMass(observed_out),
+        meta = DampingMeta(alpha = 0.2, beta = 0.0),
+    )
+end
+
 @model function scored_latent_ngbp_normal_toy(y, deps, damping)
     out ~ NormalMeanVariance(0.5, 1.0)
     μ ~ NormalMeanVariance(0.0, 1.0)
@@ -222,6 +237,34 @@ end
             @test average_energy === computed.average_energy
             @test entropy(belief) === computed.entropy
         end
+    end
+
+    @testset "observed out with structured mean/precision is symmetric" begin
+        parameters = (0.2, 0.8, 0.4, 2.5, 1.4)
+        observed_out, m_μ, v_μ, a, b = parameters
+        belief = make_observed_normal_mean_precision_joint_belief(parameters...)
+        @test belief isa
+              SurrogateModelling.FixedMeanNormalPrecisionJointBelief
+        computed =
+            SurrogateModelling._fixed_mean_normal_precision_joint_statistics!(belief)
+        reference = fixed_mean_normal_precision_joint_reference(
+            m_μ, v_μ, observed_out, a, b,
+        )
+        @test computed.log_normalizer ≈ reference.log_normalizer atol = 2e-4
+        @test computed.average_energy ≈ reference.average_energy atol = 2e-4
+        @test computed.entropy ≈ reference.entropy atol = 2e-4
+
+        average_energy = score(
+            AverageEnergy(),
+            NormalMeanPrecision,
+            Val((:out, :μ_τ)),
+            (
+                Marginal(PointMass(observed_out), false, false),
+                Marginal(belief, false, false),
+            ),
+            DampingMeta(alpha = 0.2, beta = 0.0),
+        )
+        @test average_energy === computed.average_energy
     end
 
     @testset "exact dispatch and shared lazy cache" begin

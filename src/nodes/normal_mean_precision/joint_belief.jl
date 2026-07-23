@@ -427,10 +427,35 @@ end
     return FixedMeanNormalPrecisionJointBelief(m_out, q_μ, m_τ)
 end
 
+# Symmetric observed-output specialization.  In a regression likelihood
+#
+#     observed_y ~ NormalMeanPrecision(μ, τ),
+#
+# a structured q(μ, τ) cluster has exactly the same local density as the
+# fixed-mean q(out, τ) consensus case above after swapping the two Gaussian
+# location interfaces.  Reuse the same one-dimensional log-precision
+# quadrature rather than introducing a second belief implementation.
+@marginalrule NormalMeanPrecision(:μ_τ) (
+    m_μ::UnivariateNormalDistributionsFamily,
+    m_τ::GammaDistributionsFamily,
+    q_out::PointMass,
+    meta::Any,
+) = begin
+    return FixedMeanNormalPrecisionJointBelief(m_μ, q_out, m_τ)
+end
+
 @average_energy NormalMeanPrecision (
     q_out_τ::FixedMeanNormalPrecisionJointBelief,
     q_μ::PointMass,
     meta::Any,
 ) = begin
     return _fixed_mean_normal_precision_joint_statistics!(q_out_τ).average_energy
+end
+
+@average_energy NormalMeanPrecision (
+    q_out::PointMass,
+    q_μ_τ::FixedMeanNormalPrecisionJointBelief,
+    meta::Any,
+) = begin
+    return _fixed_mean_normal_precision_joint_statistics!(q_μ_τ).average_energy
 end
