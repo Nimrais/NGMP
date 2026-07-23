@@ -46,7 +46,9 @@ export UnscentedTransforms
 
 include("datasets/sunspots.jl")
 include("datasets/etth1.jl")
+include("datasets/uci_regression.jl")
 export Sunspots, ETTh1
+export UCIRegressionDataset, Yacht, Concrete, EnergyEfficiency, BostonHousing, PowerPlant, WineQualityRed
 
 include("nodes/poisson/poisson_exp.jl")
 include("nodes/poisson/expression.jl")
@@ -109,6 +111,7 @@ include("kl_divergences.jl")
 function __init__()
     __init__sunspots()
     __init__etth1()
+    __init__uci_regression()
 end
 
 end # module
