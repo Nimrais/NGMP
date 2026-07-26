@@ -14,7 +14,7 @@ import BayesBase
 import RxInfer: @node, @rule, @call_rule, @average_energy, @marginalrule, @call_marginalrule
 
 # Closed-form projection support. Loading `ClosedFormExpectations` alongside
-# `ExponentialFamilyProjection` activates the latter's `ClosedFormStrategy`
+# `ExponentialFamilyProjection` activates the latter'g `ClosedFormStrategy`
 # extension; the `PoissonExpression` hooks for it live in `nodes/poisson/expression.jl`.
 import ExponentialFamilyProjection
 import ClosedFormExpectations
@@ -32,6 +32,13 @@ export NaturalGradientMP, NaturalGradientMessage, NGMPDependencies, DampingMeta,
 include("ManyPlusNode/ManyPlusNode.jl")
 using .ManyPlusNode: ManyPlus
 export ManyPlusNode, ManyPlus
+
+# `MvStack` is the lossless counterpart of `ManyPlus`: it gathers scalar neurons
+# into a vector edge instead of pre-summing them, so a dense output-weight
+# posterior can act on the hidden layer. See src/MvStackNode/node.jl.
+include("MvStackNode/MvStackNode.jl")
+using .MvStackNode: MvStack
+export MvStackNode, MvStack
 
 # NOTE: the strategy struct `UnscentedTransforms.UnscentedTransform` is deliberately
 # NOT re-exported — ReactiveMP already exports `Unscented`/`UnscentedTransform` for
