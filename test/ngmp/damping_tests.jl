@@ -158,6 +158,39 @@ import SurrogateModelling: NaturalGradientMP
         @test state.metric ≈ [0.5, 1.0]
     end
 
+    @testset "vector-transport Nesterov is a separate optimizer" begin
+        state = NGMPEdgeState(DampingMeta(
+            alpha=0.5,
+            beta=0.25,
+            method=:vector_transport_nesterov,
+            metric_damping=0.25,
+        ))
+        first_message = NaturalGradientMP.apply_damping!(state, 2.0, 4.0)
+        first_velocity = [1.0, -1.0]
+        first_step = 0.25 .* first_velocity .+ [1.0, -1.0]
+        @test state.momentum ≈ first_velocity
+        @test weightedmean(first_message) ≈ first_step[1]
+        @test precision(first_message) ≈ -2first_step[2]
+
+        message = NaturalGradientMP.apply_damping!(state, 3.0, 6.0)
+        current_metric = NaturalGradientMP.diagonal_fisher_metric(
+            NormalMeanVariance,
+            first_step,
+            0.25,
+        )
+        transported = first_velocity .* sqrt.(
+            [0.25, 0.25] ./ current_metric,
+        )
+        direction = [3.0, -3.0] .- first_step
+        expected_velocity = 0.25 .* transported .+ 0.5 .* direction
+        nesterov_step = 0.25 .* expected_velocity .+ 0.5 .* direction
+        expected_eta = first_step .+ nesterov_step
+        @test weightedmean(message) ≈ expected_eta[1]
+        @test precision(message) ≈ -2expected_eta[2]
+        @test state.momentum ≈ expected_velocity
+        @test state.metric ≈ current_metric
+    end
+
     @testset "optimizer metadata validation" begin
         @test_throws ArgumentError DampingMeta(method=:unknown)
         @test_throws ArgumentError DampingMeta(eps=0.0)
