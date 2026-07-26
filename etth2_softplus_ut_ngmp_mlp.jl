@@ -1,6 +1,6 @@
 include(joinpath(@__DIR__, "dynamic_vmp_vs_ngmp_etth2.jl"))
 
-using LinearAlgebra: Diagonal, Hermitian, isposdef
+using LinearAlgebra: Diagonal, Hermitian, I, cholesky, diag, diagind, eigen, isposdef, issuccess, norm
 using ProgressMeter
 using Random
 
@@ -19,6 +19,10 @@ const ETTH2_MLP_CONFIG = (
     optimizer=:damped, # :damped, :projected_nesterov, or :vector_transport
     nesterov_eps=1e-8,
     vector_transport_damping=1e-6,
+    residual_sine_rho=0.9,
+    residual_sine_omega=1.0,
+    residual_sine_weight_variance=0.1,
+    residual_sine_coefficient_variance=0.1,
     arms=ETTH2_MLP_ARMS,
     limit_stack_depth=500,
     show_progress=true,
@@ -536,6 +540,351 @@ function predict_etth2_mlp(priors, inputs; batch_size, kwargs...)
     return predicted_mean, predicted_std
 end
 
+@model function etth2_manyplus_residual_sine(
+    inputs,
+    targets,
+    n_obs,
+    hidden_count,
+    priors,
+    activation,
+    activation_dependencies,
+)
+    local weight, coefficient, preactivation, hidden, contribution, output
+
+    hidden_precision ~ priors.hidden_precision
+    contribution_precision ~ priors.contribution_precision
+    observation_precision ~ priors.observation_precision
+    intercept ~ priors.intercept
+    for unit in 1:hidden_count
+        weight[unit] ~ priors.weight[unit]
+        coefficient[unit] ~ priors.coefficient[unit]
+    end
+    for observation in 1:n_obs
+        for unit in 1:hidden_count
+            preactivation[unit, observation] ~ softdot(
+                inputs[observation],
+                weight[unit],
+                hidden_precision,
+            )
+            hidden[unit, observation] ~ ResidualSine(
+                preactivation[unit, observation],
+            ) where {
+                dependencies=activation_dependencies,
+                meta=activation,
+            }
+            contribution[unit, observation] ~ softdot(
+                coefficient[unit],
+                hidden[unit, observation],
+                contribution_precision,
+            )
+        end
+        output[observation] ~ ManyPlus(
+            inputs=[
+                contribution[unit, observation] for unit in 1:hidden_count
+            ],
+        )
+        targets[observation] ~ NormalMeanPrecision(
+            output[observation] + intercept,
+            observation_precision,
+        )
+    end
+end
+
+@constraints function etth2_manyplus_constraints()
+    q(
+        weight,
+        coefficient,
+        preactivation,
+        hidden,
+        contribution,
+        output,
+        intercept,
+        hidden_precision,
+        contribution_precision,
+        observation_precision,
+    ) = q(weight, preactivation, hidden, contribution, output, intercept)q(coefficient)q(hidden_precision)q(contribution_precision)q(observation_precision)
+    q(weight)::MomentForm()
+end
+
+@initialization function etth2_manyplus_initialization(priors, initial)
+    q(coefficient) = deepcopy(priors.coefficient)
+    q(preactivation) = initial.preactivation
+    q(hidden) = initial.hidden
+    q(contribution) = initial.contribution
+    q(output) = initial.output
+    q(hidden_precision) = priors.hidden_precision
+    q(contribution_precision) = priors.contribution_precision
+    q(observation_precision) = priors.observation_precision
+    μ(weight) = deepcopy(priors.weight)
+    μ(intercept) = priors.intercept
+end
+
+function make_etth2_manyplus_priors(input_count, hidden_count, settings)
+    rng = MersenneTwister(settings.seed)
+    weight_precision = Diagonal(fill(
+        inv(settings.residual_sine_weight_variance),
+        input_count,
+    ))
+    weight = [
+        begin
+            direction = randn(rng, input_count)
+            direction ./= max(norm(direction), eps())
+            direction .*= sqrt(2 / input_count)
+            MvNormalWeightedMeanPrecision(
+                weight_precision * direction,
+                weight_precision,
+            )
+        end for _ in 1:hidden_count
+    ]
+    coefficient = [
+        NormalMeanVariance(
+            (isodd(unit) ? 1.0 : -1.0) / hidden_count,
+            settings.residual_sine_coefficient_variance,
+        ) for unit in 1:hidden_count
+    ]
+    return (
+        weight,
+        coefficient,
+        intercept=NormalMeanVariance(0.0, 1.0),
+        hidden_precision=GammaShapeRate(1e3, 1.0),
+        contribution_precision=GammaShapeRate(1e4, 1.0),
+        observation_precision=GammaShapeRate(2.0, 2.0),
+    )
+end
+
+function etth2_manyplus_initial_values(priors, inputs, hidden_count, activation)
+    weight_mean = mean.(priors.weight)
+    coefficient_mean = mean.(priors.coefficient)
+    observation_count = length(inputs)
+    phi(value) = SurrogateModelling._residual_sine(value, activation)
+    preactivation = [
+        NormalMeanVariance(dot(weight_mean[unit], inputs[observation]), 0.5)
+        for unit in 1:hidden_count, observation in 1:observation_count
+    ]
+    hidden = [
+        NormalMeanVariance(phi(mean(preactivation[unit, observation])), 1.0)
+        for unit in 1:hidden_count, observation in 1:observation_count
+    ]
+    contribution = [
+        NormalMeanVariance(
+            coefficient_mean[unit] * mean(hidden[unit, observation]),
+            1.0,
+        )
+        for unit in 1:hidden_count, observation in 1:observation_count
+    ]
+    output = [
+        NormalMeanVariance(
+            sum(mean(contribution[unit, observation]) for unit in 1:hidden_count),
+            1.0,
+        ) for observation in 1:observation_count
+    ]
+    return (; preactivation, hidden, contribution, output)
+end
+
+function learned_etth2_manyplus_priors(result)
+    posteriors = result.posteriors
+    return (
+        weight=deepcopy(collect(vec(posteriors[:weight]))),
+        coefficient=deepcopy(collect(vec(posteriors[:coefficient]))),
+        intercept=deepcopy(posteriors[:intercept]),
+        hidden_precision=deepcopy(posteriors[:hidden_precision]),
+        contribution_precision=deepcopy(posteriors[:contribution_precision]),
+        observation_precision=deepcopy(posteriors[:observation_precision]),
+    )
+end
+
+function infer_etth2_manyplus(priors, inputs, targets, settings)
+    observation_count = length(targets)
+    activation = ResidualSineMeta(
+        rho=settings.residual_sine_rho,
+        omega=settings.residual_sine_omega,
+    )
+    dependencies = NGMPDependencies(
+        out=nothing,
+        in=nothing,
+        projection=TangentProjection(type=ClosedForm),
+        damping=DampingMeta(
+            alpha=hasproperty(settings, :local_ngmp_alpha) ?
+                  settings.local_ngmp_alpha :
+                  settings.alpha,
+            beta=0.0,
+            max_step=hasproperty(settings, :local_ngmp_max_step) ?
+                     settings.local_ngmp_max_step :
+                     settings.max_step,
+            method=:damped,
+            eps=settings.nesterov_eps,
+            metric_damping=settings.vector_transport_damping,
+        ),
+    )
+    result = infer(
+        model=etth2_manyplus_residual_sine(;
+            n_obs=observation_count,
+            hidden_count=settings.hidden_count,
+            priors,
+            activation,
+            activation_dependencies=dependencies,
+        ),
+        data=(inputs=inputs, targets=targets),
+        constraints=etth2_manyplus_constraints(),
+        initialization=etth2_manyplus_initialization(
+            priors,
+            etth2_manyplus_initial_values(
+                priors,
+                inputs,
+                settings.hidden_count,
+                activation,
+            ),
+        ),
+        iterations=hasproperty(settings, :message_passing_iterations) ?
+                   settings.message_passing_iterations :
+                   1,
+        returnvars=(
+            weight=KeepLast(),
+            coefficient=KeepLast(),
+            intercept=KeepLast(),
+            hidden_precision=KeepLast(),
+            contribution_precision=KeepLast(),
+            observation_precision=KeepLast(),
+        ),
+        free_energy=false,
+        showprogress=false,
+        options=(limit_stack_depth=settings.limit_stack_depth,),
+        disable_inference_error_hint=true,
+    )
+    isempty(dependencies.states) && error("ResidualSine NGMP edges were not activated")
+    return learned_etth2_manyplus_priors(result), result
+end
+
+function train_etth2_manyplus(priors, inputs, targets, settings)
+    observation_count = length(targets)
+    batch_size = isnothing(settings.training_batch_size) ?
+                 observation_count :
+                 min(settings.training_batch_size, observation_count)
+    rng = MersenneTwister(settings.seed)
+    learned = priors
+    final_result = nothing
+    progress = Progress(
+        settings.inference_iterations * cld(observation_count, batch_size);
+        desc="mlp manyplus_residual_sine minibatches ",
+        enabled=settings.show_progress,
+    )
+    for _ in 1:settings.inference_iterations
+        order = randperm(rng, observation_count)
+        for first_index in 1:batch_size:observation_count
+            indices = order[
+                first_index:min(first_index + batch_size - 1, observation_count)
+            ]
+            learned, final_result = infer_etth2_manyplus(
+                learned,
+                inputs[indices],
+                targets[indices],
+                settings,
+            )
+            ProgressMeter.next!(progress)
+        end
+    end
+    ProgressMeter.finish!(progress)
+    return learned, final_result
+end
+
+@constraints function etth2_manyplus_prediction_constraints(priors)
+    q(
+        weight,
+        coefficient,
+        preactivation,
+        hidden,
+        contribution,
+        output,
+        intercept,
+        hidden_precision,
+        contribution_precision,
+        observation_precision,
+    ) = q(weight)q(coefficient)q(hidden_precision)q(contribution_precision)q(observation_precision)q(intercept)q(preactivation, hidden, contribution, output)
+    for (unit, prior) in enumerate(deepcopy(priors.weight))
+        q(weight[unit])::RxInfer.FixedMarginalFormConstraint(prior)
+    end
+    for (unit, prior) in enumerate(deepcopy(priors.coefficient))
+        q(coefficient[unit])::RxInfer.FixedMarginalFormConstraint(prior)
+    end
+    q(intercept)::RxInfer.FixedMarginalFormConstraint(priors.intercept)
+    q(hidden_precision)::RxInfer.FixedMarginalFormConstraint(priors.hidden_precision)
+    q(contribution_precision)::RxInfer.FixedMarginalFormConstraint(priors.contribution_precision)
+    q(observation_precision)::RxInfer.FixedMarginalFormConstraint(priors.observation_precision)
+end
+
+function predict_etth2_manyplus_batch(priors, inputs, settings)
+    observation_count = length(inputs)
+    activation = ResidualSineMeta(
+        rho=settings.residual_sine_rho,
+        omega=settings.residual_sine_omega,
+    )
+    dependencies = NGMPDependencies(
+        out=nothing,
+        in=nothing,
+        projection=TangentProjection(type=ClosedForm),
+        damping=DampingMeta(
+            alpha=hasproperty(settings, :local_ngmp_alpha) ?
+                  settings.local_ngmp_alpha :
+                  settings.alpha,
+            beta=0.0,
+            max_step=hasproperty(settings, :local_ngmp_max_step) ?
+                     settings.local_ngmp_max_step :
+                     settings.max_step,
+            method=:damped,
+            eps=settings.nesterov_eps,
+            metric_damping=settings.vector_transport_damping,
+        ),
+    )
+    result = infer(
+        model=etth2_manyplus_residual_sine(;
+            n_obs=observation_count,
+            hidden_count=settings.hidden_count,
+            priors,
+            activation,
+            activation_dependencies=dependencies,
+        ),
+        data=(inputs=inputs, targets=fill(missing, observation_count)),
+        constraints=etth2_manyplus_prediction_constraints(priors),
+        initialization=etth2_manyplus_initialization(
+            priors,
+            etth2_manyplus_initial_values(
+                priors,
+                inputs,
+                settings.hidden_count,
+                activation,
+            ),
+        ),
+        iterations=settings.prediction_iterations,
+        free_energy=false,
+        options=(limit_stack_depth=settings.limit_stack_depth,),
+        disable_inference_error_hint=true,
+    )
+    output = last(result.posteriors[:output])
+    output_mean = mean.(output) .+ mean(priors.intercept)
+    shape, rate = params(priors.observation_precision)
+    noise_variance = shape > 1 ? rate / (shape - 1) :
+                     inv(mean(priors.observation_precision))
+    output_std = sqrt.(var.(output) .+ var(priors.intercept) .+ noise_variance)
+    return output_mean, output_std
+end
+
+function predict_etth2_manyplus(priors, inputs, settings)
+    predicted_mean = Vector{Float64}(undef, length(inputs))
+    predicted_std = Vector{Float64}(undef, length(inputs))
+    batch_size = min(settings.prediction_batch_size, length(inputs))
+    for first_index in 1:batch_size:length(inputs)
+        indices = first_index:min(first_index + batch_size - 1, length(inputs))
+        batch_mean, batch_std = predict_etth2_manyplus_batch(
+            priors,
+            inputs[indices],
+            settings,
+        )
+        predicted_mean[indices] = batch_mean
+        predicted_std[indices] = batch_std
+    end
+    return predicted_mean, predicted_std
+end
+
 function write_etth2_mlp_report(path, config, metrics)
     open(path, "w") do io
         println(io, "# One-hidden-layer Softplus NGMP MLP on ETTh2")
@@ -553,7 +902,11 @@ function write_etth2_mlp_report(path, config, metrics)
         println(io)
         println(io, "| Method | MAE | MSE ± 95% CI | NLL ± 95% CI | Coverage 95% | Pinball |")
         println(io, "|---|---:|---:|---:|---:|---:|")
-        labels = Dict(:ngmp => "NGMP", :relaxed => "NGMP relaxed")
+        labels = Dict(
+            :ngmp => "Softplus UT-NGMP",
+            :relaxed => "Softplus UT-NGMP relaxed",
+            :manyplus_residual_sine => "ManyPlus residual-sine NGMP",
+        )
         for arm in config.arms
             value = metrics[arm]
             println(io,
@@ -595,44 +948,65 @@ function run_etth2_mlp(; session, prepare_only=false, rebuild_cache=false)
         include_expert_predictions=settings.include_expert_predictions,
     )
     priors = make_etth2_mlp_priors(length(first(train_inputs)), settings.hidden_count; seed=settings.seed)
+    manyplus_priors = make_etth2_manyplus_priors(
+        length(first(train_inputs)),
+        settings.hidden_count,
+        settings,
+    )
     metrics = Dict{Symbol,Any}()
     predictions = Dict{Symbol,Any}()
     posteriors = Dict{Symbol,Any}()
     for arm in settings.arms
         batch_label = isnothing(training_batch_size) ? "full" : training_batch_size
         println("running mlp arm=$arm optimizer=$(settings.optimizer) horizon=$horizon hidden=$(settings.hidden_count) observations=$training_observations batch=$batch_label")
-        learned_priors, _ = train_etth2_mlp(
-            arm,
-            deepcopy(priors),
-            train_inputs,
-            y_val[1:training_observations];
-            hidden_count=settings.hidden_count,
-            iterations=settings.inference_iterations,
-            training_batch_size,
-            alpha=settings.alpha,
-            beta=settings.beta,
-            max_step=settings.max_step,
-            optimizer=settings.optimizer,
-            nesterov_eps=settings.nesterov_eps,
-            vector_transport_damping=settings.vector_transport_damping,
-            limit_stack_depth=settings.limit_stack_depth,
-            showprogress=settings.show_progress,
-            seed=settings.seed,
-        )
-        predicted_mean, predicted_std = predict_etth2_mlp(
-            learned_priors,
-            test_inputs;
-            batch_size=min(settings.prediction_batch_size, length(test_inputs)),
-            hidden_count=settings.hidden_count,
-            iterations=settings.prediction_iterations,
-            alpha=settings.alpha,
-            beta=settings.beta,
-            max_step=settings.max_step,
-            optimizer=settings.optimizer,
-            nesterov_eps=settings.nesterov_eps,
-            vector_transport_damping=settings.vector_transport_damping,
-            limit_stack_depth=settings.limit_stack_depth,
-        )
+        learned_priors, predicted_mean, predicted_std = if arm === :manyplus_residual_sine
+            learned, _ = train_etth2_manyplus(
+                deepcopy(manyplus_priors),
+                train_inputs,
+                y_val[1:training_observations],
+                settings,
+            )
+            prediction_mean, prediction_std = predict_etth2_manyplus(
+                learned,
+                test_inputs,
+                settings,
+            )
+            learned, prediction_mean, prediction_std
+        else
+            learned, _ = train_etth2_mlp(
+                arm,
+                deepcopy(priors),
+                train_inputs,
+                y_val[1:training_observations];
+                hidden_count=settings.hidden_count,
+                iterations=settings.inference_iterations,
+                training_batch_size,
+                alpha=settings.alpha,
+                beta=settings.beta,
+                max_step=settings.max_step,
+                optimizer=settings.optimizer,
+                nesterov_eps=settings.nesterov_eps,
+                vector_transport_damping=settings.vector_transport_damping,
+                limit_stack_depth=settings.limit_stack_depth,
+                showprogress=settings.show_progress,
+                seed=settings.seed,
+            )
+            prediction_mean, prediction_std = predict_etth2_mlp(
+                learned,
+                test_inputs;
+                batch_size=min(settings.prediction_batch_size, length(test_inputs)),
+                hidden_count=settings.hidden_count,
+                iterations=settings.prediction_iterations,
+                alpha=settings.alpha,
+                beta=settings.beta,
+                max_step=settings.max_step,
+                optimizer=settings.optimizer,
+                nesterov_eps=settings.nesterov_eps,
+                vector_transport_damping=settings.vector_transport_damping,
+                limit_stack_depth=settings.limit_stack_depth,
+            )
+            learned, prediction_mean, prediction_std
+        end
         metrics[arm] = predictive_metrics(predicted_mean, predicted_std, y_test)
         predictions[arm] = (mean=predicted_mean, std=predicted_std)
         posteriors[arm] = learned_priors
