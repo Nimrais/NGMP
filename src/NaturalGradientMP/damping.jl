@@ -33,7 +33,17 @@ so per-node mutable state cannot live here. The mutable state lives in
 - `:projected_nesterov`: projects the current direction onto the previous
   direction and applies the resulting Nesterov correction;
 - `:vector_transport`: transports the previous update between the old and
-  current diagonal Fisher metrics before adding momentum.
+  current diagonal Fisher metrics before adding heavy-ball momentum;
+- `:vector_transport_nesterov`: transports the previous velocity between the
+  old and current diagonal Fisher metrics, then applies a Nesterov momentum
+  step:
+
+      v ← β·Transport(v) + α·(η⋆ − η)
+      Δη ← β·v + α·(η⋆ − η)
+
+  This is the natural-parameter analogue of Nesterov SGD. The transported
+  velocity is retained as optimizer state, while `Δη` is the step applied to
+  the message.
 
 The latter two methods use the same per-edge state and `apply_damping!` entry
 point as ordinary damping, so existing NGMP rules need no optimizer-specific
@@ -60,9 +70,15 @@ function DampingMeta(;
     max_step > 0 || throw(ArgumentError("max_step must be positive"))
     eps > 0 || throw(ArgumentError("eps must be positive"))
     metric_damping > 0 || throw(ArgumentError("metric_damping must be positive"))
-    method in (:damped, :projected_nesterov, :vector_transport) ||
+    method in (
+        :damped,
+        :projected_nesterov,
+        :vector_transport,
+        :vector_transport_nesterov,
+    ) ||
         throw(ArgumentError(
-            "method must be :damped, :projected_nesterov, or :vector_transport",
+            "method must be :damped, :projected_nesterov, " *
+            ":vector_transport, or :vector_transport_nesterov",
         ))
     α, β, step, stabilizer, metric_floor =
         promote(alpha, beta, max_step, eps, metric_damping)
@@ -238,6 +254,17 @@ function optimizer_step!(state::NGMPEdgeState, family, direction)
         # The new update lives in the tangent space at the current message.
         # Keep that base metric so it can be transported on the next firing.
         state.metric = current_metric
+    elseif method === :vector_transport_nesterov
+        current_metric = diagonal_fisher_metric(
+            family, state.η, optimizer_metric_damping(state))
+        transported = state.momentum .* sqrt.(state.metric ./ current_metric)
+        @. state.momentum = β * transported + α * direction
+        nesterov_step = β .* state.momentum .+ α .* direction
+        # The new update lives in the tangent space at the current message.
+        # Keep that base metric so it can be transported on the next firing.
+        state.metric = current_metric
+        state.previous_direction .= direction
+        return nesterov_step
     end
     state.previous_direction .= direction
     return state.momentum
@@ -267,14 +294,14 @@ function apply_damping!(state::NGMPEdgeState, target)
             T, state.η, optimizer_metric_damping(state))
     end
     direction = ηt - state.η
-    optimizer_step!(state, T, direction)
+    step = optimizer_step!(state, T, direction)
     max_step = damping_max_step(state)
-    step_norm = sqrt(sum(abs2, state.momentum))
+    step_norm = sqrt(sum(abs2, step))
     if step_norm > max_step
-        state.momentum .*= max_step / step_norm
+        step .*= max_step / step_norm
     end
-    @. state.η += state.momentum
-    if optimizer_method(state) !== :vector_transport
+    @. state.η += step
+    if optimizer_method(state) ∉ (:vector_transport, :vector_transport_nesterov)
         state.metric = diagonal_fisher_metric(
             T, state.η, optimizer_metric_damping(state))
     end
