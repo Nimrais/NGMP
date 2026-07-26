@@ -149,11 +149,7 @@ choice fixed once, so that comparing depths does not also compare kernels. The
 Two of the optimizer settings are load-bearing, and both were found the hard way:
 
 * `MAX_STEP` bounds the natural-gradient step. It is a safety rail.
-* `ALPHA` at 0.1 makes held-out log-density **non-monotone** in the iteration count
-  (it dips around 30 iterations and only recovers by 120). The weights update by
-  undamped exact conjugate VMP while the precisions only move through damped links, so a
-  small step size leaves a window where the mean has sharpened and the noise head has
-  not caught up. At `ALPHA ≥ 0.3` the dip disappears.
+* `ALPHA` is a natural-gradient momentum step size.
 """
 
 # ╔═╡ ee55ff66-0011-4223-8344-556677889900
@@ -164,7 +160,7 @@ begin
     const DATA_SEED = 7
 
     # ---- kernel: fixed modelling choices, NOT tuned per depth ---------------
-    const N_BASIS = 96          # random Fourier features; must exceed the effective
+    const N_BASIS = 16          # random Fourier features; must exceed the effective
     const LENGTHSCALE = 0.25    #   rank of the data, or no model can widen off-data
     const SIGNAL_SD = 1.0       # mean-weight prior sd
     const LEVEL_SD = 0.4        # per-level weight sd; smaller on purpose, so a noise
@@ -173,7 +169,7 @@ begin
     const TOP_CARRIER = 25.0    # the top level's constant carrier precision
 
     # ---- optimizer: chosen by sweeping ------------------------------------
-    const LAYER_COUNTS = [1, 2, 3, 4]
+    const LAYER_COUNTS = [1, 2, 3, 4, 5]
     const ITERATIONS = 240      # log-density is monotone in this at ALPHA >= 0.3
     const ALPHA = 0.6           # natural-gradient step size
     const MAX_STEP = 0.5        # load-bearing: 4.0 diverges by 120 iterations
@@ -502,7 +498,7 @@ begin
         push!(panels, mean_panel, variance_panel)
     end
 
-    figure = plot(panels...; layout = (4, 2), size = (1_100, 1_500))
+    figure = plot(panels...; layout = (length(LAYER_COUNTS), 2), size = (1_100, 1_500))
     haskey(ENV, "HIERARCHY_FIGURE") && savefig(figure, ENV["HIERARCHY_FIGURE"])
     figure
 end
@@ -577,7 +573,7 @@ settled — which is why the configuration cell records why each value is what i
 # ╟─aa11bb22-cc33-4dd4-8ee5-ff6677889900
 # ╟─bb22cc33-dd44-4ee5-8ff6-001122334455
 # ╟─cc33dd44-ee55-4ff6-8001-112233445566
-# ╠═dd44ee55-ff66-4001-8112-233445566778
+# ╟─dd44ee55-ff66-4001-8112-233445566778
 # ╠═ee55ff66-0011-4223-8344-556677889900
 # ╠═0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d
 # ╠═1b2c3d4e-5f6a-4b7c-8d8e-af1b2c3d4e5f
@@ -597,4 +593,4 @@ settled — which is why the configuration cell records why each value is what i
 # ╠═4a5b6c7d-cedf-4aeb-8d56-f4a5b6c7dced
 # ╟─5b6c7d8e-dfea-4bfc-8e67-a5b6c7d8edfe
 # ╠═6c7d8e9f-eafb-4cad-8f78-b6c7d8e9feaf
-# ╠═7d8e9f0a-fbac-4dbe-8a89-c7d8e9f0afba
+# ╟─7d8e9f0a-fbac-4dbe-8a89-c7d8e9f0afba
