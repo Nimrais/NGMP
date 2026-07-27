@@ -13,18 +13,46 @@ using YAML
 
 const ROOT = @__DIR__
 const SUPPORTED_HORIZONS = (96, 192, 336, 720)
-const SUPPORTED_ARMS = (:vmp, :ngmp, :relaxed)
+const DYNAMIC_NGMP_OPTIMIZERS = (
+    ngmp_damped=(method=:damped, alpha=0.5, beta=0.0),
+    ngmp_vector_transport_05=(
+        method=:vector_transport,
+        alpha=0.2,
+        beta=0.5,
+    ),
+    ngmp_vector_transport_08=(
+        method=:vector_transport,
+        alpha=0.2,
+        beta=0.8,
+    ),
+    ngmp_vector_transport_nesterov_05=(
+        method=:vector_transport_nesterov,
+        alpha=0.2,
+        beta=0.5,
+    ),
+    ngmp_vector_transport_nesterov_08=(
+        method=:vector_transport_nesterov,
+        alpha=0.2,
+        beta=0.8,
+    ),
+)
+const SUPPORTED_ARMS = (
+    :vmp,
+    keys(DYNAMIC_NGMP_OPTIMIZERS)...,
+)
 const ETTH2_COMPARISON_CONFIG = (
     training_observations=0, # 0 uses the complete validation split
-    training_batch_size=nothing, # set to `nothing` for full-graph training
+    training_batch_size=250, # identical resampled minibatches for every arm
     repeat_batch=1, # resample once per variational iteration
-    inference_iterations=20,
+    inference_iterations=5,
     prediction_batch_size=250,
     prediction_iterations=3,
     prediction_method=:rxinfer_fixed_marginals,
-    alpha=0.2,
-    beta=0.0,
     arms=SUPPORTED_ARMS,
+    optimizers=DYNAMIC_NGMP_OPTIMIZERS,
+    max_step=1.0,
+    nesterov_eps=1e-8,
+    vector_transport_damping=1e-6,
     limit_stack_depth=500,
     show_progress=true,
 )
@@ -318,8 +346,12 @@ function run_arm(
     iterations,
     training_batch_size,
     repeat_batch,
+    optimizer,
     alpha,
     beta,
+    max_step,
+    nesterov_eps,
+    vector_transport_damping,
     limit_stack_depth,
     showprogress,
 )
@@ -362,8 +394,16 @@ function run_arm(
     end
 
     dependencies = NGMPDependencies(out=nothing, in=nothing)
-    damping = DampingMeta(; alpha, beta)
-    if arm === :ngmp
+    damping = DampingMeta(
+        ;
+        alpha,
+        beta,
+        max_step,
+        method=optimizer,
+        eps=nesterov_eps,
+        metric_damping=vector_transport_damping,
+    )
+    if haskey(DYNAMIC_NGMP_OPTIMIZERS, arm)
         result = infer(
             model=dynamic_ngmp(; n_forecasters, n_obs, priors, dependencies, damping),
             data=common_data,
@@ -396,7 +436,7 @@ function run_arm(
     return result, dependencies
 end
 
-function write_report(path, config, metrics)
+function write_report(path, config, metrics, failures)
     open(path, "w") do io
         println(io, "# Dynamic VMP vs NGMP on ETTh2")
         println(io)
@@ -411,24 +451,59 @@ function write_report(path, config, metrics)
         end
         println(io, "Prediction batch size: **$(config.prediction_batch_size)**  ")
         println(io, "Prediction iterations: **$(config.prediction_iterations)**  ")
-        println(io, "NGMP damping: alpha=$(config.alpha), beta=$(config.beta)")
+        println(io, "NGMP optimizer arms:")
+        for arm in keys(config.optimizers)
+            optimizer = config.optimizers[arm]
+            println(
+                io,
+                "- `$(arm)`: method=$(optimizer.method), " *
+                "alpha=$(optimizer.alpha), beta=$(optimizer.beta)",
+            )
+        end
         println(io, "Prediction method: **$(config.prediction_method)**")
         println(io, "Confidence intervals: mean ± 1.96 × standard error across test observations")
         println(io, "Session: `$(config.session)`")
         println(io)
-        println(io, "| Method | MAE | MSE ± 95% CI | NLL ± 95% CI | Coverage 95% | Pinball |")
-        println(io, "|---|---:|---:|---:|---:|---:|")
-        labels = Dict(:vmp => "VMP", :ngmp => "NGMP", :relaxed => "NGMP relaxed")
+        println(io, "| Method | MAE | ΔMAE vs VMP | MSE ± 95% CI | ΔMSE vs VMP | NLL ± 95% CI | Coverage 95% | Pinball |")
+        println(io, "|---|---:|---:|---:|---:|---:|---:|---:|")
+        labels = Dict(
+            :vmp => "VMP",
+            :ngmp_damped => "NGMP damped (α=0.5)",
+            :ngmp_vector_transport_05 => "NGMP vector transport (β=0.5)",
+            :ngmp_vector_transport_08 => "NGMP vector transport (β=0.8)",
+            :ngmp_vector_transport_nesterov_05 =>
+                "NGMP vector-transport Nesterov (β=0.5)",
+            :ngmp_vector_transport_nesterov_08 =>
+                "NGMP vector-transport Nesterov (β=0.8)",
+        )
+        baseline = metrics[:vmp]
         for arm in config.arms
+            if haskey(failures, arm)
+                println(
+                    io,
+                    "| $(labels[arm]) | failed | — | failed | — | failed | — | — |",
+                )
+                continue
+            end
             value = metrics[arm]
             println(
                 io,
                 "| $(labels[arm]) | $(@sprintf("%.4f", value.mae)) | " *
+                "$(@sprintf("%+.4f", value.mae - baseline.mae)) | " *
                 "$(@sprintf("%.4f", value.mse)) ± $(@sprintf("%.4f", value.mse_ci95)) | " *
+                "$(@sprintf("%+.4f", value.mse - baseline.mse)) | " *
                 "$(@sprintf("%.4f", value.negative_log_likelihood)) ± " *
                 "$(@sprintf("%.4f", value.negative_log_likelihood_ci95)) | " *
                 "$(@sprintf("%.4f", value.coverage95)) | $(@sprintf("%.4f", value.pinball)) |",
             )
+        end
+        if !isempty(failures)
+            println(io)
+            println(io, "## Failed arms")
+            println(io)
+            for (arm, failure) in failures
+                println(io, "- `$(arm)`: `$(replace(failure, '\n' => ' '))`")
+            end
         end
     end
 end
@@ -453,8 +528,7 @@ function run_etth2_comparison(
     configured_prediction_batch_size = comparison.prediction_batch_size
     prediction_iterations = comparison.prediction_iterations
     prediction_method = comparison.prediction_method
-    alpha = comparison.alpha
-    beta = comparison.beta
+    optimizers = comparison.optimizers
     selected_arms = collect(comparison.arms)
     limit_stack_depth = comparison.limit_stack_depth
     showprogress = comparison.show_progress
@@ -482,8 +556,10 @@ function run_etth2_comparison(
         prediction_batch_size,
         prediction_iterations,
         prediction_method,
-        alpha,
-        beta,
+        optimizers,
+        max_step=comparison.max_step,
+        nesterov_eps=comparison.nesterov_eps,
+        vector_transport_damping=comparison.vector_transport_damping,
         arms=selected_arms,
         limit_stack_depth,
         showprogress,
@@ -491,23 +567,43 @@ function run_etth2_comparison(
     metrics = Dict{Symbol,Any}()
     predictions = Dict{Symbol,Any}()
     posteriors = Dict{Symbol,Any}()
+    failures = Dict{Symbol,String}()
     for arm in selected_arms
+        optimizer_settings = arm === :vmp ?
+                             (method=:damped, alpha=0.0, beta=0.0) :
+                             optimizers[arm]
         batch_label = isnothing(training_batch_size) ? "full" : string(training_batch_size)
-        println("running arm=$arm horizon=$horizon observations=$train_count batch=$batch_label repeat_batch=$repeat_batch iterations=$iterations")
-        result, _ = run_arm(
-            arm,
-            spec.priors,
-            features_val[1:train_count],
-            predictions_val[:, 1:train_count],
-            y_val[1:train_count];
-            iterations,
-            training_batch_size,
-            repeat_batch,
-            alpha,
-            beta,
-            limit_stack_depth,
-            showprogress,
+        println(
+            "running arm=$arm optimizer=$(optimizer_settings.method) " *
+            "alpha=$(optimizer_settings.alpha) beta=$(optimizer_settings.beta) " *
+            "horizon=$horizon observations=$train_count batch=$batch_label " *
+            "repeat_batch=$repeat_batch iterations=$iterations",
         )
+        result = try
+            first(run_arm(
+                arm,
+                spec.priors,
+                features_val[1:train_count],
+                predictions_val[:, 1:train_count],
+                y_val[1:train_count];
+                iterations,
+                training_batch_size,
+                repeat_batch,
+                optimizer=optimizer_settings.method,
+                alpha=optimizer_settings.alpha,
+                beta=optimizer_settings.beta,
+                max_step=comparison.max_step,
+                nesterov_eps=comparison.nesterov_eps,
+                vector_transport_damping=comparison.vector_transport_damping,
+                limit_stack_depth,
+                showprogress,
+            ))
+        catch error
+            failure = sprint(showerror, error)
+            failures[arm] = failure
+            println(stderr, "arm=$arm failed: $failure")
+            continue
+        end
         w = last(result.posteriors[:w])
         tau = last(result.posteriors[:tau])
         beta_posterior = last(result.posteriors[:beta])
@@ -530,14 +626,30 @@ function run_etth2_comparison(
     results_dir = joinpath(ROOT, "results")
     mkpath(results_dir)
     batch_token = isnothing(training_batch_size) ? "full" : string(training_batch_size)
-    stem = "dynamic_etth2_h$(horizon)_n$(train_count)_b$(batch_token)_i$(iterations)_pb$(prediction_batch_size)_prx"
+    stem = "dynamic_etth2_optimizer_comparison_h$(horizon)_n$(train_count)_b$(batch_token)_i$(iterations)_pb$(prediction_batch_size)_prx"
     jld2_path = joinpath(results_dir, "$stem.jld2")
     markdown_path = joinpath(results_dir, "$stem.md")
-    jldsave(jld2_path; config, metrics, predictions, posteriors, y_test)
-    write_report(markdown_path, config, metrics)
+    jldsave(
+        jld2_path;
+        config,
+        metrics,
+        predictions,
+        posteriors,
+        failures,
+        y_test,
+    )
+    write_report(markdown_path, config, metrics, failures)
     println("results_jld2=$jld2_path")
     println("results_markdown=$markdown_path")
-    return (; config, metrics, predictions, posteriors, jld2_path, markdown_path)
+    return (;
+        config,
+        metrics,
+        predictions,
+        posteriors,
+        failures,
+        jld2_path,
+        markdown_path,
+    )
 end
 
 function parse_cli(args)
