@@ -266,13 +266,20 @@ function mlp_posterior_as_priors(m, old_priors)
     )
 end
 
+softplus_activation_to_a_site(ma, _va, mx, vx, sigma2) =
+    positive_softplus_to_a_site(ma, mx, vx, sigma2)
+
 function refresh_mlp_sites(batch_x, batch_y, marginals, old_site;
     sigma_sp2=0.05^2,
     sigma_hidden2=0.05^2,
     direct_weight_site_scale=0.5,
     discriminative_site_scale=2.0,
     product_classifier_site_scale=0.0,
-    classes=collect(0:(size(marginals.mu, 1)-1)))
+    classes=collect(0:(size(marginals.mu, 1)-1)),
+    activation_to_a_site=softplus_activation_to_a_site,
+    activation_to_x_site=softplus_to_x_site,
+    activation_value=softplus,
+    activation_derivative=sigmoid)
     n_count, input_count = size(batch_x)
     hidden_count = size(marginals.mx, 2)
     class_count = size(marginals.mu, 1)
@@ -294,13 +301,14 @@ function refresh_mlp_sites(batch_x, batch_y, marginals, old_site;
         x_cav_Λ = inv(vx[n, h]) - old_site.x_sp_Λ[n, h]
         mx_cav, vx_cav = gaussian_from_nat(x_cav_xi, x_cav_Λ)
         target.a_sp_xi[n, h], target.a_sp_Λ[n, h] =
-            positive_softplus_to_a_site(ma[n, h], mx_cav, vx_cav, sigma_sp2)
+            activation_to_a_site(
+                ma[n, h], va[n, h], mx_cav, vx_cav, sigma_sp2)
 
         a_cav_xi = ma[n, h] / va[n, h] - old_site.a_sp_xi[n, h]
         a_cav_Λ = inv(va[n, h]) - old_site.a_sp_Λ[n, h]
         ma_cav, va_cav = gaussian_from_nat(a_cav_xi, a_cav_Λ)
         target.x_sp_xi[n, h], target.x_sp_Λ[n, h] =
-            softplus_to_x_site(ma_cav, va_cav, sigma_sp2)
+            activation_to_x_site(ma_cav, va_cav, sigma_sp2)
     end
 
     # Deterministic-input linear hidden layer:
@@ -334,8 +342,8 @@ function refresh_mlp_sites(batch_x, batch_y, marginals, old_site;
     # learns its first layer from image reconstruction; this flattened MLP has
     # no reconstruction term, so W, U, and c need a direct supervised site.
     if discriminative_site_scale > 0
-        x_det = softplus.(linear_mean)
-        s_det = sigmoid.(linear_mean)
+        x_det = activation_value.(linear_mean)
+        s_det = activation_derivative.(linear_mean)
         logits_det = x_det * transpose(mu)
         logits_det .+= transpose(mc)
         for n in 1:n_count
@@ -395,7 +403,7 @@ function refresh_mlp_sites(batch_x, batch_y, marginals, old_site;
                 target_logits = Float64.(classes .== batch_y[n])
                 logit_grad = target_logits .- probs
                 for h in 1:hidden_count
-                    sp_grad = sigmoid(ma[n, h])
+                    sp_grad = activation_derivative(ma[n, h])
                     grad_a = sp_grad * sum(logit_grad[cls] * mu[cls, h] for cls in 1:class_count)
                     curv_a = sp_grad^2 * sum(lambda_t[cls] * (mu[cls, h]^2 + vu[cls, h]) for cls in 1:class_count)
                     for k in 1:input_count
@@ -438,6 +446,53 @@ function refresh_mlp_sites(batch_x, batch_y, marginals, old_site;
     return target
 end
 
+function direct_mlp_batch_loss(
+    site,
+    priors,
+    batch_x,
+    batch_y;
+    global_site_scale,
+    activation_value=softplus,
+)
+    marginals = direct_mlp_marginals(site, priors; global_site_scale)
+    hidden = activation_value.(batch_x * transpose(marginals.mw))
+    logits = hidden * transpose(marginals.mu)
+    logits .+= transpose(marginals.mc)
+    loss = 0.0
+    for n in eachindex(batch_y)
+        target_index = findfirst(==(batch_y[n]), priors.classes)
+        isnothing(target_index) && error("Unknown class label $(batch_y[n])")
+        row = @view logits[n, :]
+        maximum_logit = maximum(row)
+        loss += log(sum(exp.(row .- maximum_logit))) +
+                maximum_logit - row[target_index]
+    end
+    return loss / length(batch_y)
+end
+
+function backtrack_site_objective(
+    old_site,
+    proposed_site,
+    objective;
+    max_backtracks=10,
+    tolerance=1e-10,
+)
+    old_loss = objective(old_site)
+    step = site_direction(old_site, proposed_site)
+    for backtrack in 0:max_backtracks
+        scale = exp2(-backtrack)
+        candidate = clamp_site_precisions(
+            add_scaled_sites(old_site, step, scale),
+        )
+        candidate_loss = objective(candidate)
+        if isfinite(candidate_loss) &&
+           candidate_loss <= old_loss + tolerance
+            return candidate, candidate_loss, backtrack
+        end
+    end
+    return old_site, old_loss, max_backtracks + 1
+end
+
 function infer_batch_mlp_rxinfer(priors, batch_x, batch_y;
     sigma_sp2=0.05^2,
     sigma_hidden2=0.05^2,
@@ -450,17 +505,31 @@ function infer_batch_mlp_rxinfer(priors, batch_x, batch_y;
     nesterov_beta=0.9,
     nesterov_eps=1e-8,
     vector_transport=false,
+    vector_transport_nesterov=false,
     vector_transport_momentum=0.8,
     vector_transport_damping=1e-6,
     max_inner=1,
     tol=1e-4,
     verbose=false,
-    inference_backend=:direct)
+    inference_backend=:direct,
+    loss_backtracking=false,
+    max_backtracks=10,
+    activation_to_a_site=softplus_activation_to_a_site,
+    activation_to_x_site=softplus_to_x_site,
+    activation_value=softplus,
+    activation_derivative=sigmoid)
     n_count, input_count = size(batch_x)
     hidden_count = size(priors.w_m, 1)
     class_count = length(priors.classes)
     site = mlp_zero_sites(n_count, input_count, hidden_count, class_count)
-    projected_nesterov && vector_transport && error("Use either projected_nesterov or vector_transport, not both.")
+    count(identity, (
+        projected_nesterov,
+        vector_transport,
+        vector_transport_nesterov,
+    )) <= 1 || error(
+        "Use only one of projected_nesterov, vector_transport, or " *
+        "vector_transport_nesterov.",
+    )
     previous_direction = zero_like_sites(site)
     has_previous_direction = false
     previous_update = zero_like_sites(site)
@@ -474,7 +543,8 @@ function infer_batch_mlp_rxinfer(priors, batch_x, batch_y;
         target = refresh_mlp_sites(batch_x, batch_y, marginals, site;
             sigma_sp2, sigma_hidden2, direct_weight_site_scale,
             discriminative_site_scale, product_classifier_site_scale,
-            classes=priors.classes)
+            classes=priors.classes, activation_to_a_site,
+            activation_to_x_site, activation_value, activation_derivative)
         direction = site_direction(site, target)
         old_site = site
         if projected_nesterov
@@ -486,17 +556,53 @@ function infer_batch_mlp_rxinfer(priors, batch_x, batch_y;
             lookahead_target = refresh_mlp_sites(batch_x, batch_y, lookahead_marginals, lookahead_site;
                 sigma_sp2, sigma_hidden2, direct_weight_site_scale,
                 discriminative_site_scale, product_classifier_site_scale,
-                classes=priors.classes)
+                classes=priors.classes, activation_to_a_site,
+                activation_to_x_site, activation_value, activation_derivative)
             lookahead_direction = site_direction(lookahead_site, lookahead_target)
             site = clamp_site_precisions(add_scaled_sites(site, lookahead_direction, alpha))
             previous_direction = direction
             has_previous_direction = true
+        elseif vector_transport_nesterov
+            site, previous_update, previous_metric =
+                vector_transport_nesterov_site_step(
+                    site,
+                    direction,
+                    previous_update,
+                    previous_metric;
+                    alpha,
+                    momentum=vector_transport_momentum,
+                    damping=vector_transport_damping,
+                )
         elseif vector_transport
             site, previous_update, previous_metric = vector_transport_site_step(
                 site, direction, previous_update, previous_metric;
                 alpha, momentum=vector_transport_momentum, damping=vector_transport_damping)
         else
             site = clamp_site_precisions(damp_sites(site, target, alpha))
+        end
+        if inference_backend === :direct && loss_backtracking
+            proposed_site = site
+            site, _, backtracks = backtrack_site_objective(
+                old_site,
+                proposed_site,
+                candidate -> direct_mlp_batch_loss(
+                    candidate,
+                    priors,
+                    batch_x,
+                    batch_y;
+                    global_site_scale,
+                    activation_value,
+                );
+                max_backtracks,
+            )
+            if vector_transport || vector_transport_nesterov
+                previous_update = site_direction(old_site, site)
+                previous_metric = diagonal_site_metric(
+                    site;
+                    damping=vector_transport_damping,
+                )
+            end
+            verbose && @info "inner=$inner backtracks=$backtracks"
         end
         last_delta = site_update_norm(site, old_site)
         verbose && @info "inner=$inner delta=$(round(last_delta, sigdigits=3))"
@@ -508,17 +614,23 @@ function infer_batch_mlp_rxinfer(priors, batch_x, batch_y;
     return mlp_posterior_as_priors(marginals, priors), (delta=last_delta, marginals=marginals)
 end
 
-function predict_mlp_rx(priors, input)
-    hidden = softplus.(priors.w_m * input)
+function predict_mlp_rx(priors, input; activation_value=softplus)
+    hidden = activation_value.(priors.w_m * input)
     logits = priors.c_m .+ priors.u_m * hidden
     probs = softmax_probs(logits)
     return priors.classes[argmax(probs)], probs
 end
 
-function evaluate_mlp_rx(priors, x, y; max_images=size(x, 2))
+function evaluate_mlp_rx(
+    priors,
+    x,
+    y;
+    max_images=size(x, 2),
+    activation_value=softplus,
+)
     n = min(max_images, size(x, 2))
     n == 0 && return 0.0
-    hidden = softplus.(priors.w_m * @view(x[:, 1:n]))
+    hidden = activation_value.(priors.w_m * @view(x[:, 1:n]))
     logits = priors.c_m .+ priors.u_m * hidden
     correct = 0
     for i in 1:n
@@ -531,6 +643,7 @@ end
 function train_mlp_rxinfer_demo(; ntrain=1000, nval=100, ntest=100,
     dataset=:mnist,
     image_size=nothing,
+    split_sampling=:balanced,
     hidden_count=32,
     batch_size=32,
     epochs=50,
@@ -548,13 +661,29 @@ function train_mlp_rxinfer_demo(; ntrain=1000, nval=100, ntest=100,
     nesterov_beta=0.9,
     nesterov_eps=1e-8,
     vector_transport=false,
+    vector_transport_nesterov=false,
     vector_transport_momentum=0.5,
     vector_transport_damping=1e-6,
     max_inner=3,
+    loss_backtracking=false,
+    max_backtracks=10,
     eval_max_images=1000,
-    inference_backend=:direct)
+    inference_backend=:direct,
+    activation_to_a_site=softplus_activation_to_a_site,
+    activation_to_x_site=softplus_to_x_site,
+    activation_value=softplus,
+    activation_derivative=sigmoid,
+    activation_name="Softplus")
     data = load_flattened_image_dataset(
-        dataset; ntrain, nval, ntest, seed, classes, image_size)
+        dataset;
+        ntrain,
+        nval,
+        ntest,
+        seed,
+        classes,
+        image_size,
+        split_sampling,
+    )
     classes = data.classes
     input_count = size(data.train_x, 1)
     priors = init_mlp_priors(input_count, hidden_count, classes;
@@ -562,8 +691,8 @@ function train_mlp_rxinfer_demo(; ntrain=1000, nval=100, ntest=100,
     rng = MersenneTwister(seed + 30)
     site_scale = inv(epochs)
 
-    println("RxInfer flattened softplus MLP dataset=$(data.name) classes=$(classes)")
-    println("train=$(length(data.train_y)) val=$(length(data.val_y)) test=$(length(data.test_y)) image_size=$(data.image_size) channels=$(data.channels) input=$input_count hidden=$hidden_count batch=$batch_size epochs=$epochs alpha=$alpha sigma_sp2=$sigma_sp2 sigma_hidden2=$sigma_hidden2 direct_weight_site_scale=$direct_weight_site_scale discriminative_site_scale=$discriminative_site_scale product_classifier_site_scale=$product_classifier_site_scale w_init_scale=$w_init_scale u_init_scale=$u_init_scale projected_nesterov=$projected_nesterov nesterov_beta=$nesterov_beta nesterov_eps=$nesterov_eps vector_transport=$vector_transport inference_backend=$inference_backend site_scale=$(round(site_scale, digits=4))")
+    println("$(inference_backend === :direct ? "Direct" : "RxInfer") flattened $activation_name MLP dataset=$(data.name) classes=$(classes)")
+    println("train=$(length(data.train_y)) val=$(length(data.val_y)) test=$(length(data.test_y)) split_sampling=$split_sampling image_size=$(data.image_size) channels=$(data.channels) input=$input_count hidden=$hidden_count batch=$batch_size epochs=$epochs alpha=$alpha sigma_sp2=$sigma_sp2 sigma_hidden2=$sigma_hidden2 direct_weight_site_scale=$direct_weight_site_scale discriminative_site_scale=$discriminative_site_scale product_classifier_site_scale=$product_classifier_site_scale w_init_scale=$w_init_scale u_init_scale=$u_init_scale projected_nesterov=$projected_nesterov nesterov_beta=$nesterov_beta nesterov_eps=$nesterov_eps vector_transport=$vector_transport vector_transport_nesterov=$vector_transport_nesterov vector_transport_momentum=$vector_transport_momentum inference_backend=$inference_backend loss_backtracking=$loss_backtracking max_backtracks=$max_backtracks site_scale=$(round(site_scale, digits=4))")
 
     history = NamedTuple[]
     best_val_acc = -Inf
@@ -586,18 +715,27 @@ function train_mlp_rxinfer_demo(; ntrain=1000, nval=100, ntest=100,
                 nesterov_beta,
                 nesterov_eps,
                 vector_transport,
+                vector_transport_nesterov,
                 vector_transport_momentum,
                 vector_transport_damping,
                 max_inner,
-                inference_backend)
+                inference_backend,
+                loss_backtracking,
+                max_backtracks,
+                activation_to_a_site,
+                activation_to_x_site,
+                activation_value,
+                activation_derivative)
             push!(deltas, stats.delta)
             ProgressMeter.next!(progress)
         end
 
         train_acc = evaluate_mlp_rx(priors, data.train_x, data.train_y;
-            max_images=min(eval_max_images, length(data.train_y)))
+            max_images=min(eval_max_images, length(data.train_y)),
+            activation_value)
         val_acc = evaluate_mlp_rx(priors, data.val_x, data.val_y;
-            max_images=min(eval_max_images, length(data.val_y)))
+            max_images=min(eval_max_images, length(data.val_y)),
+            activation_value)
         push!(history, (epoch=epoch, train_acc=train_acc,
             val_acc=val_acc, mean_delta=mean(deltas)))
         println("epoch=$epoch train_acc=$(round(train_acc, digits=3)) val_acc=$(round(val_acc, digits=3)) mean_delta=$(round(mean(deltas), sigdigits=3))")
@@ -610,8 +748,9 @@ function train_mlp_rxinfer_demo(; ntrain=1000, nval=100, ntest=100,
     end
 
     test_acc = evaluate_mlp_rx(best_priors, data.test_x, data.test_y;
-        max_images=min(eval_max_images, length(data.test_y)))
-    println("best_val_epoch=$best_epoch best_val_acc=$(round(best_val_acc, digits=3)) test_acc=$(round(test_acc, digits=3))")
+        max_images=min(eval_max_images, length(data.test_y)),
+        activation_value)
+    println("best_val_epoch=$best_epoch best_val_acc=$(round(best_val_acc, digits=6)) test_acc=$(round(test_acc, digits=6))")
     return (priors=best_priors, history=history, data=data, test_acc=test_acc)
 end
 

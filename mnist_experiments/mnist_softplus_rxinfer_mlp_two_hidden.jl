@@ -275,6 +275,10 @@ function refresh_two_hidden_sites(
     direct_weight_site_scale=0.5,
     discriminative_site_scale=2.0,
     classes=collect(0:(size(m.mu, 1) - 1)),
+    activation_to_a_site=softplus_activation_to_a_site,
+    activation_to_x_site=softplus_to_x_site,
+    activation_value=softplus,
+    activation_derivative=sigmoid,
 )
     n_count, input_count = size(batch_x)
     hidden1_count = size(m.mx1, 2)
@@ -298,8 +302,8 @@ function refresh_two_hidden_sites(
             x_cavity_xi = mx[n, h] / vx[n, h] - old_x_xi
             x_cavity_lambda = inv(vx[n, h]) - old_x_lambda
             mx_cavity, vx_cavity = gaussian_from_nat(x_cavity_xi, x_cavity_lambda)
-            a_xi, a_lambda = positive_softplus_to_a_site(
-                ma[n, h], mx_cavity, vx_cavity, sigma_sp2)
+            a_xi, a_lambda = activation_to_a_site(
+                ma[n, h], va[n, h], mx_cavity, vx_cavity, sigma_sp2)
             getfield(target, Symbol(a_stem, :_xi))[n, h] = a_xi
             getfield(target, Symbol(a_stem, :_Λ))[n, h] = a_lambda
 
@@ -308,7 +312,7 @@ function refresh_two_hidden_sites(
             a_cavity_xi = ma[n, h] / va[n, h] - old_a_xi
             a_cavity_lambda = inv(va[n, h]) - old_a_lambda
             ma_cavity, va_cavity = gaussian_from_nat(a_cavity_xi, a_cavity_lambda)
-            x_xi, x_lambda = softplus_to_x_site(
+            x_xi, x_lambda = activation_to_x_site(
                 ma_cavity, va_cavity, sigma_sp2)
             getfield(target, Symbol(x_stem, :_xi))[n, h] = x_xi
             getfield(target, Symbol(x_stem, :_Λ))[n, h] = x_lambda
@@ -383,11 +387,11 @@ function refresh_two_hidden_sites(
     # Supervised Gaussian sites from the softmax gradient and diagonal Fisher
     # curvature, backpropagated through U, W2, and W1.
     if discriminative_site_scale > 0
-        x1_det = softplus.(first_layer_mean)
-        sp1_det = sigmoid.(first_layer_mean)
+        x1_det = activation_value.(first_layer_mean)
+        sp1_det = activation_derivative.(first_layer_mean)
         a2_det = x1_det * transpose(m.mw2)
-        x2_det = softplus.(a2_det)
-        sp2_det = sigmoid.(a2_det)
+        x2_det = activation_value.(a2_det)
+        sp2_det = activation_derivative.(a2_det)
         logits_det = x2_det * transpose(m.mu)
         logits_det .+= transpose(m.mc)
         grad_a2 = zeros(hidden2_count)
@@ -456,6 +460,35 @@ function refresh_two_hidden_sites(
     return target
 end
 
+function direct_two_hidden_batch_loss(
+    site,
+    priors,
+    batch_x,
+    batch_y;
+    global_site_scale,
+    activation_value=softplus,
+)
+    marginals = direct_two_hidden_marginals(
+        site,
+        priors;
+        global_site_scale,
+    )
+    hidden1 = activation_value.(batch_x * transpose(marginals.mw1))
+    hidden2 = activation_value.(hidden1 * transpose(marginals.mw2))
+    logits = hidden2 * transpose(marginals.mu)
+    logits .+= transpose(marginals.mc)
+    loss = 0.0
+    for n in eachindex(batch_y)
+        target_index = findfirst(==(batch_y[n]), priors.classes)
+        isnothing(target_index) && error("Unknown class label $(batch_y[n])")
+        row = @view logits[n, :]
+        maximum_logit = maximum(row)
+        loss += log(sum(exp.(row .- maximum_logit))) +
+                maximum_logit - row[target_index]
+    end
+    return loss / length(batch_y)
+end
+
 function infer_batch_two_hidden_mlp(
     priors, batch_x, batch_y;
     sigma_sp2=0.05^2,
@@ -469,12 +502,19 @@ function infer_batch_two_hidden_mlp(
     nesterov_beta=0.9,
     nesterov_eps=1e-8,
     vector_transport=false,
+    vector_transport_nesterov=false,
     vector_transport_momentum=0.5,
     vector_transport_damping=1e-6,
     max_inner=3,
     tol=1e-4,
     verbose=false,
     inference_backend=:direct,
+    loss_backtracking=false,
+    max_backtracks=10,
+    activation_to_a_site=softplus_activation_to_a_site,
+    activation_to_x_site=softplus_to_x_site,
+    activation_value=softplus,
+    activation_derivative=sigmoid,
 )
     n_count, input_count = size(batch_x)
     hidden1_count = size(priors.w1_m, 1)
@@ -482,8 +522,14 @@ function infer_batch_two_hidden_mlp(
     class_count = length(priors.classes)
     site = two_hidden_zero_sites(
         n_count, input_count, hidden1_count, hidden2_count, class_count)
-    projected_nesterov && vector_transport &&
-        error("Use either projected_nesterov or vector_transport, not both.")
+    count(identity, (
+        projected_nesterov,
+        vector_transport,
+        vector_transport_nesterov,
+    )) <= 1 || error(
+        "Use only one of projected_nesterov, vector_transport, or " *
+        "vector_transport_nesterov.",
+    )
     previous_direction = zero_like_sites(site)
     has_previous_direction = false
     previous_update = zero_like_sites(site)
@@ -497,7 +543,8 @@ function infer_batch_two_hidden_mlp(
         target = refresh_two_hidden_sites(batch_x, batch_y, marginals, site;
             sigma_sp2, sigma_hidden1_2, sigma_hidden2_2,
             direct_weight_site_scale, discriminative_site_scale,
-            classes=priors.classes)
+            classes=priors.classes, activation_to_a_site,
+            activation_to_x_site, activation_value, activation_derivative)
         direction = site_direction(site, target)
         old_site = site
         if projected_nesterov
@@ -510,13 +557,26 @@ function infer_batch_two_hidden_mlp(
                 batch_x, batch_y, lookahead_marginals, lookahead_site;
                 sigma_sp2, sigma_hidden1_2, sigma_hidden2_2,
                 direct_weight_site_scale, discriminative_site_scale,
-                classes=priors.classes)
+                classes=priors.classes, activation_to_a_site,
+                activation_to_x_site, activation_value,
+                activation_derivative)
             lookahead_direction = site_direction(
                 lookahead_site, lookahead_target)
             site = clamp_site_precisions(
                 add_scaled_sites(site, lookahead_direction, alpha))
             previous_direction = direction
             has_previous_direction = true
+        elseif vector_transport_nesterov
+            site, previous_update, previous_metric =
+                vector_transport_nesterov_site_step(
+                    site,
+                    direction,
+                    previous_update,
+                    previous_metric;
+                    alpha,
+                    momentum=vector_transport_momentum,
+                    damping=vector_transport_damping,
+                )
         elseif vector_transport
             site, previous_update, previous_metric = vector_transport_site_step(
                 site, direction, previous_update, previous_metric;
@@ -524,6 +584,30 @@ function infer_batch_two_hidden_mlp(
                 damping=vector_transport_damping)
         else
             site = clamp_site_precisions(damp_sites(site, target, alpha))
+        end
+        if inference_backend === :direct && loss_backtracking
+            proposed_site = site
+            site, _, backtracks = backtrack_site_objective(
+                old_site,
+                proposed_site,
+                candidate -> direct_two_hidden_batch_loss(
+                    candidate,
+                    priors,
+                    batch_x,
+                    batch_y;
+                    global_site_scale,
+                    activation_value,
+                );
+                max_backtracks,
+            )
+            if vector_transport || vector_transport_nesterov
+                previous_update = site_direction(old_site, site)
+                previous_metric = diagonal_site_metric(
+                    site;
+                    damping=vector_transport_damping,
+                )
+            end
+            verbose && @info "inner=$inner backtracks=$backtracks"
         end
         last_delta = site_update_norm(site, old_site)
         verbose && @info "inner=$inner delta=$(round(last_delta, sigdigits=3))"
@@ -536,19 +620,29 @@ function infer_batch_two_hidden_mlp(
         (delta=last_delta, marginals=marginals)
 end
 
-function predict_two_hidden_mlp(priors, input)
-    hidden1 = softplus.(priors.w1_m * input)
-    hidden2 = softplus.(priors.w2_m * hidden1)
+function predict_two_hidden_mlp(
+    priors,
+    input;
+    activation_value=softplus,
+)
+    hidden1 = activation_value.(priors.w1_m * input)
+    hidden2 = activation_value.(priors.w2_m * hidden1)
     logits = priors.c_m .+ priors.u_m * hidden2
     probabilities = softmax_probs(logits)
     return priors.classes[argmax(probabilities)], probabilities
 end
 
-function evaluate_two_hidden_mlp(priors, x, y; max_images=size(x, 2))
+function evaluate_two_hidden_mlp(
+    priors,
+    x,
+    y;
+    max_images=size(x, 2),
+    activation_value=softplus,
+)
     n = min(max_images, size(x, 2))
     n == 0 && return 0.0
-    hidden1 = softplus.(priors.w1_m * @view(x[:, 1:n]))
-    hidden2 = softplus.(priors.w2_m * hidden1)
+    hidden1 = activation_value.(priors.w1_m * @view(x[:, 1:n]))
+    hidden2 = activation_value.(priors.w2_m * hidden1)
     logits = priors.c_m .+ priors.u_m * hidden2
     correct = count(1:n) do i
         prediction = priors.classes[argmax(@view logits[:, i])]
@@ -584,6 +678,7 @@ function train_two_hidden_mlp_rxinfer_demo(
     ; ntrain=1000, nval=100, ntest=100,
     dataset=:mnist,
     image_size=nothing,
+    split_sampling=:balanced,
     hidden1_count=32,
     hidden2_count=32,
     batch_size=32,
@@ -603,14 +698,30 @@ function train_two_hidden_mlp_rxinfer_demo(
     nesterov_beta=0.9,
     nesterov_eps=1e-8,
     vector_transport=false,
+    vector_transport_nesterov=false,
     vector_transport_momentum=0.5,
     vector_transport_damping=1e-6,
     max_inner=3,
+    loss_backtracking=false,
+    max_backtracks=10,
     eval_max_images=1000,
     inference_backend=:direct,
+    activation_to_a_site=softplus_activation_to_a_site,
+    activation_to_x_site=softplus_to_x_site,
+    activation_value=softplus,
+    activation_derivative=sigmoid,
+    activation_name="Softplus",
 )
     data = load_flattened_image_dataset(
-        dataset; ntrain, nval, ntest, seed, classes, image_size)
+        dataset;
+        ntrain,
+        nval,
+        ntest,
+        seed,
+        classes,
+        image_size,
+        split_sampling,
+    )
     classes = data.classes
     input_count = size(data.train_x, 1)
     w1_init_scale = something(
@@ -629,9 +740,9 @@ function train_two_hidden_mlp_rxinfer_demo(
     best_priors = copy_two_hidden_priors(priors)
     best_epoch = 0
 
-    println("RxInfer two-hidden-layer Softplus MLP dataset=$(data.name) classes=$classes")
-    println("train=$(length(data.train_y)) val=$(length(data.val_y)) test=$(length(data.test_y)) image_size=$(data.image_size) channels=$(data.channels) input=$input_count hidden1=$hidden1_count hidden2=$hidden2_count batch=$batch_size epochs=$epochs max_inner=$max_inner inference_backend=$inference_backend")
-    println("init_scales=($(round(w1_init_scale, digits=3)), $(round(w2_init_scale, digits=3)), $(round(u_init_scale, digits=3))) direct_weight_site_scale=$direct_weight_site_scale projected_nesterov=$projected_nesterov nesterov_beta=$nesterov_beta nesterov_eps=$nesterov_eps vector_transport=$vector_transport")
+    println("$(inference_backend === :direct ? "Direct" : "RxInfer") two-hidden-layer $activation_name MLP dataset=$(data.name) classes=$classes")
+    println("train=$(length(data.train_y)) val=$(length(data.val_y)) test=$(length(data.test_y)) split_sampling=$split_sampling image_size=$(data.image_size) channels=$(data.channels) input=$input_count hidden1=$hidden1_count hidden2=$hidden2_count batch=$batch_size epochs=$epochs max_inner=$max_inner inference_backend=$inference_backend loss_backtracking=$loss_backtracking max_backtracks=$max_backtracks")
+    println("init_scales=($(round(w1_init_scale, digits=3)), $(round(w2_init_scale, digits=3)), $(round(u_init_scale, digits=3))) direct_weight_site_scale=$direct_weight_site_scale alpha=$alpha projected_nesterov=$projected_nesterov nesterov_beta=$nesterov_beta nesterov_eps=$nesterov_eps vector_transport=$vector_transport vector_transport_nesterov=$vector_transport_nesterov vector_transport_momentum=$vector_transport_momentum")
 
     for epoch in 1:epochs
         order = balanced_two_hidden_epoch_order(data.train_y, classes, rng)
@@ -647,20 +758,30 @@ function train_two_hidden_mlp_rxinfer_demo(
                 direct_weight_site_scale, discriminative_site_scale,
                 alpha, global_site_scale=site_scale,
                 projected_nesterov, nesterov_beta, nesterov_eps,
-                vector_transport, vector_transport_momentum,
-                vector_transport_damping, max_inner, inference_backend)
+                vector_transport, vector_transport_nesterov,
+                vector_transport_momentum,
+                vector_transport_damping, max_inner, inference_backend,
+                loss_backtracking, max_backtracks,
+                activation_to_a_site, activation_to_x_site,
+                activation_value, activation_derivative)
             push!(deltas, stats.delta)
             ProgressMeter.next!(progress)
         end
 
         train_acc = evaluate_two_hidden_mlp(
             priors, data.train_x, data.train_y;
-            max_images=min(eval_max_images, length(data.train_y)))
+            max_images=min(eval_max_images, length(data.train_y)),
+            activation_value)
         val_acc = evaluate_two_hidden_mlp(
             priors, data.val_x, data.val_y;
-            max_images=min(eval_max_images, length(data.val_y)))
+            max_images=min(eval_max_images, length(data.val_y)),
+            activation_value)
         predicted_classes = Set([
-            predict_two_hidden_mlp(priors, @view(data.train_x[:, i]))[1]
+            predict_two_hidden_mlp(
+                priors,
+                @view(data.train_x[:, i]);
+                activation_value,
+            )[1]
             for i in 1:min(eval_max_images, length(data.train_y))
         ])
         push!(history, (; epoch, train_acc, val_acc, mean_delta=mean(deltas)))
@@ -675,8 +796,9 @@ function train_two_hidden_mlp_rxinfer_demo(
 
     test_acc = evaluate_two_hidden_mlp(
         best_priors, data.test_x, data.test_y;
-        max_images=min(eval_max_images, length(data.test_y)))
-    println("best_val_epoch=$best_epoch best_val_acc=$(round(best_val_acc, digits=3)) test_acc=$(round(test_acc, digits=3))")
+        max_images=min(eval_max_images, length(data.test_y)),
+        activation_value)
+    println("best_val_epoch=$best_epoch best_val_acc=$(round(best_val_acc, digits=6)) test_acc=$(round(test_acc, digits=6))")
     return (; priors=best_priors, history, data, test_acc)
 end
 
