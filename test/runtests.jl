@@ -25,6 +25,10 @@ function ClosedFormExpectations.mean(
     return (zero(Distributions.mean(q)), Distributions.std(q))
 end
 
+# @testset "UCI hierarchy benchmark" begin
+#     include("uci_hierarchy_deep_kernel_tests.jl")
+# end
+
 @testset "closed-form tangent projection" begin
     m = 0.4
     v = 0.7
@@ -77,6 +81,8 @@ end
     include("ngmp/normal_mean_precision_joint_belief_tests.jl")
     include("ngmp/softdot_info_form_tests.jl")
     include("ngmp/softdot_relaxed_structure_tests.jl")
+    include("ngmp/dense_last_layer_gp_tests.jl")
+    include("mv_stack_tests.jl")
     include("ngmp/unscented_tests.jl")
     #TODO for now I do not need MvNormalScalePrecision rules, test shows how it works
     # but so far implementation is so hard that I leave it for the future
