@@ -14,6 +14,7 @@ end
 begin
     ENV["GKSwstype"] = "100"
 
+    using Distributions: InverseGamma
     using LinearAlgebra
     using Plots
     using Printf
@@ -372,6 +373,10 @@ declared through `predictvars`, so RxInfer performs the prediction by message pa
 ``q(y_*)`` is read straight off the graph. (A variable supplied through `data` is not
 returned among the posteriors even when its value is `missing`, which is why `features`
 is the data variable here and `y` is not.)
+
+For the hierarchical models prediction also retains ``q(\mathtt{precision}[1,o])``.
+That marginal contains more information than the single variance of ``q(y_o)``; below
+we turn it into sampling-free posterior bounds on the variance itself.
 """
 
 # ╔═╡ 0c1d2e3f-eafb-4cad-8f12-b0c1d2e3feaf
@@ -434,12 +439,43 @@ begin
             constraints = fit.n_layers == 1 ? gp_constraints() : hierarchy_constraints(),
             initialization = init,
             predictvars = (y = KeepLast(),),
+            returnvars = fit.n_layers == 1 ?
+                (γ = KeepLast(),) : (precision = KeepLast(),),
             iterations = PREDICT_ITERATIONS, free_energy = false, showprogress = false,
             options = (limit_stack_depth = 100,),
         )
 
         marginals = collect(vec(result.predictions[:y]))
-        return (; mean = mean.(marginals), variance = var.(marginals))
+        precisions = fit.n_layers == 1 ?
+            fill(result.posteriors[:γ], length(rows)) :
+            collect(result.posteriors[:precision][1, :])
+
+        # Conditional on λₒ = precision[1, o], integrating q(v) gives
+        # Var(yₒ | λₒ, data) = ϕₒ'Σᵥϕₒ + 1/λₒ. Since q(λₒ) is Gamma(shape, rate),
+        # this variance is a shifted InverseGamma(shape, rate): its moments and
+        # quantiles are available exactly, with no Monte Carlo samples.
+        _, V = mean_cov(fit.v)
+        latent_variance = [dot(ϕ, V * ϕ) for ϕ in rows]
+        inverse_precisions =
+            InverseGamma.(shape.(precisions), rate.(precisions))
+        noise_variance_mean = mean.(inverse_precisions)
+        noise_variance_median = quantile.(inverse_precisions, 0.5)
+        noise_variance_lower = quantile.(inverse_precisions, 0.025)
+        noise_variance_upper = quantile.(inverse_precisions, 0.975)
+        variance_posterior = (;
+            mean = latent_variance .+ noise_variance_mean,
+            median = latent_variance .+ noise_variance_median,
+            lower = latent_variance .+ noise_variance_lower,
+            upper = latent_variance .+ noise_variance_upper,
+            latent = latent_variance,
+            noise_mean = noise_variance_mean,
+        )
+
+        return (;
+            mean = mean.(marginals),
+            variance = var.(marginals),
+            variance_posterior,
+        )
     end
 end
 
@@ -458,11 +494,50 @@ end
 
 # ╔═╡ 3f4a5b6c-bdce-4fda-8c45-e3f4a5b6cbdc
 md"""
-## Predictive mean and predictive variance, one row per depth
+## Predictive mean — and a posterior over predictive variance
+
+At a test input ``x_o``, prediction gives
+
+```math
+q(v)=\mathcal N(m_v,\Sigma_v), \qquad
+q(\lambda_o)=q(\mathtt{precision}[1,o])
+             =\operatorname{Gamma}(\alpha_o,\beta_o)
+```
+
+where ``\beta_o`` is a **rate**. After integrating the uncertainty in ``v``, but
+conditioning on ``\lambda_o``, the predictive variance is the random quantity
+
+```math
+S_o \equiv \operatorname{Var}(y_o\mid\lambda_o,\mathcal D)
+    = \underbrace{\phi_o^\top\Sigma_v\phi_o}_{c_o}
+      + \lambda_o^{-1},
+\qquad
+S_o-c_o \sim \operatorname{InverseGamma}(\alpha_o,\beta_o).
+```
+
+Consequently its posterior mean (when ``\alpha_o>1``) and every quantile are analytic:
+
+```math
+\mathbb E[S_o]=c_o+\frac{\beta_o}{\alpha_o-1},\qquad
+```
+
+```math
+\operatorname{CrI}_{95\%}(S_o)
+=c_o+\left[
+Q_{.025}\{\operatorname{InvGamma}(\alpha_o,\beta_o)\},
+Q_{.975}\{\operatorname{InvGamma}(\alpha_o,\beta_o)\}
+\right].
+```
+
+No sampling is involved. The shaded region in the right column is this **pointwise
+95% posterior credible interval for the variance**; it is distinct from the 95%
+predictive band for ``y_o`` in the left column. The dotted curve isolates the known
+shift ``c_o`` contributed by uncertainty in the mean weights.
 
 Left: the posterior predictive with a 95% band. Right: the predictive variance against
 the **true** conditional variance (dash-dot). The right column is where the hierarchy
-shows up, and row 1 shows what a GP can do there: a horizontal line.
+shows up. For the GP in row 1 the noise part is constant; only the separately displayed
+mean-weight contribution can vary with ``x``.
 """
 
 # ╔═╡ 4a5b6c7d-cedf-4aeb-8d56-f4a5b6c7dced
@@ -472,6 +547,7 @@ begin
     panels = []
     for (n_layers, prediction) in zip(LAYER_COUNTS, grid_predictions)
         band = 1.96 .* sqrt.(max.(prediction.variance, 0.0))
+        variance_summary = prediction.variance_posterior
         mean_panel = plot(
             grid, prediction.mean;
             ribbon = band, fillalpha = 0.2, color = :steelblue, linewidth = 2,
@@ -486,12 +562,21 @@ begin
             markerstrokewidth = 0, label = "train")
 
         variance_panel = plot(
-            grid, max.(prediction.variance, 1e-4);
-            color = :steelblue, linewidth = 2, label = "Var q(y*)",
+            grid, max.(variance_summary.lower, 1e-4);
+            fillrange = max.(variance_summary.upper, 1e-4),
+            fillcolor = :steelblue, fillalpha = 0.18,
+            color = :transparent, linewidth = 0,
+            label = "95% CrI for variance",
             xlabel = "x", ylabel = "variance", yscale = :log10,
             title = "$(depth_label(n_layers)): variance", titlefontsize = 9,
             legend = :topleft, legendfontsize = 6, ylims = (1e-4, 1e2),
         )
+        plot!(variance_panel, grid, max.(variance_summary.mean, 1e-4);
+            color = :steelblue, linewidth = 2,
+            label = "posterior mean variance")
+        plot!(variance_panel, grid, max.(variance_summary.latent, 1e-4);
+            color = :darkorange, linestyle = :dot, linewidth = 1.5,
+            label = "mean-weight contribution")
         plot!(variance_panel, grid, max.(true_noise_variance.(grid), 1e-4);
             color = :black, linestyle = :dashdot, linewidth = 2,
             label = "true noise variance")
@@ -510,9 +595,10 @@ md"""
 `logpdf` is the column that matters: it scores the whole predictive distribution, whereas
 `RMSE` scores only the mean and is blind to whether the uncertainty is honest.
 
-`noise corr` is the correlation between the model's predictive variance and the true
-conditional variance across the held-out inputs. It isolates what the hierarchy is for,
-and a GP scores zero on it by construction.
+`noise corr` is the correlation between the posterior mean of ``1/\lambda(x)`` and the
+true conditional variance across the held-out inputs. The mean-weight contribution
+``\phi(x)^\top\Sigma_v\phi(x)`` is deliberately excluded: this metric isolates what the
+noise hierarchy is for, and a GP scores zero on it by construction.
 """
 
 # ╔═╡ 6c7d8e9f-eafb-4cad-8f78-b6c7d8e9feaf
@@ -521,10 +607,14 @@ begin
         variance = max.(prediction.variance, 1e-8)
         residual = ys .- prediction.mean
         truth = true_noise_variance.(xs)
+        estimated_noise = prediction.variance_posterior.noise_mean
+        effectively_constant =
+            std(estimated_noise) <= sqrt(eps()) * max(mean(abs, estimated_noise), eps())
+        noise_corr = effectively_constant ? 0.0 : cor(estimated_noise, truth)
         return (;
             logpdf = mean(-0.5 .* (log.(2pi .* variance) .+ abs2.(residual) ./ variance)),
             rmse = sqrt(mean(abs2.(residual))),
-            noise_corr = cor(prediction.variance, truth),
+            noise_corr,
         )
     end
 
@@ -546,9 +636,11 @@ end
 md"""
 ## What to take from this
 
-**One layer is a GP, and its variance curve is flat.** Not a tuning failure — a single
-scalar precision cannot be a function of `x`, so row 1's right-hand panel cannot bend,
-and its noise correlation is zero to numerical precision.
+**One layer is a GP, and its noise variance is flat.** Not a tuning failure — a single
+scalar precision cannot be a function of `x`, so its posterior over ``1/\gamma`` is the
+same at every input and its noise correlation is zero. The total variance in row 1 may
+still bend by the dotted amount ``\phi^\top\Sigma_v\phi``: that is uncertainty about the
+mean function, not learned heteroscedastic noise.
 
 **The second layer changes the model family.** Integrating out a random precision gives a
 scale mixture of Gaussians, which is heavier-tailed and has a different width at every
