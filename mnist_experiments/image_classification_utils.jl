@@ -148,6 +148,20 @@ function select_balanced_indices(labels, classes, counts, rng; used=nothing)
     return indices
 end
 
+function select_natural_indices(labels, classes, count, rng; used=nothing)
+    count >= 0 || throw(ArgumentError("split sizes must be nonnegative"))
+    selected_classes = Set(classes)
+    candidates = findall(label -> label in selected_classes, labels)
+    if !isnothing(used)
+        filter!(index -> !(index in used), candidates)
+    end
+    length(candidates) >= count ||
+        throw(ArgumentError("dataset has $(length(candidates)) available images " *
+            "for classes $(sort!(collect(selected_classes))), but $count were requested"))
+    shuffle!(rng, candidates)
+    return candidates[1:count]
+end
+
 function load_flattened_image_dataset(
     dataset=:mnist;
     ntrain=1000,
@@ -156,6 +170,7 @@ function load_flattened_image_dataset(
     seed=1,
     classes=nothing,
     image_size=nothing,
+    split_sampling=:balanced,
 )
     name = canonical_dataset_name(dataset)
     spec = FLATTENED_DATASET_SPECS[name]
@@ -176,16 +191,31 @@ function load_flattened_image_dataset(
     isempty(missing_classes) ||
         throw(ArgumentError("classes $(missing_classes) are unavailable in $name"))
 
-    train_counts = balanced_dataset_counts(ntrain, length(selected_classes))
-    val_counts = balanced_dataset_counts(nval, length(selected_classes))
-    test_counts = balanced_dataset_counts(ntest, length(selected_classes))
-    train_indices = select_balanced_indices(
-        train_labels, selected_classes, train_counts, rng)
-    train_used = Set(train_indices)
-    val_indices = select_balanced_indices(
-        train_labels, selected_classes, val_counts, rng; used=train_used)
-    test_indices = select_balanced_indices(
-        test_labels, selected_classes, test_counts, rng)
+    if split_sampling === :balanced
+        train_counts = balanced_dataset_counts(ntrain, length(selected_classes))
+        val_counts = balanced_dataset_counts(nval, length(selected_classes))
+        test_counts = balanced_dataset_counts(ntest, length(selected_classes))
+        train_indices = select_balanced_indices(
+            train_labels, selected_classes, train_counts, rng)
+        train_used = Set(train_indices)
+        val_indices = select_balanced_indices(
+            train_labels, selected_classes, val_counts, rng; used=train_used)
+        test_indices = select_balanced_indices(
+            test_labels, selected_classes, test_counts, rng)
+    elseif split_sampling === :natural
+        # Preserve the empirical class proportions. This is required to use an
+        # entire official test split because MNIST is not exactly class-balanced.
+        train_indices = select_natural_indices(
+            train_labels, selected_classes, ntrain, rng)
+        train_used = Set(train_indices)
+        val_indices = select_natural_indices(
+            train_labels, selected_classes, nval, rng; used=train_used)
+        test_indices = select_natural_indices(
+            test_labels, selected_classes, ntest, rng)
+    else
+        throw(ArgumentError(
+            "split_sampling must be :balanced or :natural, got $split_sampling"))
+    end
 
     train_x, train_y = materialize_flattened_images(
         train_images, train_labels, train_indices, output_size)
@@ -199,5 +229,6 @@ function load_flattened_image_dataset(
         classes=selected_classes,
         image_size=output_size,
         channels=image_channels(train_images),
+        split_sampling,
     )
 end
