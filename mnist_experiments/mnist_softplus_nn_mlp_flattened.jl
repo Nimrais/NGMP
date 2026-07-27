@@ -185,6 +185,7 @@ end
 function train_nn_mlp_demo(; ntrain=10000, nval=1000, ntest=1000,
     dataset=:mnist,
     image_size=nothing,
+    split_sampling=:balanced,
     hidden_count=32,
     hidden_layers=7,
     batch_size=32,
@@ -197,7 +198,15 @@ function train_nn_mlp_demo(; ntrain=10000, nval=1000, ntest=1000,
     classes=nothing,
     eval_max_images=1000)
     data = load_flattened_image_dataset(
-        dataset; ntrain, nval, ntest, seed, classes, image_size)
+        dataset;
+        ntrain,
+        nval,
+        ntest,
+        seed,
+        classes,
+        image_size,
+        split_sampling,
+    )
     classes = data.classes
     input_count = size(data.train_x, 1)
     model = init_nn_mlp(input_count, hidden_count, classes;
@@ -207,7 +216,7 @@ function train_nn_mlp_demo(; ntrain=10000, nval=1000, ntest=1000,
     rng = MersenneTwister(seed + 30)
 
     println("Neural flattened softplus MLP dataset=$(data.name) classes=$(classes)")
-    println("train=$(length(data.train_y)) val=$(length(data.val_y)) test=$(length(data.test_y)) image_size=$(data.image_size) channels=$(data.channels) input=$input_count hidden_layers=$hidden_layers hidden_count=$hidden_count batch=$batch_size epochs=$epochs lr=$lr weight_decay=$weight_decay w_init_scale=$w_init_scale u_init_scale=$u_init_scale")
+    println("train=$(length(data.train_y)) val=$(length(data.val_y)) test=$(length(data.test_y)) split_sampling=$split_sampling image_size=$(data.image_size) channels=$(data.channels) input=$input_count hidden_layers=$hidden_layers hidden_count=$hidden_count batch=$batch_size epochs=$epochs lr=$lr weight_decay=$weight_decay w_init_scale=$w_init_scale u_init_scale=$u_init_scale")
 
     history = NamedTuple[]
     best_val_acc = -Inf
@@ -246,7 +255,7 @@ function train_nn_mlp_demo(; ntrain=10000, nval=1000, ntest=1000,
 
     test_acc = evaluate_nn_mlp(best_model, data.test_x, data.test_y;
         max_images=min(eval_max_images, length(data.test_y)))
-    println("best_val_epoch=$best_epoch best_val_acc=$(round(best_val_acc, digits=3)) test_acc=$(round(test_acc, digits=3))")
+    println("best_val_epoch=$best_epoch best_val_acc=$(round(best_val_acc, digits=6)) test_acc=$(round(test_acc, digits=6))")
     return (model=best_model, history=history, data=data, test_acc=test_acc)
 end
 

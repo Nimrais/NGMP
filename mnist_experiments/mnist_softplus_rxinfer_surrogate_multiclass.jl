@@ -441,6 +441,37 @@ function vector_transport_site_step(site, direction, previous_update, previous_m
     return next_site, next_update, next_metric
 end
 
+function vector_transport_nesterov_site_step(
+    site,
+    direction,
+    previous_velocity,
+    previous_metric;
+    alpha,
+    momentum,
+    damping,
+)
+    current_metric = diagonal_site_metric(site; damping)
+    transported_velocity = vector_transport_update(
+        previous_velocity,
+        previous_metric,
+        current_metric,
+    )
+    names = keys(site)
+    velocity = NamedTuple{names}(map(names) do name
+        momentum .* getfield(transported_velocity, name) .+
+        alpha .* getfield(direction, name)
+    end)
+    nesterov_step = NamedTuple{names}(map(names) do name
+        momentum .* getfield(velocity, name) .+
+        alpha .* getfield(direction, name)
+    end)
+    next_site = clamp_site_precisions(
+        add_scaled_sites(site, nesterov_step, 1.0),
+    )
+    next_metric = diagonal_site_metric(next_site; damping)
+    return next_site, velocity, next_metric
+end
+
 function add_smoothness_sites!(target, mx, smooth_precision)
     smooth_precision <= 0 && return target
     n_count, p_count, f_count = size(mx)

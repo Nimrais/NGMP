@@ -10,11 +10,18 @@ const RESULTS_DIR = abspath(get(ENV, "RESULTS_DIR", DEFAULT_RESULTS_DIR))
 const SUMMARY_PATH = joinpath(RESULTS_DIR, "summary.tsv")
 
 function configuration_name(model, optimizer, layers)
+    method = get(
+        Dict(
+            "vector_transport" => "vector transport",
+            "vector_transport_nesterov" => "vector-transport Nesterov",
+            "projected_nesterov" => "projected Nesterov",
+        ),
+        optimizer,
+        optimizer,
+    )
     if model == "rxinfer_1h"
-        method = optimizer == "vector_transport" ? "vector transport" : "projected Nesterov"
         return "RxInfer 1-layer ($method)"
     elseif model == "rxinfer_2h"
-        method = optimizer == "vector_transport" ? "vector transport" : "projected Nesterov"
         return "RxInfer 2-layer ($method)"
     end
     return "Neural $(layers)-layer"
