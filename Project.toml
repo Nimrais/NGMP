@@ -5,6 +5,7 @@ version = "0.1.0"
 
 [deps]
 BayesBase = "b4ee3484-f114-42fe-b91c-797d54a0c67e"
+BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
 CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
 ClosedFormExpectations = "70ff922c-62d4-418d-abfc-e284e489b734"
 DataDeps = "124859b0-ceae-595e-8997-d05f6a7a8dfe"
@@ -36,6 +37,7 @@ RxInfer = {rev = "main", url = "https://github.com/SizeIsntEverything/RxInfer.jl
 
 [compat]
 BayesBase = "1.5.9"
+BenchmarkTools = "1.8.0"
 ExponentialFamily = "2.4.0"
 ExponentialFamilyProjection = "3.3.0"
 JLD2 = "0.6.4"
