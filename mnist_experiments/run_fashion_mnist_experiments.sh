@@ -14,7 +14,7 @@ JULIA_BIN="${JULIA_BIN:-julia}"
 EPOCHS="${EPOCHS:-50}"
 BATCH_SIZE="${BATCH_SIZE:-32}"
 HIDDEN_COUNTS="${HIDDEN_COUNTS:-${HIDDEN_COUNT:-32 64 128}}"
-RXINFER_OPTIMIZERS="${RXINFER_OPTIMIZERS:-vector_transport projected_nesterov}"
+RXINFER_OPTIMIZERS="${RXINFER_OPTIMIZERS:-vector_transport vector_transport_nesterov projected_nesterov}"
 EXPERIMENT_CONFIGS="${EXPERIMENT_CONFIGS:-1000,100,100 10000,1000,1000}"
 NN_LAYERS="${NN_LAYERS:-1 2 3 4 5 6 7}"
 
@@ -39,10 +39,12 @@ run_experiment() {
     local script function_call run_name log_file start_time end_time elapsed exit_code
     local final_line best_epoch best_val test_acc status
     local projected_nesterov=false vector_transport=false
+    local vector_transport_nesterov=false
 
     case "${optimizer}" in
         projected_nesterov) projected_nesterov=true ;;
         vector_transport) vector_transport=true ;;
+        vector_transport_nesterov) vector_transport_nesterov=true ;;
         standard)
             if [[ "${model}" != "neural" ]]; then
                 printf 'Optimizer standard is only valid for the neural model\n' >&2
@@ -115,6 +117,7 @@ run_experiment() {
                 epochs=${EPOCHS},
                 projected_nesterov=${projected_nesterov},
                 vector_transport=${vector_transport},
+                vector_transport_nesterov=${vector_transport_nesterov},
                 max_inner=3,
                 inference_backend=:direct,
             )
@@ -134,6 +137,7 @@ run_experiment() {
                 epochs=${EPOCHS},
                 projected_nesterov=${projected_nesterov},
                 vector_transport=${vector_transport},
+                vector_transport_nesterov=${vector_transport_nesterov},
                 max_inner=3,
                 inference_backend=:direct,
             )
