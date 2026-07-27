@@ -2,7 +2,7 @@
 
 julia_version = "1.11.9"
 manifest_format = "2.0"
-project_hash = "79f8f034f973582e0191cf825002fa771ed09ee8"
+project_hash = "bce8f5ba37eae07c2a2e73a33f59cf2c38a782f5"
 
 [[deps.ADTypes]]
 git-tree-sha1 = "ec6be48a85c93d995563b84bff8a86bc98df45ce"
@@ -3224,9 +3224,11 @@ version = "0.0.283+0"
 
 [[deps.ReactiveMP]]
 deps = ["BayesBase", "DiffResults", "Distributions", "DomainIntegrals", "DomainSets", "ExponentialFamily", "FastCholesky", "FastGaussQuadrature", "FixedArguments", "ForwardDiff", "HCubature", "LazyArrays", "LinearAlgebra", "MacroTools", "MatrixCorrectionTools", "Optim", "PolyaGammaHybridSamplers", "PositiveFactorizations", "Random", "Rocket", "SpecialFunctions", "StatsBase", "StatsFuns", "TinyHugeNumbers", "Tullio", "TupleTools", "UUIDs"]
-git-tree-sha1 = "2196a408620ad732b114972b3d540095eb71a935"
+git-tree-sha1 = "08be97ac000e38e6c1a04eec449890e66f5a9483"
+repo-rev = "main"
+repo-url = "https://github.com/SizeIsntEverything/ReactiveMP.jl.git"
 uuid = "a194aa59-28ba-4574-a09c-4a745416d6e3"
-version = "6.3.1"
+version = "6.3.3"
 weakdeps = ["ExponentialFamilyProjection", "Optimisers"]
 
     [deps.ReactiveMP.extensions]
@@ -3377,7 +3379,9 @@ version = "0.5.22"
 
 [[deps.RxInfer]]
 deps = ["Base64", "BayesBase", "DataStructures", "Dates", "Distributions", "DomainSets", "ExponentialFamily", "FastCholesky", "GraphPPL", "HTTP", "JSON", "LinearAlgebra", "Logging", "MacroTools", "Optim", "Preferences", "ProgressMeter", "Random", "ReactiveMP", "Reexport", "Rocket", "SparseArrays", "Static", "Statistics", "TupleTools", "UUIDs"]
-git-tree-sha1 = "4098a13ad0db656071d6e71ff085cbec69300412"
+git-tree-sha1 = "95f3b01d90e8a9a88331ed794ef61c7b9388690f"
+repo-rev = "main"
+repo-url = "https://github.com/SizeIsntEverything/RxInfer.jl.git"
 uuid = "86711068-29c9-4ff7-b620-ae75d7495b3d"
 version = "5.5.0"
 

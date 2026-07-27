@@ -30,6 +30,10 @@ StatsPlots = "f3b207a7-027a-5e70-b257-86293d7955fd"
 TupleTools = "9d95972d-f1c8-5527-a6e0-b4b365fa01f6"
 YAML = "ddb6d928-2868-570f-bddf-ab3f9cf99eb6"
 
+[sources]
+ReactiveMP = {rev = "main", url = "https://github.com/SizeIsntEverything/ReactiveMP.jl.git"}
+RxInfer = {rev = "main", url = "https://github.com/SizeIsntEverything/RxInfer.jl.git"}
+
 [compat]
 BayesBase = "1.5.9"
 ExponentialFamily = "2.4.0"
@@ -38,6 +42,7 @@ JLD2 = "0.6.4"
 LinearAlgebra = "1.11.0"
 ProbabilisticEnsembling = "0.0.1"
 ReactiveMP = "6.3.0"
+RxInfer = "5.5.0"
 StatsPlots = "0.15.8"
 TupleTools = "1"
 YAML = "0.4.16"
