@@ -73,6 +73,8 @@ function run_configuration(
             params = refit.params,
             standardizer = prepared.outer.standardizer,
             test_indices = prepared.outer.test_indices,
+            method = "Bayes by Backprop (sampled free energy)",
+            method_reference = "Blundell et al., PMLR 37:1613-1622 (2015)",
             best_epoch = selection.best_epoch,
             likelihood = likelihood,
             model_seed = seeds.model,
@@ -81,6 +83,9 @@ function run_configuration(
     end
 
     return (
+        method = "Bayes by Backprop (sampled free energy)",
+        method_reference = "Blundell et al., PMLR 37:1613-1622 (2015)",
+        uci_protocol_reference = "Tschantz et al., arXiv:2503.24016, Appendix F.3",
         dataset = dataset.key,
         dataset_name = dataset.display_name,
         split = split_id,
@@ -114,6 +119,9 @@ function failure_row(
 )
     metric_values = (; (name => NaN for name in SCALAR_METRIC_NAMES)...)
     return (
+        method = "Bayes by Backprop (sampled free energy)",
+        method_reference = "Blundell et al., PMLR 37:1613-1622 (2015)",
+        uci_protocol_reference = "Tschantz et al., arXiv:2503.24016, Appendix F.3",
         dataset = dataset.key,
         dataset_name = dataset.display_name,
         split = split_id,
@@ -175,7 +183,7 @@ function run_benchmark(config::BBBConfig = load_config())
                     run_configuration(dataset, split_id, likelihood, config)
                 catch error
                     @error(
-                        "BBB configuration failed",
+                        "Bayes-by-Backprop configuration failed",
                         dataset = dataset_key,
                         split = split_id,
                         likelihood = likelihood,
@@ -203,7 +211,7 @@ function run_benchmark(config::BBBConfig = load_config())
     failures = isempty(runs) ? 0 :
         count(==("failure"), string.(runs.status))
     println(
-        "BBB benchmark complete: $successful successful rows, $failures " *
+        "Bayes-by-Backprop benchmark complete: $successful successful rows, $failures " *
         "failure rows. Output: $(config.output_dir)",
     )
     return (runs = runs, summary = summary, output_dir = config.output_dir)

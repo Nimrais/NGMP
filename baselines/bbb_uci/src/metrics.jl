@@ -14,7 +14,7 @@ function predictive_samples(
     for sample in 1:n_samples
         epsilon = sample_epsilon(params, rng)
         sample_means, sample_scales = forward_sample(
-            params, epsilon, features, likelihood, config.noise_floor,
+            params, epsilon, features, likelihood, config,
         )
         means[sample, :] .= sample_means
         variances[sample, :] .= sample_scales .^ 2

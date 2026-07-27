@@ -77,13 +77,16 @@ end
 Base.@kwdef struct BBBConfig
     datasets::Vector{String} = first.(DATASET_REGISTRY)
     n_splits::Int = 5
-    likelihoods::Vector{String} = ["homoscedastic", "heteroscedastic"]
+    likelihoods::Vector{String} = ["heteroscedastic"]
     hidden_units::Int = 50
     batch_size::Int = 100
     learning_rate::Float64 = 1e-3
+    prior_mean::Float64 = 0.0
     prior_std::Float64 = 1.0
     initial_posterior_std::Float64 = 0.05
-    noise_floor::Float64 = 1e-3
+    homo_log_variance::Float64 = 0.0
+    minimum_log_variance::Float64 = -20.0
+    maximum_log_variance::Float64 = 20.0
     max_epochs::Int = 500
     min_epochs::Int = 25
     validation_every::Int = 5
@@ -107,14 +110,20 @@ function load_config()
         datasets = parse_datasets(get(ENV, "BBB_DATASETS", "all")),
         n_splits = env_int("BBB_SPLITS", 5),
         likelihoods = parse_likelihoods(
-            get(ENV, "BBB_LIKELIHOODS", "homoscedastic,heteroscedastic"),
+            get(ENV, "BBB_LIKELIHOODS", "heteroscedastic"),
         ),
         hidden_units = env_int("BBB_HIDDEN_UNITS", 50),
         batch_size = env_int("BBB_BATCH_SIZE", 100),
         learning_rate = env_float("BBB_LEARNING_RATE", 1e-3),
+        prior_mean = env_float("BBB_PRIOR_MEAN", 0.0),
         prior_std = env_float("BBB_PRIOR_STD", 1.0),
-        initial_posterior_std = env_float("BBB_INITIAL_POSTERIOR_STD", 0.05),
-        noise_floor = env_float("BBB_NOISE_FLOOR", 1e-3),
+        initial_posterior_std =
+            env_float("BBB_INITIAL_POSTERIOR_STD", 0.05),
+        homo_log_variance = env_float("BBB_HOMO_LOG_VARIANCE", 0.0),
+        minimum_log_variance =
+            env_float("BBB_MINIMUM_LOG_VARIANCE", -20.0),
+        maximum_log_variance =
+            env_float("BBB_MAXIMUM_LOG_VARIANCE", 20.0),
         max_epochs = env_int("BBB_MAX_EPOCHS", 500),
         min_epochs = env_int("BBB_MIN_EPOCHS", 25),
         validation_every = env_int("BBB_VALIDATION_EVERY", 5),
@@ -144,11 +153,22 @@ function validate_config(config::BBBConfig)
     config.batch_size >= 1 || throw(ArgumentError("BBB_BATCH_SIZE must be positive"))
     config.learning_rate > 0 ||
         throw(ArgumentError("BBB_LEARNING_RATE must be positive"))
-    config.prior_std > 0 || throw(ArgumentError("BBB_PRIOR_STD must be positive"))
+    isfinite(config.prior_mean) ||
+        throw(ArgumentError("BBB_PRIOR_MEAN must be finite"))
+    config.prior_std > 0 ||
+        throw(ArgumentError("BBB_PRIOR_STD must be positive"))
     config.initial_posterior_std > 0 ||
         throw(ArgumentError("BBB_INITIAL_POSTERIOR_STD must be positive"))
-    config.noise_floor > 0 ||
-        throw(ArgumentError("BBB_NOISE_FLOOR must be positive"))
+    isfinite(config.homo_log_variance) ||
+        throw(ArgumentError("BBB_HOMO_LOG_VARIANCE must be finite"))
+    all(isfinite, (
+        config.minimum_log_variance,
+        config.maximum_log_variance,
+    )) || throw(ArgumentError("BBB log-variance bounds must be finite"))
+    config.minimum_log_variance < config.maximum_log_variance ||
+        throw(ArgumentError(
+            "BBB_MINIMUM_LOG_VARIANCE must be below BBB_MAXIMUM_LOG_VARIANCE",
+        ))
     config.max_epochs >= 1 ||
         throw(ArgumentError("BBB_MAX_EPOCHS must be positive"))
     1 <= config.min_epochs <= config.max_epochs ||

@@ -11,16 +11,17 @@ function initialize_bayesian_layer(
     rng::AbstractRNG,
     input_dimension::Int,
     output_dimension::Int,
-    posterior_std::Real,
+    config::BBBConfig,
 )
     bound = Float32(inv(sqrt(input_dimension)))
-    rho = Float32(inverse_softplus(posterior_std))
+    rho = Float32(inverse_softplus(config.initial_posterior_std))
     return (
         weight_mu = rand(
             rng, Float32, output_dimension, input_dimension,
         ) .* (2f0 * bound) .- bound,
         weight_rho = fill(rho, output_dimension, input_dimension),
-        bias_mu = rand(rng, Float32, output_dimension) .* (2f0 * bound) .- bound,
+        bias_mu = rand(rng, Float32, output_dimension) .*
+            (2f0 * bound) .- bound,
         bias_rho = fill(rho, output_dimension),
     )
 end
@@ -28,8 +29,10 @@ end
 """
     initialize_model(input_dimension, likelihood, config; seed)
 
-Construct a 50-50 Bayesian ReLU network (or the configured hidden width).
-Every weight and bias has an independent Gaussian variational posterior.
+Construct the two-hidden-layer, 50-unit Bayesian ReLU network used for the
+UCI comparison in Tschantz et al. (2025), with the Bayes-by-Backprop
+posterior of Blundell et al. (2015). Every weight and bias has an independent
+Gaussian variational posterior.
 """
 function initialize_model(
     input_dimension::Int,
@@ -41,27 +44,17 @@ function initialize_model(
         throw(ArgumentError("unknown likelihood '$likelihood'"))
     rng = StableRNG(seed)
     output_dimension = likelihood == "homoscedastic" ? 1 : 2
-    common = (
+    return (
         layer1 = initialize_bayesian_layer(
-            rng, input_dimension, config.hidden_units,
-            config.initial_posterior_std,
+            rng, input_dimension, config.hidden_units, config,
         ),
         layer2 = initialize_bayesian_layer(
-            rng, config.hidden_units, config.hidden_units,
-            config.initial_posterior_std,
+            rng, config.hidden_units, config.hidden_units, config,
         ),
         output = initialize_bayesian_layer(
-            rng, config.hidden_units, output_dimension,
-            config.initial_posterior_std,
+            rng, config.hidden_units, output_dimension, config,
         ),
     )
-    if likelihood == "homoscedastic"
-        initial_noise = max(1.0 - config.noise_floor, config.noise_floor)
-        return merge(common, (
-            noise_raw = Float32[inverse_softplus(initial_noise)],
-        ))
-    end
-    return common
 end
 
 function sample_layer_epsilon(rng::AbstractRNG, layer)
@@ -79,60 +72,111 @@ function sample_epsilon(params, rng::AbstractRNG)
     )
 end
 
-function sampled_affine(features::AbstractMatrix, layer, epsilon)
+function sampled_layer(layer, epsilon)
     weight_std = stable_softplus.(layer.weight_rho)
     bias_std = stable_softplus.(layer.bias_rho)
-    weight = layer.weight_mu .+ weight_std .* epsilon.weight
-    bias = layer.bias_mu .+ bias_std .* epsilon.bias
-    return features * transpose(weight) .+ transpose(bias)
+    return (
+        weight = layer.weight_mu .+ weight_std .* epsilon.weight,
+        bias = layer.bias_mu .+ bias_std .* epsilon.bias,
+    )
+end
+
+function sampled_affine(
+    features::AbstractMatrix,
+    layer,
+    epsilon,
+)
+    sampled = sampled_layer(layer, epsilon)
+    return features * transpose(sampled.weight) .+ transpose(sampled.bias)
 end
 
 """
-    forward_sample(params, epsilon, features, likelihood, noise_floor)
+    forward_sample(params, epsilon, features, likelihood, config)
 
 One reparameterized network draw. Returns standardized-target means and
-strictly positive standardized-target observation scales.
+strictly positive standardized-target observation scales. The
+heteroscedastic output is `(m, ℓ)` with variance `exp(ℓ)`, matching equation
+(8) of Wu et al. (2019), as referenced by the BPC uncertainty experiments.
 """
 function forward_sample(
     params,
     epsilon,
     features::AbstractMatrix,
     likelihood::String,
-    noise_floor::Real,
+    config::BBBConfig,
 )
     hidden1 = max.(sampled_affine(features, params.layer1, epsilon.layer1), 0f0)
     hidden2 = max.(sampled_affine(hidden1, params.layer2, epsilon.layer2), 0f0)
     output = sampled_affine(hidden2, params.output, epsilon.output)
     means = vec(@view output[:, 1])
     scales = if likelihood == "homoscedastic"
-        fill(stable_softplus(params.noise_raw[1]) + Float32(noise_floor), length(means))
+        fill(exp(0.5f0 * Float32(config.homo_log_variance)), length(means))
     elseif likelihood == "heteroscedastic"
-        stable_softplus.(vec(@view output[:, 2])) .+ Float32(noise_floor)
+        log_variances = clamp.(
+            vec(@view output[:, 2]),
+            Float32(config.minimum_log_variance),
+            Float32(config.maximum_log_variance),
+        )
+        exp.(0.5f0 .* log_variances)
     else
         throw(ArgumentError("unknown likelihood '$likelihood'"))
     end
     return means, scales
 end
 
-function layer_gaussian_kl(layer, prior_std::Real)
-    prior_variance = Float32(prior_std^2)
-    weight_std = stable_softplus.(layer.weight_rho)
-    bias_std = stable_softplus.(layer.bias_rho)
-    weight_kl = 0.5f0 .* sum(
-        (weight_std .^ 2 .+ layer.weight_mu .^ 2) ./ prior_variance .-
-        1f0 .+ 2f0 .* (Float32(log(prior_std)) .- log.(weight_std)),
+function normal_logdensity_sum(
+    values::AbstractArray,
+    means,
+    standard_deviations,
+)
+    return sum(
+        -0.5f0 .* LOG2PI_F32 .-
+        log.(standard_deviations) .-
+        0.5f0 .* ((values .- means) ./ standard_deviations) .^ 2,
     )
-    bias_kl = 0.5f0 .* sum(
-        (bias_std .^ 2 .+ layer.bias_mu .^ 2) ./ prior_variance .-
-        1f0 .+ 2f0 .* (Float32(log(prior_std)) .- log.(bias_std)),
-    )
-    return weight_kl + bias_kl
 end
 
-function gaussian_kl(params, prior_std::Real = 1.0)
-    return layer_gaussian_kl(params.layer1, prior_std) +
-        layer_gaussian_kl(params.layer2, prior_std) +
-        layer_gaussian_kl(params.output, prior_std)
+function sampled_layer_complexity(
+    layer,
+    epsilon,
+    prior_mean::Real,
+    prior_std::Real,
+)
+    sampled = sampled_layer(layer, epsilon)
+    weight_std = stable_softplus.(layer.weight_rho)
+    bias_std = stable_softplus.(layer.bias_rho)
+    log_q = normal_logdensity_sum(
+        sampled.weight, layer.weight_mu, weight_std,
+    ) + normal_logdensity_sum(
+        sampled.bias, layer.bias_mu, bias_std,
+    )
+    prior_mean_f32 = Float32(prior_mean)
+    prior_std_f32 = Float32(prior_std)
+    log_p = normal_logdensity_sum(
+        sampled.weight, prior_mean_f32, prior_std_f32,
+    ) + normal_logdensity_sum(
+        sampled.bias, prior_mean_f32, prior_std_f32,
+    )
+    return log_q - log_p
+end
+
+"""
+    sampled_complexity_cost(params, epsilon, config)
+
+Compute `log q(w|θ) - log p(w)` using exactly the same reparameterized weight
+draw that is used by the likelihood. This is the Monte Carlo complexity term
+in equation (2) of Blundell et al. (2015), rather than an analytic KL.
+"""
+function sampled_complexity_cost(params, epsilon, config::BBBConfig)
+    layer_cost(layer, layer_epsilon) = sampled_layer_complexity(
+        layer,
+        layer_epsilon,
+        config.prior_mean,
+        config.prior_std,
+    )
+    return layer_cost(params.layer1, epsilon.layer1) +
+        layer_cost(params.layer2, epsilon.layer2) +
+        layer_cost(params.output, epsilon.output)
 end
 
 function gaussian_nll(
@@ -147,9 +191,10 @@ end
 """
     elbo_loss(params, epsilon_samples, x, y, likelihood, config, n_training)
 
-The mini-batch objective is mean Gaussian NLL plus the analytic global KL
-divided by the number of training observations. Epsilon is sampled outside
-automatic differentiation, making the stochastic objective reproducible.
+The mini-batch objective averages Blundell et al.'s sampled variational free
+energy: Gaussian NLL plus sampled `log q(w|θ) - log p(w)`, normalized by the
+number of training observations. Epsilon is sampled outside automatic
+differentiation, making the stochastic objective reproducible.
 """
 function elbo_loss(
     params,
@@ -161,15 +206,16 @@ function elbo_loss(
     n_training::Int,
 )
     n_training >= 1 || throw(ArgumentError("n_training must be positive"))
-    likelihood_term = zero(Float32)
+    sampled_free_energy = zero(Float32)
     for epsilon in epsilon_samples
         means, scales = forward_sample(
-            params, epsilon, features, likelihood, config.noise_floor,
+            params, epsilon, features, likelihood, config,
         )
-        likelihood_term += gaussian_nll(targets, means, scales)
+        sampled_free_energy +=
+            gaussian_nll(targets, means, scales) +
+            sampled_complexity_cost(params, epsilon, config) / n_training
     end
-    likelihood_term /= length(epsilon_samples)
-    return likelihood_term + gaussian_kl(params, config.prior_std) / n_training
+    return sampled_free_energy / length(epsilon_samples)
 end
 
 gradient_sqnorm(::Nothing) = 0.0

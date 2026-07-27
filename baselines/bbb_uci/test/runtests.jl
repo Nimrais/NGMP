@@ -32,12 +32,13 @@ end
     end
     config = tiny_config()
     params = initialize_model(3, "heteroscedastic", config; seed = 1)
+    @test hasproperty(params, :layer2)
     @test all(stable_softplus.(params.layer1.weight_rho) .> 0)
     @test mean(stable_softplus.(params.layer1.weight_rho)) ≈
         config.initial_posterior_std rtol = 1e-5
 end
 
-@testset "sampling, forward pass, and KL" begin
+@testset "sampling, forward pass, and sampled complexity" begin
     config = tiny_config()
     params = initialize_model(3, "heteroscedastic", config; seed = 2)
     rng1 = StableRNG(9)
@@ -47,13 +48,14 @@ end
     @test epsilon1.layer1.weight == epsilon2.layer1.weight
     x = rand(StableRNG(4), Float32, 7, 3)
     means, scales = forward_sample(
-        params, epsilon1, x, "heteroscedastic", config.noise_floor,
+        params, epsilon1, x, "heteroscedastic", config,
     )
     @test size(means) == (7,)
     @test size(scales) == (7,)
-    @test all(scales .>= config.noise_floor)
-    @test isfinite(gaussian_kl(params, 1.0))
-    @test gaussian_kl(params, 1.0) > 0
+    @test all(isfinite, scales)
+    @test all(scales .> 0)
+    complexity = sampled_complexity_cost(params, epsilon1, config)
+    @test isfinite(complexity)
 
     scalar_layer = (
         weight_mu = reshape(Float32[0.3], 1, 1),
@@ -61,10 +63,24 @@ end
         bias_mu = Float32[-0.4],
         bias_rho = Float32[inverse_softplus(0.7)],
     )
+    scalar_epsilon = (
+        weight = reshape(Float32[0.25], 1, 1),
+        bias = Float32[-0.5],
+    )
+    sampled_weight = 0.3 + 0.2 * 0.25
+    sampled_bias = -0.4 + 0.7 * -0.5
+    lognormal(value, mean, scale) =
+        -0.5 * log(2pi) - log(scale) -
+        0.5 * ((value - mean) / scale)^2
     expected =
-        0.5 * (0.2^2 + 0.3^2 - 1 - log(0.2^2)) +
-        0.5 * (0.7^2 + 0.4^2 - 1 - log(0.7^2))
-    @test BBBUCI.layer_gaussian_kl(scalar_layer, 1.0) ≈ expected rtol = 1e-5
+        lognormal(sampled_weight, 0.3, 0.2) +
+        lognormal(sampled_bias, -0.4, 0.7) -
+        lognormal(sampled_weight, 0.0, 1.0) -
+        lognormal(sampled_bias, 0.0, 1.0)
+    observed = BBBUCI.sampled_layer_complexity(
+        scalar_layer, scalar_epsilon, 0.0, 1.0,
+    )
+    @test observed ≈ expected rtol = 1e-5
 end
 
 @testset "mixture density and uncertainty decomposition" begin
@@ -138,6 +154,13 @@ end
     end
     @test isfinite(loss_before)
     @test isfinite(BBBUCI.gradient_sqnorm(gradients[1]))
+    means, scales = forward_sample(
+        params, only(epsilons), x, "heteroscedastic", config,
+    )
+    expected_loss =
+        BBBUCI.gaussian_nll(y, means, scales) +
+        sampled_complexity_cost(params, only(epsilons), config) / length(y)
+    @test loss_before ≈ expected_loss rtol = 1e-6
     optimizer_state = Optimisers.setup(Optimisers.Adam(1e-4), params)
     _, updated = Optimisers.update(optimizer_state, params, gradients[1])
     loss_after = BBBUCI.elbo_loss(
