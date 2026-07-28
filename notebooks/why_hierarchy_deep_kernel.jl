@@ -23,6 +23,7 @@ begin
     using StableRNGs
     using Statistics
     using SurrogateModelling
+    using SpecialFunctions: digamma, trigamma
 
     import ProbabilisticEnsembling: Exp
 end
@@ -147,21 +148,27 @@ Everything tunable lives here. The split matters: the **kernel** block is a mode
 choice fixed once, so that comparing depths does not also compare kernels. The
 **optimizer** block is inference machinery, and those were chosen by sweeping.
 
-Two of the optimizer settings are load-bearing, and both were found the hard way:
+Three optimizer settings are load-bearing:
 
 * `MAX_STEP` bounds the natural-gradient step. It is a safety rail.
 * `ALPHA` is a natural-gradient momentum step size.
+* `CARRIER_ALPHA` damps the cavity-corrected message sent between hierarchy levels.
 """
 
 # ╔═╡ ee55ff66-0011-4223-8344-556677889900
 begin
     # ---- benchmark ---------------------------------------------------------
-    const N_SAMPLES = 600
+    # Environment overrides make the message diagnostic reproducible on a tiny
+    # problem, e.g. HIERARCHY_N_SAMPLES=60 HIERARCHY_N_BASIS=3.
+    const N_SAMPLES =
+        parse(Int, get(ENV, "HIERARCHY_N_SAMPLES", "600"))
     const HOLDOUT_FRACTION = 1 / 3
     const DATA_SEED = 7
 
     # ---- kernel: fixed modelling choices, NOT tuned per depth ---------------
-    const N_BASIS = 16          # random Fourier features; must exceed the effective
+    const N_BASIS =
+        parse(Int, get(ENV, "HIERARCHY_N_BASIS", "16"))
+                                # random Fourier features; must exceed the effective
     const LENGTHSCALE = 0.25    #   rank of the data, or no model can widen off-data
     const SIGNAL_SD = 1.0       # mean-weight prior sd
     const LEVEL_SD = 0.4        # per-level weight sd; smaller on purpose, so a noise
@@ -170,12 +177,20 @@ begin
     const TOP_CARRIER = 25.0    # the top level's constant carrier precision
 
     # ---- optimizer: chosen by sweeping ------------------------------------
-    const LAYER_COUNTS = [1, 2, 3, 4, 5]
-    const ITERATIONS = 240      # log-density is monotone in this at ALPHA >= 0.3
+    const LAYER_COUNTS = parse.(
+        Int,
+        split(get(ENV, "HIERARCHY_LAYER_COUNTS", "1,2,3,4,5"), ","),
+    )
+    const ITERATIONS =
+        parse(Int, get(ENV, "HIERARCHY_ITERATIONS", "240"))
+                                # log-density is monotone in this at ALPHA >= 0.3
     const ALPHA = 0.6           # natural-gradient step size
     const MAX_STEP = 0.5        # load-bearing: 4.0 diverges by 120 iterations
     const METHOD = :damped
-    const PREDICT_ITERATIONS = 60   # prediction saturates by ~30
+    const CARRIER_ALPHA = 0.3   # the cavity-corrected softdot → carrier update
+    const PREDICT_ITERATIONS =
+        parse(Int, get(ENV, "HIERARCHY_PREDICT_ITERATIONS", "60"))
+                                # prediction saturates by ~30
     const PREDICT_ALPHA = 0.5
 end
 
@@ -247,7 +262,8 @@ end
 # L >= 2. Built from the top down: only the topmost score has a constant carrier, and
 # every level below is carried by the level above. `n_levels = L - 1`.
 @model function hierarchy_model(
-    y, features, n_levels, v_prior, w_priors, top_carrier, deps, damping,
+    y, features, n_levels, v_prior, w_priors, top_carrier,
+    exp_deps, exp_damping, carrier_deps, carrier_damping,
 )
     local w, score, precision
     v ~ v_prior
@@ -257,12 +273,16 @@ end
     for o in eachindex(features)
         score[n_levels, o] ~ softdot(features[o], w[n_levels], top_carrier)
         precision[n_levels, o] ~ Exp(score[n_levels, o]) where {
-            dependencies = deps, meta = damping,
+            dependencies = exp_deps, meta = exp_damping,
         }
         for k in (n_levels - 1):-1:1
-            score[k, o] ~ softdot(features[o], w[k], precision[k + 1, o])
+            score[k, o] ~ softdot(
+                features[o], w[k], precision[k + 1, o],
+            ) where {
+                dependencies = carrier_deps, meta = carrier_damping,
+            }
             precision[k, o] ~ Exp(score[k, o]) where {
-                dependencies = deps, meta = damping,
+                dependencies = exp_deps, meta = exp_damping,
             }
         end
         y[o] ~ softdot(features[o], v, precision[1, o])
@@ -329,9 +349,15 @@ end
 
 # ╔═╡ 8a9b0c1d-cedf-4aeb-8df0-f8a9b0c1dced
 begin
-    ngmp_deps() = NGMPDependencies(
+    exp_deps() = NGMPDependencies(
         out = nothing, in = nothing;
         projection = TangentProjection(type = ClosedForm),
+    )
+    carrier_deps() = NGMPDependencies(
+        γ = nothing;
+        # As in gaussian_surrogate.jl: three log-space sigma points track the
+        # quadrature reference closely while retaining the full cavity variance.
+        projection = TangentProjection(type = Unscented),
     )
     damping(alpha, max_step) =
         DampingMeta(alpha = alpha, beta = 0.0, max_step = max_step, method = METHOD)
@@ -359,8 +385,11 @@ begin
         gp_model(v_prior = priors.v, noise_prior = priors.noise) :
         hierarchy_model(
             n_levels = n_layers - 1, v_prior = priors.v, w_priors = priors.w,
-            top_carrier = TOP_CARRIER, deps = ngmp_deps(),
-            damping = damping(alpha, max_step),
+            top_carrier = TOP_CARRIER,
+            exp_deps = exp_deps(),
+            exp_damping = damping(alpha, max_step),
+            carrier_deps = carrier_deps(),
+            carrier_damping = damping(CARRIER_ALPHA, max_step),
         )
 end
 
@@ -404,7 +433,11 @@ begin
             constraints = n_layers == 1 ? gp_constraints() : hierarchy_constraints(),
             initialization = init,
             returnvars = n_layers == 1 ?
-                (v = KeepLast(), γ = KeepLast()) : (v = KeepLast(), w = KeepLast()),
+                (v = KeepLast(), γ = KeepLast()) :
+                (
+                    v = KeepLast(), w = KeepLast(),
+                    score = KeepLast(), precision = KeepLast(),
+                ),
             iterations = ITERATIONS, free_energy = false, showprogress = false,
             options = (limit_stack_depth = 100,),
         )
@@ -412,6 +445,8 @@ begin
         return (; n_layers,
             v = result.posteriors[:v],
             w = n_layers == 1 ? [] : collect(vec(result.posteriors[:w])),
+            score = n_layers == 1 ? nothing : result.posteriors[:score],
+            precision = n_layers == 1 ? nothing : result.posteriors[:precision],
             noise = n_layers == 1 ? result.posteriors[:γ] : priors.noise)
     end
 
@@ -490,6 +525,93 @@ begin
     grid_predictions = map(fit -> predict_layers(fit, grid), fits)
     test_predictions = map(fit -> predict_layers(fit, data.x_test), fits)
     nothing
+end
+
+# ╔═╡ 91a2b3c4-d5e6-47f8-9012-a3b4c5d6e7f8
+md"""
+## What actually crosses a layer boundary?
+
+The stock structured-VMP message from
+``s_k \sim \mathcal N(\phi^\top w_k,\lambda_{k+1}^{-1})`` toward
+``\lambda_{k+1}`` is
+
+```math
+m(\lambda_{k+1}) =
+\operatorname{Gamma}\!\left(\tfrac32,\tfrac12
+    \mathbb E[(s_k-\phi^\top w_k)^2]\right).
+```
+
+Its uncertainty on the log scale never becomes sharper per observation:
+``\operatorname{Var}[\log\lambda]=\psi_1(3/2)\approx 0.935`` (SD ``0.967``).
+Worse, using the already-coupled marginal ``q(s_k,w_k)`` feeds the current
+factor's own contraction back into its precision. In the one-coordinate case,
+when ``s_k=w_k``, the internal Gaussian contributes ``+\tfrac12\log\lambda`` per
+point. With ``n`` points and an intercept prior
+``b\sim\mathcal N(b_0,\sigma_b^2)``, the spurious fixed point moves by
+``n\sigma_b^2/2``.
+
+The model above now uses the correction demonstrated in
+`gaussian_surrogate.jl`: divide the current softdot factor out of
+``q(s_k,w_k)``, recover the independent Gaussian cavities, form the exact
+`NormalPrecisionMessage`, and project that message to the carrier Gamma edge.
+The `Exp` pullback also treats the incoming Gamma object as a possibly improper
+**site**, with no change-of-variables Jacobian. This removes the self-reinforcing
+precision collapse.
+
+The table below measures what remains. `signal` is the standard deviation across
+inputs of the posterior log-precision mean; `uncert` is its average pointwise
+posterior SD. Their ratio is a direct layer-to-layer message SNR. Level 1 is the
+data-noise process; larger indices are uncertainty-about-uncertainty.
+"""
+
+# ╔═╡ a2b3c4d5-e6f7-4809-a123-b4c5d6e7f809
+begin
+    function layer_message_diagnostic(fit, level)
+        score_marginals = fit.score[level, :]
+        precision_marginals = fit.precision[level, :]
+        log_precision_means =
+            digamma.(shape.(precision_marginals)) .-
+            log.(rate.(precision_marginals))
+        log_precision_sds = sqrt.(trigamma.(shape.(precision_marginals)))
+        signal = std(log_precision_means)
+        uncertainty = mean(log_precision_sds)
+        weight_mean = mean(fit.w[level])
+        prior_intercept = level == 1 ?
+            noise_anchor(data.x_train, data.y_train) : log(TOP_CARRIER)
+        return (;
+            level,
+            signal,
+            uncertainty,
+            snr = signal / uncertainty,
+            feature_weight_norm = norm(view(weight_mean, 1:N_BASIS)),
+            intercept_shift = weight_mean[end] - prior_intercept,
+        )
+    end
+
+    carrier_diagnostics = map(fits) do fit
+        fit.n_layers == 1 && return NamedTuple[]
+        [layer_message_diagnostic(fit, level)
+         for level in 1:(fit.n_layers - 1)]
+    end
+
+    @printf(
+        "stock per-observation log-carrier SD: %.4f\n",
+        sqrt(trigamma(1.5)),
+    )
+    @printf(
+        "%-5s %5s %10s %10s %9s %10s %11s\n",
+        "model", "level", "signal", "uncert", "SNR", "|w feat|", "Δ intercept",
+    )
+    for (n_layers, rows) in zip(LAYER_COUNTS, carrier_diagnostics)
+        for row in rows
+            @printf(
+                "L=%-3d %5d %10.4f %10.4f %9.4f %10.4f %+11.4f\n",
+                n_layers, row.level, row.signal, row.uncertainty, row.snr,
+                row.feature_weight_norm, row.intercept_shift,
+            )
+        end
+    end
+    carrier_diagnostics
 end
 
 # ╔═╡ 3f4a5b6c-bdce-4fda-8c45-e3f4a5b6cbdc
@@ -647,12 +769,20 @@ scale mixture of Gaussians, which is heavier-tailed and has a different width at
 input. That is why row 2's variance curve can follow the true noise, and it is the one
 qualitative jump in the table.
 
-**Further layers help, then saturate.** Each level adds a dense weight vector and a
-non-conjugate link, in exchange for a more refined statement about
-uncertainty-about-uncertainty. On this benchmark the gains fall off sharply, because a
-level whose score barely leaves its anchor passes the level below essentially the constant
-carrier it replaced. That is a benign way to fail: a too-deep model collapses gracefully
-onto the shallower one rather than misbehaving, so depth can be added speculatively.
+**Further layers help, then saturate — and the message table says why.** After the
+cavity correction, the first carrier message can still contain a little
+input-dependent signal, but its uncertainty is much larger. The next hop acts on
+that already-broad statement, so its signal-to-uncertainty ratio rapidly approaches
+zero and the learned feature weights remain at their anchor. At that point the added
+layer passes essentially the constant carrier it replaced and the deeper model
+collapses gracefully onto the shallower one.
+
+This diagnosis is different from the behaviour of the old structured-VMP carrier
+update. That update could also make depths look identical, but for the opposite
+reason: reusing ``q(s_k,w_k)`` rewarded a carrier for the contraction it had itself
+created and drove the shared log-carrier intercept upward. The exact
+`NormalPrecisionMessage` cavity construction removes that artificial precision
+collapse; the remaining saturation is the genuine vague-message effect.
 
 **Getting the optimizer wrong will hide all of this.** At `ALPHA = 0.1, ITERATIONS = 120`
 the depth ordering inverts, purely because that setting sits where the `L = 2` and `L = 3`
@@ -681,6 +811,8 @@ settled — which is why the configuration cell records why each value is what i
 # ╟─9b0c1d2e-dfea-4bfc-8e01-a9b0c1d2edfe
 # ╠═0c1d2e3f-eafb-4cad-8f12-b0c1d2e3feaf
 # ╠═2e3f4a5b-acbd-4ecf-8b34-d2e3f4a5bacb
+# ╟─91a2b3c4-d5e6-47f8-9012-a3b4c5d6e7f8
+# ╠═a2b3c4d5-e6f7-4809-a123-b4c5d6e7f809
 # ╟─3f4a5b6c-bdce-4fda-8c45-e3f4a5b6cbdc
 # ╠═4a5b6c7d-cedf-4aeb-8d56-f4a5b6c7dced
 # ╟─5b6c7d8e-dfea-4bfc-8e67-a5b6c7d8edfe
