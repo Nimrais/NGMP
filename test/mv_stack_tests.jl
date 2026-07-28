@@ -79,6 +79,32 @@ end
         @test cov(forward) ≈ Diagonal(unit_variances)
     end
 
+    @testset "uninformative half-edges remain neutral" begin
+        forward = mv_stack_rule_output(
+            fill(Uninformative(), n_units),
+        )
+        @test forward isa MvNormalWeightedMeanPrecision
+        @test norm(weightedmean(forward)) == 0
+        @test maximum(abs, Matrix(precision(forward))) <= 1e-10
+
+        out_mean = [0.4, 0.9, -0.2, 1.3]
+        out_cov = [
+            1.0  0.4 -0.3  0.1;
+            0.4  1.5  0.2 -0.2;
+           -0.3  0.2  0.8  0.3;
+            0.1 -0.2  0.3  1.1
+        ]
+        for target in 1:n_units
+            message = mv_stack_rule_input(
+                MvNormalMeanCovariance(out_mean, out_cov),
+                fill(Uninformative(), n_units - 1),
+                target,
+            )
+            @test mean(message) ≈ out_mean[target] atol = 1e-10
+            @test var(message) ≈ out_cov[target, target] atol = 1e-10
+        end
+    end
+
     @testset "backward message equals explicit cavity marginalisation" begin
         # An output cavity with genuine off-diagonal structure, so the test can
         # tell a correct marginalisation from a diagonal shortcut.
@@ -113,6 +139,51 @@ end
 
             @test mean(message) ≈ joint_mean[target] atol = 1e-10
             @test var(message) ≈ joint_cov[target, target] atol = 1e-10
+        end
+    end
+
+    @testset "backward message supports improper Gaussian sites" begin
+        out_mean = [0.4, 0.9, -0.2, 1.3]
+        out_cov = [
+            1.0  0.4 -0.3  0.1;
+            0.4  1.5  0.2 -0.2;
+           -0.3  0.2  0.8  0.3;
+            0.1 -0.2  0.3  1.1
+        ]
+        output = MvNormalMeanCovariance(out_mean, out_cov)
+        target = 1
+        site_precisions = [-3.0, 0.2, -1.5]
+        sites = [
+            NormalWeightedMeanPrecision(0.1 * index, site_precision)
+            for (index, site_precision) in enumerate(site_precisions)
+        ]
+        message = mv_stack_rule_input(output, sites, target)
+
+        joint_precision = inv(out_cov)
+        joint_weighted_mean = joint_precision * out_mean
+        for (offset, slot) in enumerate(2:n_units)
+            joint_precision[slot, slot] += site_precisions[offset]
+            joint_weighted_mean[slot] += 0.1 * offset
+        end
+        rest = 2:n_units
+        solved = joint_precision[rest, rest] \ hcat(
+            joint_precision[rest, target],
+            joint_weighted_mean[rest],
+        )
+        expected_precision =
+            joint_precision[target, target] -
+            dot(joint_precision[rest, target], solved[:, 1])
+        expected_weighted_mean =
+            joint_weighted_mean[target] -
+            dot(joint_precision[rest, target], solved[:, 2])
+
+        if expected_precision > sqrt(eps(Float64))
+            @test precision(message) ≈ expected_precision atol = 1e-10
+            @test weightedmean(message) ≈ expected_weighted_mean atol = 1e-10
+        else
+            @test precision(message) > 0
+            @test precision(message) <= 1e-10
+            @test weightedmean(message) == 0
         end
     end
 
