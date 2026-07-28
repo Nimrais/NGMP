@@ -25,9 +25,8 @@ function run_configuration(
     )
     selection_seconds = time() - selection_start
 
-    history_name = @sprintf(
-        "%s_split%02d_%s.csv", dataset.key, split_id, likelihood,
-    )
+    history_name =
+        configuration_stem(dataset.key, split_id, likelihood) * ".csv"
     history_path = joinpath(config.output_dir, "histories", history_name)
     atomic_csv_write(history_path, selection.history)
 
@@ -64,21 +63,20 @@ function run_configuration(
         throw(ErrorException("non-positive predictive variance"))
 
     if config.save_checkpoints
-        checkpoint_name = replace(history_name, ".csv" => ".jld2")
-        checkpoint_path = joinpath(
-            config.output_dir, "checkpoints", checkpoint_name,
-        )
-        JLD2.jldsave(
-            checkpoint_path;
-            params = refit.params,
-            standardizer = prepared.outer.standardizer,
-            test_indices = prepared.outer.test_indices,
-            method = "Bayes by Backprop (sampled free energy)",
-            method_reference = "Blundell et al., PMLR 37:1613-1622 (2015)",
-            best_epoch = selection.best_epoch,
-            likelihood = likelihood,
-            model_seed = seeds.model,
-            test_seed = seeds.test,
+        atomic_jld2_write(
+            posterior_checkpoint_path(
+                config, dataset.key, split_id, likelihood,
+            ),
+            bbb_posterior_record(
+                dataset,
+                prepared,
+                likelihood,
+                refit.params,
+                selection,
+                seeds,
+                metrics,
+                config,
+            ),
         )
     end
 
@@ -89,6 +87,7 @@ function run_configuration(
         dataset = dataset.key,
         dataset_name = dataset.display_name,
         split = split_id,
+        split_protocol = UCI_SPLIT_PROTOCOL_VERSION,
         likelihood = likelihood,
         status = "success",
         error = "",
@@ -125,6 +124,7 @@ function failure_row(
         dataset = dataset.key,
         dataset_name = dataset.display_name,
         split = split_id,
+        split_protocol = UCI_SPLIT_PROTOCOL_VERSION,
         likelihood = likelihood,
         status = "failure",
         error = sprint(showerror, error, catch_backtrace()),
@@ -157,6 +157,7 @@ function run_benchmark(config::BBBConfig = load_config())
     validate_config(config)
     ensure_output_directories(config)
     save_config(config)
+    write_split_manifest(config)
     runs = config.resume ? load_run_table(config) : DataFrame()
     total = length(config.datasets) * config.n_splits * length(config.likelihoods)
     completed = 0
@@ -167,7 +168,7 @@ function run_benchmark(config::BBBConfig = load_config())
             for likelihood in config.likelihoods
                 completed += 1
                 if config.resume && configuration_succeeded(
-                    runs, dataset_key, split_id, likelihood,
+                    runs, dataset_key, split_id, likelihood, config,
                 )
                     println(
                         "[$completed/$total] skip $(dataset.display_name) " *

@@ -74,7 +74,7 @@ reproduce that table. The following choices are local and are recorded in
   consider 1, 2, 5, or 10, while Tschantz et al. specify only the 20 samples
   used for LPD evaluation;
 - train-only feature and target standardization;
-- deterministic 90/10 train/test splits, repeated over five seeds;
+- deterministic 90/10 train/test splits, repeated over 20 seeds;
 - inner validation for epoch selection, followed by reinitialization and
   refitting on the complete outer training partition;
 - uniform initialization of posterior means and initial posterior standard
@@ -112,7 +112,7 @@ BBB_MAX_EPOCHS=10 BBB_MIN_EPOCHS=5 BBB_PATIENCE=2 \
 julia --project=baselines/bbb_uci baselines/bbb_uci/run.jl
 ```
 
-Run the default 30 configurations (six datasets × five splits × one
+Run the default 120 configurations (six datasets × 20 splits × one
 likelihood):
 
 ```sh
@@ -120,9 +120,40 @@ DATADEPS_ALWAYS_ACCEPT=true \
 julia --project=baselines/bbb_uci baselines/bbb_uci/run.jl
 ```
 
+Run both likelihoods for all 20 splits (240 configurations):
+
+```sh
+DATADEPS_ALWAYS_ACCEPT=true \
+BBB_LIKELIHOODS=homoscedastic,heteroscedastic \
+julia --project=baselines/bbb_uci baselines/bbb_uci/run.jl
+```
+
 Outputs are written incrementally under `results/bbb_uci/<timestamp>/`.
 Every `runs.csv` row contains the method and protocol references. Set
 `BBB_OUTPUT_DIR` to reuse a directory; successful configurations are skipped.
+Each result directory also contains `split_manifest.jld2`. BBB and DVI both
+use the versioned `repeated-holdout-v1` implementation in
+`SurrogateModelling`, so independently launched runs produce identical outer
+and inner row indices for the same dataset, split seed, and fractions.
+
+Versioned posterior checkpoints are written atomically under `checkpoints/`.
+They contain the complete factorized weight posterior, standardizer, exact
+split indices, prediction configuration, and evaluation seed. Replay the
+saved holdout prediction with:
+
+```julia
+using BBBUCI
+
+checkpoint = load_posterior_checkpoint(
+    "results/bbb_uci/<run>/checkpoints/yacht_split01_heteroscedastic.jld2",
+)
+prediction = predict_holdout(checkpoint)
+prediction.metrics
+```
+
+Resume skips a successful configuration only when its versioned checkpoint
+also loads successfully. Reusing an output directory with different
+result-affecting settings is rejected.
 
 Result directories created by the earlier implementation lack the `method`,
 `method_reference`, and `uci_protocol_reference` columns. They used a

@@ -346,6 +346,12 @@ weakdeps = ["FastCholesky"]
     [deps.BayesBase.extensions]
     FastCholeskyExt = "FastCholesky"
 
+[[deps.BenchmarkTools]]
+deps = ["Compat", "JSON", "Logging", "PrecompileTools", "Printf", "Profile", "Statistics", "UUIDs"]
+git-tree-sha1 = "9670d3febc2b6da60a0ae57846ba74670290653f"
+uuid = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
+version = "1.8.0"
+
 [[deps.Bijectors]]
 deps = ["AbstractPPL", "ArgCheck", "ChainRulesCore", "ChangesOfVariables", "DifferentiationInterface", "Distributions", "DocStringExtensions", "EnzymeCore", "FillArrays", "Functors", "InverseFunctions", "IrrationalConstants", "LinearAlgebra", "LogExpFunctions", "MappedArrays", "Random", "Reexport", "Roots", "SparseArrays", "Statistics", "Test"]
 git-tree-sha1 = "b425418b2644f826823e8ebd4b68a076e8d8d2ec"
@@ -3079,6 +3085,10 @@ repo-url = "https://github.com/biaslab/PrecisionGatedExperts.git"
 uuid = "dab4be3b-02fa-4a9b-b857-091df78264db"
 version = "0.0.1"
 
+[[deps.Profile]]
+uuid = "9abbd945-dff8-562f-b5e8-e1ebf5ef1b79"
+version = "1.11.0"
+
 [[deps.ProgressLogging]]
 deps = ["Logging", "SHA", "UUIDs"]
 git-tree-sha1 = "f0803bc1171e455a04124affa9c21bba5ac4db32"
@@ -3855,7 +3865,7 @@ uuid = "bea87d4a-7f5b-5778-9afe-8cc45184846c"
 version = "7.7.0+0"
 
 [[deps.SurrogateModelling]]
-deps = ["BayesBase", "CSV", "ClosedFormExpectations", "DataDeps", "DataFrames", "Distributions", "ExponentialFamily", "ExponentialFamilyProjection", "FastGaussQuadrature", "JLD2", "LinearAlgebra", "MLDatasets", "Makie", "Plots", "Pluto", "ProbabilisticEnsembling", "Random", "ReactiveMP", "Rocket", "RxInfer", "SpecialFunctions", "Statistics", "StatsPlots", "TupleTools", "YAML"]
+deps = ["BayesBase", "BenchmarkTools", "CSV", "ClosedFormExpectations", "DataDeps", "DataFrames", "Distributions", "ExponentialFamily", "ExponentialFamilyProjection", "FastGaussQuadrature", "JLD2", "LinearAlgebra", "MLDatasets", "Makie", "Plots", "Pluto", "ProbabilisticEnsembling", "Random", "ReactiveMP", "Rocket", "RxInfer", "SpecialFunctions", "StableRNGs", "Statistics", "StatsPlots", "TupleTools", "YAML"]
 path = "../.."
 uuid = "513372d4-95e9-4230-b2b4-50eda1674c50"
 version = "0.1.0"

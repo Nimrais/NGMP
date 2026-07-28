@@ -14,6 +14,29 @@ const SCALAR_METRIC_NAMES = (
     :mean_aleatoric_variance_original,
 )
 
+const CONFIG_RUNTIME_ONLY_FIELDS = Set([
+    "output_dir",
+    "resume",
+    "make_plot",
+    "show_progress",
+])
+
+configuration_stem(dataset::String, split_id::Int, likelihood::String) =
+    @sprintf("%s_split%02d_%s", dataset, split_id, likelihood)
+
+function posterior_checkpoint_path(
+    config::BBBConfig,
+    dataset::String,
+    split_id::Int,
+    likelihood::String,
+)
+    return joinpath(
+        config.output_dir,
+        "checkpoints",
+        configuration_stem(dataset, split_id, likelihood) * ".jld2",
+    )
+end
+
 function ensure_output_directories(config::BBBConfig)
     mkpath(config.output_dir)
     mkpath(joinpath(config.output_dir, "histories"))
@@ -21,12 +44,59 @@ function ensure_output_directories(config::BBBConfig)
     return config.output_dir
 end
 
+function validate_resume_config(path::AbstractString, config::BBBConfig)
+    existing = TOML.parsefile(path)
+    requested = config_dictionary(config)
+    for key in keys(requested)
+        key in CONFIG_RUNTIME_ONLY_FIELDS && continue
+        haskey(existing, key) ||
+            throw(ArgumentError("existing config is missing '$key': $path"))
+        isequal(existing[key], requested[key]) || throw(ArgumentError(
+            "result-affecting config '$key' differs in $path",
+        ))
+    end
+    return nothing
+end
+
 function save_config(config::BBBConfig)
     path = joinpath(config.output_dir, "config.toml")
-    open(path, "w") do io
+    isfile(path) && validate_resume_config(path, config)
+    temporary = path * ".tmp-" * string(getpid())
+    open(temporary, "w") do io
         TOML.print(io, config_dictionary(config); sorted = true)
     end
+    mv(temporary, path; force = true)
     return path
+end
+
+function write_split_manifest(config::BBBConfig)
+    datasets = Dict{String, Any}()
+    for dataset_key in config.datasets
+        dataset = load_dataset(dataset_key)
+        datasets[dataset_key] = [
+            split_spec_record(spec)
+            for spec in uci_regression_splits(
+                size(dataset.features, 1),
+                config.n_splits;
+                base_seed = config.split_seed,
+                test_fraction = config.test_fraction,
+                validation_fraction = config.validation_fraction,
+            )
+        ]
+    end
+    record = (
+        schema_version = "uci-split-manifest-v1",
+        protocol_version = UCI_SPLIT_PROTOCOL_VERSION,
+        base_seed = config.split_seed,
+        n_splits = config.n_splits,
+        test_fraction = config.test_fraction,
+        validation_fraction = config.validation_fraction,
+        datasets = datasets,
+    )
+    return atomic_jld2_write(
+        joinpath(config.output_dir, "split_manifest.jld2"),
+        record,
+    )
 end
 
 function atomic_csv_write(path::AbstractString, table)
@@ -47,15 +117,29 @@ function configuration_succeeded(
     dataset::String,
     split_id::Int,
     likelihood::String,
+    config::BBBConfig,
 )
     isempty(runs) && return false
     required = (:dataset, :split, :likelihood, :status)
     all(name -> name in propertynames(runs), required) || return false
-    return any(eachrow(runs)) do row
+    row_succeeded = any(eachrow(runs)) do row
         string(row.dataset) == dataset &&
             Int(row.split) == split_id &&
             string(row.likelihood) == likelihood &&
             string(row.status) == "success"
+    end
+    row_succeeded || return false
+    config.save_checkpoints || return true
+    path = posterior_checkpoint_path(
+        config, dataset, split_id, likelihood,
+    )
+    return try
+        checkpoint = load_posterior_checkpoint(path)
+        checkpoint.dataset == dataset &&
+            checkpoint.split_id == split_id &&
+            checkpoint.likelihood == likelihood
+    catch
+        false
     end
 end
 

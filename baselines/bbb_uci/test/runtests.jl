@@ -125,18 +125,27 @@ end
 @testset "train-only preprocessing and deterministic splits" begin
     x = reshape(collect(1.0:40.0), 20, 2)
     y = collect(1.0:20.0)
-    split1 = deterministic_split(x, y; seed = 12, test_fraction = 0.2)
-    split2 = deterministic_split(x, y; seed = 12, test_fraction = 0.2)
+    split1 = uci_regression_split(
+        20, 1; base_seed = 12, test_fraction = 0.2,
+    )
+    split2 = uci_regression_split(
+        20, 1; base_seed = 12, test_fraction = 0.2,
+    )
     @test split1.train_indices == split2.train_indices
     @test split1.test_indices == split2.test_indices
     @test isempty(intersect(split1.train_indices, split1.test_indices))
 
-    prepared = prepare_split(split1)
+    prepared = prepare_uci_regression_partition(
+        x, y, split1.train_indices, split1.test_indices,
+    )
     @test maximum(abs, vec(mean(prepared.x_train_standardized; dims = 1))) < 1e-6
     @test abs(mean(prepared.y_train_standardized)) < 1e-6
 
-    altered_test = merge(split1, (x_test = split1.x_test .+ 1e6,))
-    altered = prepare_split(altered_test)
+    altered_x = copy(x)
+    altered_x[split1.test_indices, :] .+= 1e6
+    altered = prepare_uci_regression_partition(
+        altered_x, y, split1.train_indices, split1.test_indices,
+    )
     @test altered.standardizer == prepared.standardizer
 end
 
@@ -170,14 +179,65 @@ end
     @test loss_after <= loss_before + 1e-5
 end
 
+@testset "posterior checkpoint round trip and seeded prediction" begin
+    config = tiny_config(hidden_units = 4, eval_samples = 4)
+    params = initialize_model(2, "heteroscedastic", config; seed = 18)
+    split = uci_regression_split(20, 1; base_seed = 19)
+    standardizer = (
+        x_center = [1.0, -2.0],
+        x_scale = [2.0, 0.5],
+        y_center = 3.0,
+        y_scale = 1.5,
+    )
+    record = (
+        schema_version = BBBUCI.BBB_POSTERIOR_SCHEMA_VERSION,
+        split_protocol_version = BBBUCI.UCI_SPLIT_PROTOCOL_VERSION,
+        method = "test",
+        method_reference = "test",
+        dataset = "synthetic",
+        dataset_name = "Synthetic",
+        n_observations = 20,
+        n_features = 2,
+        split_id = 1,
+        split_spec = BBBUCI.split_spec_record(split),
+        likelihood = "heteroscedastic",
+        posterior_params = params,
+        standardizer = standardizer,
+        prediction_config = BBBUCI.posterior_prediction_config(config),
+        training_config = BBBUCI.config_dictionary(config),
+        best_epoch = 1,
+        model_seed = 18,
+        test_seed = 20,
+        test_metrics = (lpd_original = 0.0,),
+    )
+    path = joinpath(mktempdir(), "posterior.jld2")
+    BBBUCI.atomic_jld2_write(path, record)
+    loaded = load_posterior_checkpoint(path)
+    @test loaded.dataset == "synthetic"
+    @test loaded.split_spec.test_indices == split.test_indices
+
+    features = randn(StableRNG(21), 7, 2)
+    first_prediction = predict_posterior(loaded, features)
+    second_prediction = predict_posterior(path, features)
+    @test first_prediction.component_means_original ==
+        second_prediction.component_means_original
+    @test first_prediction.component_variances_original ==
+        second_prediction.component_variances_original
+    @test all(isfinite, first_prediction.predictive_mean_original)
+    @test all(first_prediction.total_variance_original .> 0)
+end
+
 @testset "offline synthetic integration" begin
     rng = StableRNG(22)
     x = randn(rng, 90, 3)
     noise_scale = 0.05 .+ 0.2 .* abs.(x[:, 1])
     y = sin.(x[:, 1]) .+ 0.5 .* x[:, 2] .+
         noise_scale .* randn(rng, 90)
-    inner = prepare_split(
-        deterministic_split(x, y; seed = 23, test_fraction = 0.2),
+    split = uci_regression_split(
+        length(y), 1; base_seed = 23, test_fraction = 0.2,
+    )
+    inner = prepare_uci_regression_partition(
+        x, y, split.train_indices, split.test_indices,
     )
     config = tiny_config(max_epochs = 3, patience = 3)
     selection = train_with_validation(

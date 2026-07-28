@@ -76,7 +76,7 @@ end
 
 Base.@kwdef struct BBBConfig
     datasets::Vector{String} = first.(DATASET_REGISTRY)
-    n_splits::Int = 5
+    n_splits::Int = UCI_DEFAULT_N_SPLITS
     likelihoods::Vector{String} = ["heteroscedastic"]
     hidden_units::Int = 50
     batch_size::Int = 100
@@ -93,9 +93,9 @@ Base.@kwdef struct BBBConfig
     patience::Int = 20
     train_samples::Int = 1
     eval_samples::Int = 20
-    test_fraction::Float64 = 0.1
-    validation_fraction::Float64 = 0.1
-    split_seed::Int = 20260726
+    test_fraction::Float64 = UCI_DEFAULT_TEST_FRACTION
+    validation_fraction::Float64 = UCI_DEFAULT_VALIDATION_FRACTION
+    split_seed::Int = UCI_DEFAULT_SPLIT_SEED
     model_seed::Int = 20260727
     gradient_clip::Float64 = Inf
     output_dir::String = default_output_directory()
@@ -108,7 +108,7 @@ end
 function load_config()
     config = BBBConfig(
         datasets = parse_datasets(get(ENV, "BBB_DATASETS", "all")),
-        n_splits = env_int("BBB_SPLITS", 5),
+        n_splits = env_int("BBB_SPLITS", UCI_DEFAULT_N_SPLITS),
         likelihoods = parse_likelihoods(
             get(ENV, "BBB_LIKELIHOODS", "heteroscedastic"),
         ),
@@ -130,9 +130,13 @@ function load_config()
         patience = env_int("BBB_PATIENCE", 20),
         train_samples = env_int("BBB_TRAIN_SAMPLES", 1),
         eval_samples = env_int("BBB_EVAL_SAMPLES", 20),
-        test_fraction = env_float("BBB_TEST_FRACTION", 0.1),
-        validation_fraction = env_float("BBB_VALIDATION_FRACTION", 0.1),
-        split_seed = env_int("BBB_SPLIT_SEED", 20260726),
+        test_fraction = env_float(
+            "BBB_TEST_FRACTION", UCI_DEFAULT_TEST_FRACTION,
+        ),
+        validation_fraction = env_float(
+            "BBB_VALIDATION_FRACTION", UCI_DEFAULT_VALIDATION_FRACTION,
+        ),
+        split_seed = env_int("BBB_SPLIT_SEED", UCI_DEFAULT_SPLIT_SEED),
         model_seed = env_int("BBB_MODEL_SEED", 20260727),
         gradient_clip = env_float("BBB_GRADIENT_CLIP", Inf),
         output_dir = abspath(get(
