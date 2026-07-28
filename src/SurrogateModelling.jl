@@ -3,6 +3,9 @@ module SurrogateModelling
 using DataDeps
 import CSV
 import DataFrames
+using Random
+using StableRNGs
+using Statistics
 
 # RxInfer custom factor nodes. We pull the modelling macros / distributions
 # from RxInfer (which re-exports ReactiveMP, ExponentialFamily and BayesBase)
@@ -54,8 +57,21 @@ export UnscentedTransforms
 include("datasets/sunspots.jl")
 include("datasets/etth1.jl")
 include("datasets/uci_regression.jl")
+include("datasets/uci_benchmark.jl")
 export Sunspots, ETTh1
 export UCIRegressionDataset, Yacht, Concrete, EnergyEfficiency, BostonHousing, PowerPlant, WineQualityRed
+export UCISplitSpec,
+    UCI_SPLIT_PROTOCOL_VERSION,
+    UCI_DEFAULT_N_SPLITS,
+    UCI_DEFAULT_SPLIT_SEED,
+    UCI_DEFAULT_TEST_FRACTION,
+    UCI_DEFAULT_VALIDATION_FRACTION,
+    uci_regression_split,
+    uci_regression_splits,
+    fit_uci_standardizer,
+    transform_uci_features,
+    transform_uci_targets,
+    prepare_uci_regression_partition
 
 include("nodes/poisson/poisson_exp.jl")
 include("nodes/poisson/expression.jl")

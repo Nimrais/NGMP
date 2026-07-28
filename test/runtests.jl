@@ -29,6 +29,10 @@ end
 #     include("uci_hierarchy_deep_kernel_tests.jl")
 # end
 
+@testset "UCI benchmark protocol" begin
+    include("uci_benchmark_tests.jl")
+end
+
 @testset "closed-form tangent projection" begin
     m = 0.4
     v = 0.7

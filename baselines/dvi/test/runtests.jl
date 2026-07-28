@@ -203,12 +203,18 @@ end
 @testset "preprocessing and deterministic splits" begin
     x = reshape(collect(1.0:40.0), 20, 2)
     y = collect(1.0:20.0)
-    split1 = deterministic_split(x, y; seed = 12, test_fraction = 0.2)
-    split2 = deterministic_split(x, y; seed = 12, test_fraction = 0.2)
+    split1 = uci_regression_split(
+        20, 1; base_seed = 12, test_fraction = 0.2,
+    )
+    split2 = uci_regression_split(
+        20, 1; base_seed = 12, test_fraction = 0.2,
+    )
     @test split1.train_indices == split2.train_indices
     @test split1.test_indices == split2.test_indices
     @test isempty(intersect(split1.train_indices, split1.test_indices))
-    prepared = prepare_split(split1)
+    prepared = prepare_uci_regression_partition(
+        x, y, split1.train_indices, split1.test_indices,
+    )
     @test maximum(abs, vec(mean(
         prepared.x_train_standardized; dims = 1,
     ))) < 1e-6
@@ -264,9 +270,15 @@ end
         sin.(features[:, 1]) .+
         0.5 .* features[:, 2] .+
         noise_scale .* randn(rng, 90)
-    prepared = prepare_split(deterministic_split(
-        features, targets; seed = 31, test_fraction = 0.2,
-    ))
+    split = uci_regression_split(
+        length(targets), 1; base_seed = 31, test_fraction = 0.2,
+    )
+    prepared = prepare_uci_regression_partition(
+        features,
+        targets,
+        split.train_indices,
+        split.test_indices,
+    )
     config = tiny_config(
         hidden_units = 6,
         initialization_scale = 0.1,

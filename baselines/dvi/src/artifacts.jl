@@ -1,3 +1,69 @@
+const CONFIG_RUNTIME_ONLY_FIELDS = Set([
+    "output_dir",
+    "resume",
+    "make_plot",
+    "show_progress",
+])
+const DVI_POSTERIOR_SCHEMA_VERSION = "dvi-uci-posterior-v1"
+
+function configuration_stem(
+    dataset::String,
+    split_id::Int,
+    likelihood::String,
+    propagation::String,
+)
+    return @sprintf(
+        "%s_split%02d_%s_%s",
+        dataset,
+        split_id,
+        likelihood,
+        propagation,
+    )
+end
+
+function posterior_checkpoint_path(
+    config::DVIConfig,
+    dataset::String,
+    split_id::Int,
+    likelihood::String,
+)
+    return joinpath(
+        config.output_dir,
+        "checkpoints",
+        configuration_stem(
+            dataset, split_id, likelihood, config.propagation,
+        ) * ".jld2",
+    )
+end
+
+function split_spec_record(spec::UCISplitSpec)
+    return (
+        protocol_version = spec.protocol_version,
+        split_id = spec.split_id,
+        n_observations = spec.n_observations,
+        outer_seed = spec.outer_seed,
+        inner_seed = spec.inner_seed,
+        test_fraction = spec.test_fraction,
+        validation_fraction = spec.validation_fraction,
+        train_indices = spec.train_indices,
+        test_indices = spec.test_indices,
+        inner_train_indices = spec.inner_train_indices,
+        validation_indices = spec.validation_indices,
+    )
+end
+
+function atomic_jld2_write(path::AbstractString, record::NamedTuple)
+    mkpath(dirname(path))
+    temporary = path * ".tmp-" * string(getpid())
+    try
+        JLD2.jldsave(temporary; record...)
+        mv(temporary, path; force = true)
+    finally
+        isfile(temporary) && rm(temporary; force = true)
+    end
+    return path
+end
+
 function ensure_output_directories(config::DVIConfig)
     mkpath(config.output_dir)
     mkpath(joinpath(config.output_dir, "histories"))
@@ -6,12 +72,58 @@ function ensure_output_directories(config::DVIConfig)
     return config.output_dir
 end
 
+function validate_resume_config(path::AbstractString, config::DVIConfig)
+    existing = TOML.parsefile(path)
+    requested = config_dictionary(config)
+    for key in keys(requested)
+        key in CONFIG_RUNTIME_ONLY_FIELDS && continue
+        haskey(existing, key) ||
+            throw(ArgumentError("existing config is missing '$key': $path"))
+        isequal(existing[key], requested[key]) || throw(ArgumentError(
+            "result-affecting config '$key' differs in $path",
+        ))
+    end
+    return nothing
+end
+
 function save_config(config::DVIConfig)
     path = joinpath(config.output_dir, "config.toml")
-    open(path, "w") do io
+    isfile(path) && validate_resume_config(path, config)
+    temporary = path * ".tmp-" * string(getpid())
+    open(temporary, "w") do io
         TOML.print(io, config_dictionary(config); sorted = true)
     end
+    mv(temporary, path; force = true)
     return path
+end
+
+function write_split_manifest(config::DVIConfig)
+    datasets = Dict{String, Any}()
+    for dataset_key in config.datasets
+        dataset = load_dataset(dataset_key)
+        datasets[dataset_key] = [
+            split_spec_record(spec)
+            for spec in uci_regression_splits(
+                size(dataset.features, 1),
+                config.n_splits;
+                base_seed = config.split_seed,
+                test_fraction = config.test_fraction,
+                validation_fraction = config.validation_fraction,
+            )
+        ]
+    end
+    return atomic_jld2_write(
+        joinpath(config.output_dir, "split_manifest.jld2"),
+        (
+            schema_version = "uci-split-manifest-v1",
+            protocol_version = UCI_SPLIT_PROTOCOL_VERSION,
+            base_seed = config.split_seed,
+            n_splits = config.n_splits,
+            test_fraction = config.test_fraction,
+            validation_fraction = config.validation_fraction,
+            datasets = datasets,
+        ),
+    )
 end
 
 function atomic_csv_write(path::AbstractString, table)
@@ -33,16 +145,45 @@ function configuration_succeeded(
     split_id::Int,
     likelihood::String,
     propagation::String,
+    config::DVIConfig,
 )
     isempty(runs) && return false
     required = (:dataset, :split, :likelihood, :propagation, :status)
     all(name -> name in propertynames(runs), required) || return false
-    return any(eachrow(runs)) do row
+    row_succeeded = any(eachrow(runs)) do row
         string(row.dataset) == dataset &&
             Int(row.split) == split_id &&
             string(row.likelihood) == likelihood &&
             string(row.propagation) == propagation &&
             string(row.status) == "success"
+    end
+    row_succeeded || return false
+    config.save_checkpoints || return true
+    path = posterior_checkpoint_path(
+        config, dataset, split_id, likelihood,
+    )
+    return try
+        JLD2.jldopen(path, "r") do file
+            all(
+                key -> haskey(file, key),
+                (
+                    "schema_version",
+                    "dataset",
+                    "split_id",
+                    "likelihood",
+                    "propagation",
+                    "posterior_params",
+                    "split_spec",
+                ),
+            ) &&
+                file["schema_version"] == DVI_POSTERIOR_SCHEMA_VERSION &&
+                file["dataset"] == dataset &&
+                file["split_id"] == split_id &&
+                file["likelihood"] == likelihood &&
+                file["propagation"] == propagation
+        end
+    catch
+        false
     end
 end
 

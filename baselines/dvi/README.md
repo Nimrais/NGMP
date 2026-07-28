@@ -84,6 +84,13 @@ method and stated protocol, not a claim of bit-for-bit reproduction of Table
   any configured KL warmup and annealing are complete;
 - validation patience of 500 checks.
 
+The exact repeated-holdout algorithm is shared with BBB through
+`SurrogateModelling`'s versioned `repeated-holdout-v1` protocol. Split IDs
+use sorted original-row indices, base seed `20260726`, and a fixed inner-seed
+offset. Every run writes the resulting index sets to `split_manifest.jld2`
+and to each versioned checkpoint, allowing independently launched baselines
+to be compared directly.
+
 The optimizer, minibatch size, stopping rule, standardization convention,
 posterior initialization, and exact UCI split seeds are not jointly specified
 by the paper. They must not be attributed to Wu et al.
@@ -164,7 +171,8 @@ mean. The split seed and the undisclosed original UCI optimizer details need
 not match the authors' experiment.
 
 Outputs are written incrementally under `results/dvi/<timestamp>/`.
-Successful configurations can be resumed by reusing `DVI_OUTPUT_DIR`.
+Successful configurations can be resumed by reusing `DVI_OUTPUT_DIR`; a
+configuration is skipped only when its checkpoint is present and valid.
 
 ## BibTeX
 

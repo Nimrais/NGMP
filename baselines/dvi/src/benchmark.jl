@@ -32,13 +32,9 @@ function run_configuration(
         seed = seeds.model,
     )
     selection_seconds = time() - selection_start
-    history_name = @sprintf(
-        "%s_split%02d_%s_%s.csv",
-        dataset.key,
-        split_id,
-        likelihood,
-        config.propagation,
-    )
+    history_name = configuration_stem(
+        dataset.key, split_id, likelihood, config.propagation,
+    ) * ".csv"
     atomic_csv_write(
         joinpath(config.output_dir, "histories", history_name),
         selection.history,
@@ -79,21 +75,35 @@ function run_configuration(
         throw(ErrorException("non-positive predictive variance"))
 
     if config.save_checkpoints
-        checkpoint_name = replace(history_name, ".csv" => ".jld2")
-        JLD2.jldsave(
-            joinpath(
-                config.output_dir, "checkpoints", checkpoint_name,
-            );
-            params = refit.params,
-            standardizer = prepared.outer.standardizer,
-            test_indices = prepared.outer.test_indices,
-            method = method_name(config),
-            method_reference =
-                "Wu et al., ICLR 2019, arXiv:1810.03958",
-            best_epoch = selection.best_epoch,
-            likelihood = likelihood,
-            propagation = config.propagation,
-            model_seed = seeds.model,
+        atomic_jld2_write(
+            posterior_checkpoint_path(
+                config, dataset.key, split_id, likelihood,
+            ),
+            (
+                schema_version = DVI_POSTERIOR_SCHEMA_VERSION,
+                split_protocol_version = UCI_SPLIT_PROTOCOL_VERSION,
+                dataset = dataset.key,
+                dataset_name = dataset.display_name,
+                n_observations = size(dataset.features, 1),
+                n_features = size(dataset.features, 2),
+                split_id = split_id,
+                split_spec = split_spec_record(prepared.split_spec),
+                posterior_params = refit.params,
+                standardizer = prepared.outer.standardizer,
+                method = method_name(config),
+                method_reference =
+                    "Wu et al., ICLR 2019, arXiv:1810.03958",
+                best_epoch = selection.best_epoch,
+                likelihood = likelihood,
+                propagation = config.propagation,
+                model_seed = seeds.model,
+                prediction_config = (
+                    hidden_units = config.hidden_units,
+                    homo_log_variance = config.homo_log_variance,
+                ),
+                training_config = config_dictionary(config),
+                test_metrics = scalar_metrics(metrics),
+            ),
         )
     end
 
@@ -103,6 +113,7 @@ function run_configuration(
         dataset = dataset.key,
         dataset_name = dataset.display_name,
         split = split_id,
+        split_protocol = UCI_SPLIT_PROTOCOL_VERSION,
         likelihood = likelihood,
         propagation = config.propagation,
         status = "success",
@@ -144,6 +155,7 @@ function failure_row(
         dataset = dataset.key,
         dataset_name = dataset.display_name,
         split = split_id,
+        split_protocol = UCI_SPLIT_PROTOCOL_VERSION,
         likelihood = likelihood,
         propagation = config.propagation,
         status = "failure",
@@ -172,6 +184,7 @@ function run_benchmark(config::DVIConfig = load_config())
     validate_config(config)
     ensure_output_directories(config)
     save_config(config)
+    write_split_manifest(config)
     runs = config.resume ? load_run_table(config) : DataFrame()
     total =
         length(config.datasets) *
@@ -190,6 +203,7 @@ function run_benchmark(config::DVIConfig = load_config())
                     split_id,
                     likelihood,
                     config.propagation,
+                    config,
                 )
                     println(
                         "[$completed/$total] skip $(dataset.display_name) " *

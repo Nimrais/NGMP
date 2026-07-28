@@ -76,7 +76,7 @@ end
 
 Base.@kwdef struct DVIConfig
     datasets::Vector{String} = first.(DATASET_REGISTRY)
-    n_splits::Int = 20
+    n_splits::Int = UCI_DEFAULT_N_SPLITS
     likelihoods::Vector{String} = ["heteroscedastic"]
     propagation::String = "full"
     hidden_units::Int = 50
@@ -93,9 +93,9 @@ Base.@kwdef struct DVIConfig
     patience::Int = 500
     kl_warmup_epochs::Int = 7_000
     kl_anneal_epochs::Int = 500
-    test_fraction::Float64 = 0.1
-    validation_fraction::Float64 = 0.1
-    split_seed::Int = 20260726
+    test_fraction::Float64 = UCI_DEFAULT_TEST_FRACTION
+    validation_fraction::Float64 = UCI_DEFAULT_VALIDATION_FRACTION
+    split_seed::Int = UCI_DEFAULT_SPLIT_SEED
     model_seed::Int = 20260727
     gradient_clip::Float64 = 0.1
     output_dir::String = default_output_directory()
@@ -108,7 +108,7 @@ end
 function load_config()
     config = DVIConfig(
         datasets = parse_datasets(get(ENV, "DVI_DATASETS", "all")),
-        n_splits = env_int("DVI_SPLITS", 20),
+        n_splits = env_int("DVI_SPLITS", UCI_DEFAULT_N_SPLITS),
         likelihoods = parse_likelihoods(
             get(ENV, "DVI_LIKELIHOODS", "heteroscedastic"),
         ),
@@ -128,9 +128,13 @@ function load_config()
         patience = env_int("DVI_PATIENCE", 500),
         kl_warmup_epochs = env_int("DVI_KL_WARMUP_EPOCHS", 7_000),
         kl_anneal_epochs = env_int("DVI_KL_ANNEAL_EPOCHS", 500),
-        test_fraction = env_float("DVI_TEST_FRACTION", 0.1),
-        validation_fraction = env_float("DVI_VALIDATION_FRACTION", 0.1),
-        split_seed = env_int("DVI_SPLIT_SEED", 20260726),
+        test_fraction = env_float(
+            "DVI_TEST_FRACTION", UCI_DEFAULT_TEST_FRACTION,
+        ),
+        validation_fraction = env_float(
+            "DVI_VALIDATION_FRACTION", UCI_DEFAULT_VALIDATION_FRACTION,
+        ),
+        split_seed = env_int("DVI_SPLIT_SEED", UCI_DEFAULT_SPLIT_SEED),
         model_seed = env_int("DVI_MODEL_SEED", 20260727),
         gradient_clip = env_float("DVI_GRADIENT_CLIP", 0.1),
         output_dir = abspath(get(

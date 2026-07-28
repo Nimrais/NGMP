@@ -13,7 +13,21 @@ using SpecialFunctions: erf
 using StableRNGs
 using Statistics
 using SurrogateModelling:
-    Yacht, Concrete, EnergyEfficiency, BostonHousing, PowerPlant, WineQualityRed
+    Yacht,
+    Concrete,
+    EnergyEfficiency,
+    BostonHousing,
+    PowerPlant,
+    WineQualityRed,
+    UCISplitSpec,
+    UCI_SPLIT_PROTOCOL_VERSION,
+    UCI_DEFAULT_N_SPLITS,
+    UCI_DEFAULT_SPLIT_SEED,
+    UCI_DEFAULT_TEST_FRACTION,
+    UCI_DEFAULT_VALIDATION_FRACTION,
+    uci_regression_split,
+    uci_regression_splits,
+    prepare_uci_regression_partition
 using TOML
 using Zygote
 
@@ -30,9 +44,9 @@ export DVIConfig,
     load_config,
     validate_config,
     parse_datasets,
-    deterministic_split,
-    fit_standardizer,
-    prepare_split,
+    uci_regression_split,
+    uci_regression_splits,
+    prepare_uci_regression_partition,
     standard_gaussian,
     gaussian_cdf,
     softrelu,
