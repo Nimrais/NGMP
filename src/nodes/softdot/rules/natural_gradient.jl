@@ -29,21 +29,62 @@
     return NaturalGradientMP.apply_damping!(meta, site)
 end
 
-# Hybrid gate for a STRUCTURED q(w, z) cluster with κ factorized apart: the rule
-# receives the joint local marginal over (z, w) — the relaxed-arm dependency
-# pattern — and builds the precision message with the cross-covariance
-# DELIBERATELY dropped. Keeping it is the τ-trap (fᵀCov(w,z) cancels the misfit
-# exactly, so every κ is a fixed point); the diagonalized quadratic restores the
-# mean-field-strength signal while w keeps its proper BP messages inside the
-# structured cluster.
+# Hybrid gate for a STRUCTURED q(w, z) cluster with κ factorized apart. The rule
+# receives the joint local marginal over (z, w), but the exact precision message
+# needs the independent Gaussian CAVITIES on z and w. Using the marginal directly
+# is another form of the τ-trap: the current softdot factor has already narrowed
+# both variances and correlated z with w, so feeding those moments back toward κ
+# rewards κ for explaining its own posterior contraction.
+#
+# Under the structured softdot marginal, the current factor contributes
+#
+#     κ̄ [1; -f] [1; -f]'
+#
+# to the joint precision and no weighted-mean term. Subtracting that block
+# therefore recovers the two cavity precision blocks exactly. We then integrate
+# those cavities as in the ordinary BP rule above and project the resulting
+# NormalPrecisionMessage at q(κ).
 @rule softdot(:γ, NaturalGradientMessage) (q_y_x::MultivariateNormalDistributionsFamily, q_θ::PointMass, q_γ::GammaDistributionsFamily, meta::NGMPEdgeState) = begin
     f = mean(q_θ)
-    m, V = mean_cov(q_y_x)               # joint over [z; w], (d+1)-dim
-    mz = m[1]
-    mw = view(m, 2:length(m))
-    vz = V[1, 1]
-    Vw = view(V, 2:size(V, 1), 2:size(V, 2))
-    exact = Logpdf(NormalPrecisionMessage(mz, dot(f, mw), vz + dot(f, Vw * f)))
+    ξ, Λ = weightedmean_precision(q_y_x)
+    # The reactive q(y, x) stream and q(κ) stream can be one update out of sync.
+    # Read the factor strength that was actually used to construct THIS joint
+    # marginal from its off-diagonal precision block:
+    #
+    #     Λ[y, x] = -κ̄ f'.
+    #
+    # Using mean(q_γ) here can over-subtract during that transient and create a
+    # spurious non-positive cavity precision in deeper asynchronous graphs.
+    feature_energy = dot(f, f)
+    κbar = feature_energy > eps(eltype(Λ)) ?
+        -dot(view(Λ, 1, 2:size(Λ, 2)), f) / feature_energy :
+        mean(q_γ)
+
+    py = Λ[1, 1] - κbar
+    # In a deep loopy graph the Exp-side Gaussian site can be locally convex,
+    # hence the exact cavity site need not be normalisable on its own even though
+    # q(y, x) is proper. NormalPrecisionMessage needs a proper Gaussian cavity;
+    # project such a transient to the vague boundary instead of feeding the
+    # current factor's own contraction back into κ.
+    cavity_floor =
+        sqrt(eps(eltype(Λ))) *
+        max(abs(Λ[1, 1]), abs(κbar), one(eltype(Λ)))
+    py = max(py, cavity_floor)
+    my = ξ[1] / py
+    vy = inv(py)
+
+    ξx = view(ξ, 2:length(ξ))
+    Λx = Matrix(view(Λ, 2:size(Λ, 1), 2:size(Λ, 2))) .- κbar .* (f * f')
+    Cx = cholesky(Hermitian(Λx))
+    cavity_solutions = Cx \ hcat(ξx, f)
+    mx = view(cavity_solutions, :, 1)
+    fx_variance = dot(f, view(cavity_solutions, :, 2))
+
+    exact = Logpdf(NormalPrecisionMessage(
+        my,
+        dot(f, mx),
+        vy + fx_variance,
+    ))
     site = project(resolve_projection(getprojection(vconstraint)), q_γ, exact)
     return NaturalGradientMP.apply_damping!(meta, site)
 end
