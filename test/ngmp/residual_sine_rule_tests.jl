@@ -113,6 +113,19 @@ import SurrogateModelling:
         eta_site = getnaturalparameters(expected_site)
         @test weightedmean(backward) ≈ eta_site[1] atol = 1e-10
         @test precision(backward) ≈ -2 * eta_site[2] atol = 1e-10
+
+        improper_state = NaturalGradientMP.NGMPEdgeState(
+            meta;
+            damping = DampingMeta(alpha = 1.0, beta = 0.0, max_step = Inf),
+        )
+        recovered = @call_rule ResidualSine(:in, NaturalGradientMessage) (
+            m_out = NormalMeanVariance(0.9, 0.5),
+            q_in = NormalWeightedMeanPrecision(1.0, -2.0),
+            meta = improper_state,
+        )
+        @test recovered isa NormalWeightedMeanPrecision
+        @test weightedmean(recovered) == 0.0
+        @test precision(recovered) == 0.0
     end
 
     @testset "sum-product forward and scoring marginal" begin

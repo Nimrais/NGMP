@@ -6,8 +6,9 @@
 # on the ClosedForm path, with the generic sigma-point/quadrature projections
 # available as ablations. All sites are damped through `apply_damping!`, so the
 # messages entering downstream Gaussian nodes (`ManyPlus`, `softdot`) are plain
-# `NormalWeightedMeanPrecision` and stay proper under damping-only (`beta = 0`)
-# updates.
+# `NormalWeightedMeanPrecision`. A transiently improper receiving marginal is
+# handled by sending a flat site until the surrounding Gaussian product
+# recovers.
 
 function DerivativeEnhancedFunction(
     p::Logpdf{<:ResidualSineForwardMessage},
@@ -94,6 +95,18 @@ end
     q_in::UnivariateNormalDistributionsFamily,
     meta::NGMPEdgeState,
 ) = begin
+    # MvStack may legitimately send an indefinite Gaussian *site* while
+    # eliminating the other coordinates. Its product with the remaining
+    # messages is normally proper, but asynchronous scheduling can expose a
+    # transiently non-positive-precision marginal here. Such a marginal cannot
+    # be a Fisher-projection point. A flat target decays this edge's previous
+    # site under damping and lets the cavity recover without inventing moments.
+    if !(isfinite(mean(q_in)) && isfinite(precision(q_in)) && precision(q_in) > 0)
+        return NaturalGradientMP.apply_damping!(
+            meta,
+            NormalWeightedMeanPrecision(0.0, 0.0),
+        )
+    end
     activation = _residual_sine_meta(meta)
     xi, Lambda = weightedmean_precision(m_out)
     exact = Logpdf(ResidualSineGaussianBackwardMessage(xi, Lambda, activation))
