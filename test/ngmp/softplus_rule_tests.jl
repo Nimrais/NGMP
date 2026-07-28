@@ -306,6 +306,10 @@ end
         )
         @test in_message isa NormalWeightedMeanPrecision
         @test all(isfinite, (weightedmean(in_message), precision(in_message)))
+        exponential_term = rate(gamma) * exp(mean(gaussian) + var(gaussian) / 2)
+        @test precision(in_message) ≈ exponential_term
+        @test weightedmean(in_message) ≈
+            (shape(gamma) - 1) + (mean(gaussian) - 1) * exponential_term
     end
 
     @testset "input marginal and finite deterministic free energy" begin

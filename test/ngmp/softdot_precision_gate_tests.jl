@@ -79,21 +79,38 @@ end
         end
     end
 
-    @testset "hybrid γ rule: joint q(z,w) with the cross-covariance dropped" begin
-        # joint over [z; w] with DELIBERATE nonzero cross-covariance — the rule
-        # must ignore it (keeping it is the τ-trap cancellation)
-        mj = [0.6, 0.2, -0.5, 0.7]
-        Vj = [0.5 0.3 -0.2 0.1; 0.3 0.8 0.2 -0.1; -0.2 0.2 0.6 0.15; 0.1 -0.1 0.15 0.9]
+    @testset "hybrid γ rule recovers cavities from joint q(z,w)" begin
+        # Build q(z,w) by multiplying independent Gaussian cavities by the
+        # current softdot factor. The rule must divide that factor back out
+        # before constructing the exact NormalPrecisionMessage.
+        mz, vz = 0.6, 0.5
+        κbar = 2.0 / 1.5
+        Λw = inv(Symmetric(V3w))
+        ξjoint = vcat(mz / vz, Λw * m3w)
+        Λcavity = zeros(4, 4)
+        Λcavity[1, 1] = inv(vz)
+        Λcavity[2:4, 2:4] = Λw
+        residual_map = vcat(1.0, .-f3)
+        qjoint = MvNormalWeightedMeanPrecision(
+            ξjoint,
+            Λcavity .+ κbar .* (residual_map * residual_map'),
+        )
+        _, Vjoint = mean_cov(qjoint)
+        @test any(x -> !iszero(x), Vjoint[1, 2:4])
+
         state = NGMPEdgeState(DampingMeta(alpha = 1.0, beta = 0.0))
         msg = @call_rule softdot(:γ, NaturalGradientMessage(TangentProjection(type = Quadrature(128)))) (
-            q_y_x = MvNormalMeanCovariance(mj, Vj), q_θ = PointMass(f3),
+            q_y_x = qjoint, q_θ = PointMass(f3),
             q_γ = GammaShapeRate(2.0, 1.5), meta = state
         )
-        Vw = Vj[2:4, 2:4]
         η = getnaturalparameters(project(
             TangentProjection(type = Quadrature(128)),
             GammaShapeRate(2.0, 1.5),
-            Logpdf(NormalPrecisionMessage(mj[1], sp_dot(f3, mj[2:4]), Vj[1, 1] + sp_dot(f3, Vw * f3)))
+            Logpdf(NormalPrecisionMessage(
+                mz,
+                sp_dot(f3, m3w),
+                vz + sp_dot(f3, V3w * f3),
+            ))
         ))
         @test msg isa GammaShapeRate
         @test shape(msg) ≈ η[1] + 1
