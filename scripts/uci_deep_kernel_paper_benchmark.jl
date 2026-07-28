@@ -24,6 +24,8 @@ const OPTIMIZERS = [
      for beta in (0.05, 0.10, 0.20, 0.50, 0.80)]...,
 ]
 
+optimizers_for_depth(depth) = depth == 1 ? ((:damped, 0.0),) : OPTIMIZERS
+
 @model function uci_gp(y, features, v_prior, noise_prior)
     v ~ v_prior; γ ~ noise_prior
     for o in eachindex(features); y[o] ~ softdot(features[o], v, γ); end
@@ -179,7 +181,7 @@ end
 function summary_rows(rows, datasets)
     summaries = NamedTuple[]
     for dataset in datasets, feature_map in FEATURE_MAPS, depth in DEPTHS,
-        (method, beta) in OPTIMIZERS
+        (method, beta) in optimizers_for_depth(depth)
         selected = filter(
             r -> r.dataset == dataset && r.feature_map == feature_map &&
                  r.depth == depth &&
@@ -212,8 +214,10 @@ function main()
         "uci_deep_kernel_paper.csv")
     summary_path = joinpath(dirname(@__DIR__), "results",
         "uci_deep_kernel_paper_summary.csv")
-    total_runs = length(datasets) * length(FEATURE_MAPS) * N_SPLITS *
-        length(DEPTHS) * length(OPTIMIZERS)
+    runs_per_dataset_feature_map =
+        N_SPLITS * sum(length(optimizers_for_depth(depth)) for depth in DEPTHS)
+    total_runs =
+        length(datasets) * length(FEATURE_MAPS) * runs_per_dataset_feature_map
     run_index = 0
     cached_splits = Dict{Tuple{Symbol, Symbol}, Any}()
     for dataset in datasets, feature_map in FEATURE_MAPS
@@ -231,7 +235,7 @@ function main()
         end
     end
     for dataset in datasets, feature_map in FEATURE_MAPS, depth in DEPTHS,
-        (method, beta) in OPTIMIZERS
+        (method, beta) in optimizers_for_depth(depth)
         first_split_unstable = false
         for (split_position, cached) in
             enumerate(cached_splits[(dataset, feature_map)])
@@ -280,7 +284,7 @@ function main()
     end
     println("dataset feature_map depth optimizer beta successful mean_logpdf std_logpdf paper_DVI")
     for dataset in datasets, feature_map in FEATURE_MAPS, depth in DEPTHS,
-        (method, beta) in OPTIMIZERS
+        (method, beta) in optimizers_for_depth(depth)
         selected = filter(
             r -> r.dataset == dataset && r.feature_map == feature_map &&
                  r.depth == depth &&
