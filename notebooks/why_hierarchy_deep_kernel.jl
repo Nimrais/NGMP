@@ -118,7 +118,7 @@ So the hierarchy enlarges the family of predictive distributions the model can e
 md"""
 ## …and the recursion does not stop
 
-Layer 2 still fixed one thing: ``\log\lambda`` was fitted with a *constant* carrier
+Layer 2 still holds one thing fixed: ``\log\lambda`` is fitted with a *constant* carrier
 precision — "my noise estimate is equally trustworthy everywhere". Make that
 input-dependent and you have layer 3. Repeat:
 
@@ -152,7 +152,7 @@ Three optimizer settings are load-bearing:
 
 * `MAX_STEP` bounds the natural-gradient step. It is a safety rail.
 * `ALPHA` is a natural-gradient momentum step size.
-* `CARRIER_ALPHA` damps the cavity-corrected message sent between hierarchy levels.
+* `CARRIER_ALPHA` damps the carrier message sent between hierarchy levels.
 """
 
 # ╔═╡ ee55ff66-0011-4223-8344-556677889900
@@ -187,7 +187,7 @@ begin
     const ALPHA = 0.6           # natural-gradient step size
     const MAX_STEP = 0.5        # load-bearing: 4.0 diverges by 120 iterations
     const METHOD = :damped
-    const CARRIER_ALPHA = 0.3   # the cavity-corrected softdot → carrier update
+    const CARRIER_ALPHA = 0.3   # the softdot → carrier update
     const PREDICT_ITERATIONS =
         parse(Int, get(ENV, "HIERARCHY_PREDICT_ITERATIONS", "60"))
                                 # prediction saturates by ~30
@@ -355,8 +355,8 @@ begin
     )
     carrier_deps() = NGMPDependencies(
         γ = nothing;
-        # As in gaussian_surrogate.jl: three log-space sigma points track the
-        # quadrature reference closely while retaining the full cavity variance.
+        # Three log-space sigma points retain the full cavity variance while
+        # projecting the non-conjugate precision message to a Gamma site.
         projection = TangentProjection(type = Unscented),
     )
     damping(alpha, max_step) =
@@ -531,43 +531,56 @@ end
 md"""
 ## What actually crosses a layer boundary?
 
-The stock structured-VMP message from
-``s_k \sim \mathcal N(\phi^\top w_k,\lambda_{k+1}^{-1})`` toward
-``\lambda_{k+1}`` is
+Consider the factor connecting two adjacent levels,
 
 ```math
-m(\lambda_{k+1}) =
-\operatorname{Gamma}\!\left(\tfrac32,\tfrac12
-    \mathbb E[(s_k-\phi^\top w_k)^2]\right).
+s_k \sim
+\mathcal N\!\left(\phi^\top w_k,\lambda_{k+1}^{-1}\right).
 ```
 
-Its uncertainty on the log scale never becomes sharper per observation:
-``\operatorname{Var}[\log\lambda]=\psi_1(3/2)\approx 0.935`` (SD ``0.967``).
-Worse, using the already-coupled marginal ``q(s_k,w_k)`` feeds the current
-factor's own contraction back into its precision. In the one-coordinate case,
-when ``s_k=w_k``, the internal Gaussian contributes ``+\tfrac12\log\lambda`` per
-point. With ``n`` points and an intercept prior
-``b\sim\mathcal N(b_0,\sigma_b^2)``, the spurious fixed point moves by
-``n\sigma_b^2/2``.
+Let the incoming Gaussian cavity messages imply
 
-The model above now uses the correction demonstrated in
-`gaussian_surrogate.jl`: divide the current softdot factor out of
-``q(s_k,w_k)``, recover the independent Gaussian cavities, form the exact
-`NormalPrecisionMessage`, and project that message to the carrier Gamma edge.
-The `Exp` pullback also treats the incoming Gamma object as a possibly improper
-**site**, with no change-of-variables Jacobian. This removes the self-reinforcing
-precision collapse.
+```math
+s_k \sim \mathcal N(\mu_s,v_s), \qquad
+\phi^\top w_k \sim \mathcal N(\mu_w,v_w).
+```
 
-The table below measures what remains. `signal` is the standard deviation across
-inputs of the posterior log-precision mean; `uncert` is its average pointwise
-posterior SD. Their ratio is a direct layer-to-layer message SNR. Level 1 is the
-data-noise process; larger indices are uncertainty-about-uncertainty.
+Integrating both uncertain quantities gives the exact message toward the carrier:
+
+```math
+m(\lambda_{k+1})
+=
+\mathcal N\!\left(
+    \mu_s\mid\mu_w,\,
+    v_s+v_w+\lambda_{k+1}^{-1}
+\right).
+```
+
+This equation is the information bottleneck. If
+``v_{\mathrm{cav}}=v_s+v_w``, then as ``\lambda_{k+1}\to\infty`` the message
+approaches
+
+```math
+\mathcal N(\mu_s\mid\mu_w,v_{\mathrm{cav}}),
+```
+
+a constant independent of ``\lambda_{k+1}``. Once the carrier variance
+``\lambda_{k+1}^{-1}`` is small relative to the uncertainty already present in
+the two cavities, this factor can barely distinguish one large precision from
+another. A deeper level therefore receives a progressively flatter statement
+about how reliable the level below it is.
+
+The table makes that loss visible in the fitted hierarchy. `signal` is the
+standard deviation across inputs of the posterior mean of ``\log\lambda``;
+`uncert` is its average pointwise posterior standard deviation. Their ratio
+compares learned input-dependent structure with posterior uncertainty. Level 1
+is the data-noise process; larger indices describe uncertainty about the
+reliability of the preceding level.
 """
 
 # ╔═╡ a2b3c4d5-e6f7-4809-a123-b4c5d6e7f809
 begin
     function layer_message_diagnostic(fit, level)
-        score_marginals = fit.score[level, :]
         precision_marginals = fit.precision[level, :]
         log_precision_means =
             digamma.(shape.(precision_marginals)) .-
@@ -594,10 +607,6 @@ begin
          for level in 1:(fit.n_layers - 1)]
     end
 
-    @printf(
-        "stock per-observation log-carrier SD: %.4f\n",
-        sqrt(trigamma(1.5)),
-    )
     @printf(
         "%-5s %5s %10s %10s %9s %10s %11s\n",
         "model", "level", "signal", "uncert", "SNR", "|w feat|", "Δ intercept",
@@ -769,20 +778,13 @@ scale mixture of Gaussians, which is heavier-tailed and has a different width at
 input. That is why row 2's variance curve can follow the true noise, and it is the one
 qualitative jump in the table.
 
-**Further layers help, then saturate — and the message table says why.** After the
-cavity correction, the first carrier message can still contain a little
-input-dependent signal, but its uncertainty is much larger. The next hop acts on
-that already-broad statement, so its signal-to-uncertainty ratio rapidly approaches
-zero and the learned feature weights remain at their anchor. At that point the added
-layer passes essentially the constant carrier it replaced and the deeper model
-collapses gracefully onto the shallower one.
-
-This diagnosis is different from the behaviour of the old structured-VMP carrier
-update. That update could also make depths look identical, but for the opposite
-reason: reusing ``q(s_k,w_k)`` rewarded a carrier for the contraction it had itself
-created and drove the shared log-carrier intercept upward. The exact
-`NormalPrecisionMessage` cavity construction removes that artificial precision
-collapse; the remaining saturation is the genuine vague-message effect.
+**Further layers help, then saturate — and the message table says why.** The first
+carrier can learn substantial input-dependent structure. At every subsequent
+boundary, however, the carrier variance competes with the uncertainty already
+present in two Gaussian cavities. Once cavity uncertainty dominates, the precision
+message approaches its high-precision plateau and its signal-to-uncertainty ratio
+falls. The learned feature weights then remain near their anchor, so the added level
+passes an almost constant carrier and the deeper model approaches the shallower one.
 
 **Getting the optimizer wrong will hide all of this.** At `ALPHA = 0.1, ITERATIONS = 120`
 the depth ordering inverts, purely because that setting sits where the `L = 2` and `L = 3`
