@@ -27,11 +27,11 @@ const DIRECT_FEATURE_DIMENSIONS = parse.(Int, split(
 ))
 const DIRECT_VECTOR_TRANSPORT_ALPHA = parse(
     Float64,
-    get(ENV, "UCI_DIRECT_VECTOR_TRANSPORT_ALPHA", "0.40"),
+    get(ENV, "UCI_DIRECT_VECTOR_TRANSPORT_ALPHA", "0.60"),
 )
 const DIRECT_VECTOR_TRANSPORT_NESTEROV_ALPHA = parse(
     Float64,
-    get(ENV, "UCI_DIRECT_VECTOR_TRANSPORT_NESTEROV_ALPHA", "0.30"),
+    get(ENV, "UCI_DIRECT_VECTOR_TRANSPORT_NESTEROV_ALPHA", "0.60"),
 )
 
 direct_optimizer_alpha(method) =
@@ -179,6 +179,9 @@ function direct_prior_parameters(depth, p, targets)
     )
 end
 
+direct_prior_parameters(depth, Φ::AbstractMatrix, targets) =
+    direct_prior_parameters(depth, size(Φ, 2), targets)
+
 function new_exp_states(levels, observations, method, beta)
     meta = DampingMeta(
         alpha = direct_optimizer_alpha(method),
@@ -229,9 +232,13 @@ function finite_direct_state(mean_weights, covariance, level_means, level_covari
         all(matrix -> all(isfinite, matrix), level_covariances)
 end
 
-function fit_direct_depth_one(Φ, targets)
+function fit_direct_depth_one(
+    Φ,
+    targets;
+    prior_builder = direct_prior_parameters,
+)
     n, p = size(Φ)
-    prior = direct_prior_parameters(1, p, targets)
+    prior = prior_builder(1, Φ, targets)
     noise_shape = 2.0
     noise_rate = 2.0 / TOP_CARRIER
     expected_precision = noise_shape / noise_rate
@@ -271,10 +278,17 @@ function fit_direct_depth_one(Φ, targets)
     )
 end
 
-function fit_direct_deep(depth, Φ, targets, method, beta)
+function fit_direct_deep(
+    depth,
+    Φ,
+    targets,
+    method,
+    beta;
+    prior_builder = direct_prior_parameters,
+)
     n, p = size(Φ)
     levels = depth - 1
-    prior = direct_prior_parameters(depth, p, targets)
+    prior = prior_builder(depth, Φ, targets)
     mean_weights = copy(prior.mean_prior_mean)
     mean_covariance = inv(prior.mean_prior_precision)
     level_weights = copy.(prior.level_prior_means)
@@ -406,9 +420,27 @@ function fit_direct_deep(depth, Φ, targets, method, beta)
     )
 end
 
-function fit_direct_model(depth, Φ, targets, method, beta)
-    depth == 1 && return fit_direct_depth_one(Φ, targets)
-    return fit_direct_deep(depth, Φ, targets, method, beta)
+function fit_direct_model(
+    depth,
+    Φ,
+    targets,
+    method,
+    beta;
+    prior_builder = direct_prior_parameters,
+)
+    depth == 1 && return fit_direct_depth_one(
+        Φ,
+        targets;
+        prior_builder,
+    )
+    return fit_direct_deep(
+        depth,
+        Φ,
+        targets,
+        method,
+        beta;
+        prior_builder,
+    )
 end
 
 function predict_direct_model(fit, Φ)
@@ -431,7 +463,12 @@ function predict_direct_model(fit, Φ)
     return (; mean = predictive_mean, variance = predictive_variance)
 end
 
-function direct_main()
+function direct_main(
+    ;
+    prior_builder = direct_prior_parameters,
+    output_stem = "uci_deep_kernel_direct_paper",
+    backend_label = "direct",
+)
     ENV["DATADEPS_ALWAYS_ACCEPT"] = "true"
     datasets =
         Symbol.(split(get(ENV, "UCI_DATASETS", "yacht,energy,concrete"), ','))
@@ -439,12 +476,12 @@ function direct_main()
     path = joinpath(
         dirname(@__DIR__),
         "results",
-        "uci_deep_kernel_direct_paper.csv",
+        "$output_stem.csv",
     )
     summary_path = joinpath(
         dirname(@__DIR__),
         "results",
-        "uci_deep_kernel_direct_paper_summary.csv",
+        "$(output_stem)_summary.csv",
     )
     runs_per_preprocessing_dimension =
         N_SPLITS * sum(length(optimizers_for_depth(depth)) for depth in DEPTHS)
@@ -490,9 +527,10 @@ function direct_main()
             prepared = cached.prepared
             run_index += 1
             @printf(
-                "[%d/%d] backend=direct dataset=%s preprocessing=%s feature_dimension=%d split=%d/%d depth=%d optimizer=%s beta=%.2f alpha=%.2f\n",
+                "[%d/%d] backend=%s dataset=%s preprocessing=%s feature_dimension=%d split=%d/%d depth=%d optimizer=%s beta=%.2f alpha=%.2f\n",
                 run_index,
                 total_runs,
+                backend_label,
                 dataset,
                 preprocessing,
                 feature_dimension,
@@ -530,6 +568,8 @@ function direct_main()
                         prepared.y_train_std,
                         method,
                         beta,
+                        ;
+                        prior_builder,
                     )
                     prediction =
                         predict_direct_model(fit, cached.Φtest)
