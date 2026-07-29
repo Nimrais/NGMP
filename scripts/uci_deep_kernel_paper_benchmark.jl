@@ -8,7 +8,7 @@ using Distributions: Chisq, InverseGamma
 using LinearAlgebra, Printf, Random, RxInfer, Statistics, SurrogateModelling
 import ProbabilisticEnsembling: Exp
 
-const N_RFF = parse(Int, get(ENV, "UCI_RFFS", "50"))
+const N_RFF = parse(Int, get(ENV, "UCI_RFFS", "100"))
 const DEPTHS = parse.(Int, split(get(ENV, "UCI_DEPTHS", "1,2,3,4,5"), ','))
 const N_SPLITS = parse(Int, get(ENV, "UCI_SPLITS", "20"))
 const ITERATIONS = parse(Int, get(ENV, "UCI_ITERATIONS", "240"))
@@ -25,6 +25,10 @@ const OPTIMIZERS = [
 ]
 
 optimizers_for_depth(depth) = depth == 1 ? ((:damped, 0.0),) : OPTIMIZERS
+optimizer_alpha(method) =
+    method == :vector_transport ? 0.20 :
+    method == :vector_transport_nesterov ? 0.15 :
+    ALPHA
 
 @model function uci_gp(y, features, v_prior, noise_prior)
     v ~ v_prior; γ ~ noise_prior
@@ -144,7 +148,9 @@ function fit_model(depth, Φ, y, method, beta)
         q(v) = deepcopy(prior.v); q(w) = deepcopy(prior.w)
         q(score) = states.score; q(precision) = states.precision
     end)
-    result = infer(model = model(depth, prior, method, beta, ALPHA),
+    result = infer(model = model(
+            depth, prior, method, beta, optimizer_alpha(method),
+        ),
         data = (y = y, features = rows),
         constraints = depth == 1 ? gp_constraints() : hierarchy_constraints(),
         initialization = init,
@@ -167,7 +173,10 @@ function predict_model(fit, Φ)
         q(score) = states.score; q(precision) = states.precision
     end)
     result = infer(
-        model = model(fit.depth, prior, fit.method, fit.beta, 0.5),
+        model = model(
+            fit.depth, prior, fit.method, fit.beta,
+            optimizer_alpha(fit.method),
+        ),
         data = (features = rows,),
         constraints = fit.depth == 1 ? gp_constraints() : hierarchy_constraints(),
         initialization = init, predictvars = (y = KeepLast(),),
