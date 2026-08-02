@@ -22,7 +22,7 @@ const DIRECT_PREPROCESSING = Symbol.(split(
     ',',
 ))
 const DIRECT_FEATURE_DIMENSIONS = parse.(Int, split(
-    get(ENV, "UCI_DIRECT_FEATURE_DIMENSIONS", "50,100,200"),
+    get(ENV, "UCI_DIRECT_FEATURE_DIMENSIONS", "300,400"),
     ',',
 ))
 const DIRECT_VECTOR_TRANSPORT_ALPHA = parse(
@@ -46,6 +46,7 @@ function direct_rff_design(
     seed,
     preprocessing,
     feature_dimension,
+    fixed_lengthscale = nothing,
 )
     preprocessing in (
         :multiscale_matern32_linear,
@@ -56,6 +57,8 @@ function direct_rff_design(
         ))
     feature_dimension > 0 ||
         throw(ArgumentError("feature dimension must be positive"))
+    isnothing(fixed_lengthscale) || fixed_lengthscale > 0 ||
+        throw(ArgumentError("fixed lengthscale must be positive"))
 
     d = size(x_train, 2)
     rng = MersenneTwister(seed)
@@ -67,7 +70,10 @@ function direct_rff_design(
         norm(sample[index, :] - sample[index - 1, :])
         for index in 2:size(sample, 1)
     ]
-    lengthscale = max(median(distances), 0.25)
+    heuristic_lengthscale = max(median(distances), 0.25)
+    lengthscale = isnothing(fixed_lengthscale) ?
+        heuristic_lengthscale :
+        Float64(fixed_lengthscale)
     counts = [
         div(feature_dimension, 3),
         div(feature_dimension, 3),
@@ -100,13 +106,17 @@ function direct_rff_design(
     return transform(x_train), transform(x_test)
 end
 
-function direct_summary_rows(rows, datasets)
+function direct_summary_rows(
+    rows,
+    datasets;
+    optimizer_configs_for_depth = optimizers_for_depth,
+)
     summaries = NamedTuple[]
     for dataset in datasets,
         preprocessing in DIRECT_PREPROCESSING,
         feature_dimension in DIRECT_FEATURE_DIMENSIONS,
         depth in DEPTHS,
-        (method, beta) in optimizers_for_depth(depth)
+        (method, beta) in optimizer_configs_for_depth(depth)
         selected = filter(
             row ->
                 row.dataset == dataset &&
@@ -468,6 +478,8 @@ function direct_main(
     prior_builder = direct_prior_parameters,
     output_stem = "uci_deep_kernel_direct_paper",
     backend_label = "direct",
+    fixed_lengthscale = nothing,
+    optimizer_configs_for_depth = optimizers_for_depth,
 )
     ENV["DATADEPS_ALWAYS_ACCEPT"] = "true"
     datasets =
@@ -484,7 +496,10 @@ function direct_main(
         "$(output_stem)_summary.csv",
     )
     runs_per_preprocessing_dimension =
-        N_SPLITS * sum(length(optimizers_for_depth(depth)) for depth in DEPTHS)
+        N_SPLITS * sum(
+            length(optimizer_configs_for_depth(depth))
+            for depth in DEPTHS
+        )
     total_runs =
         length(datasets) *
         length(DIRECT_PREPROCESSING) *
@@ -506,6 +521,7 @@ function direct_main(
                 10_000 * split.split_id,
                 preprocessing,
                 feature_dimension,
+                fixed_lengthscale,
             )
             (; split, prepared, Φtrain, Φtest)
         end
@@ -515,7 +531,7 @@ function direct_main(
         preprocessing in DIRECT_PREPROCESSING,
         feature_dimension in DIRECT_FEATURE_DIMENSIONS,
         depth in DEPTHS,
-        (method, beta) in optimizers_for_depth(depth)
+        (method, beta) in optimizer_configs_for_depth(depth)
         first_split_unstable = false
         for (split_position, cached) in
             enumerate(cached_splits[(
@@ -617,7 +633,11 @@ function direct_main(
             write_results(path, rows)
             write_results(
                 summary_path,
-                direct_summary_rows(rows, datasets),
+                direct_summary_rows(
+                    rows,
+                    datasets;
+                    optimizer_configs_for_depth,
+                ),
             )
         end
     end
@@ -625,7 +645,11 @@ function direct_main(
     println(
         "dataset preprocessing feature_dimension depth optimizer beta successful mean_logpdf std_logpdf paper_DVI",
     )
-    for row in direct_summary_rows(rows, datasets)
+    for row in direct_summary_rows(
+        rows,
+        datasets;
+        optimizer_configs_for_depth,
+    )
         @printf(
             "%-9s %-28s %4d %5d %-27s %4.2f %3d/%-3d %10.3f %10.3f %9.2f\n",
             row.dataset,
