@@ -144,6 +144,38 @@ DATADEPS_ALWAYS_ACCEPT=true \
 julia --project=baselines/dvi baselines/dvi/run.jl
 ```
 
+The default `zygote`/`cpu` execution backend is the portable numerical
+reference. The optional Reactant backend uses Enzyme differentiation and keeps
+the Float32 model, Adam state, and training data on the selected device. Its
+XLA-compatible Gaussian CDF uses a high-accuracy elementary approximation;
+cross-backend results are checked for numerical, rather than bitwise, parity:
+
+```sh
+DVI_BACKEND=reactant DVI_DEVICE=gpu \
+DATADEPS_ALWAYS_ACCEPT=true DVI_DATASETS=yacht DVI_SPLITS=1 \
+julia --project=baselines/dvi baselines/dvi/run.jl
+```
+
+Backend, device, and implementation version are saved as result-affecting
+configuration fields. A result directory therefore cannot be resumed with a
+different execution implementation.
+
+Before launching the paper run, measure warmed gradient/Adam steps without
+writing any result artifact:
+
+```sh
+DVI_PROFILE_BACKENDS=zygote \
+julia --project=baselines/dvi baselines/dvi/profile_step.jl
+
+DVI_PROFILE_BACKENDS=reactant DVI_DEVICE=gpu \
+julia --project=baselines/dvi baselines/dvi/profile_step.jl
+```
+
+The profiler reports compilation time, steady-state time and allocations for
+100-row batches with 6 and 13 inputs. Its conservative projection includes a
+25% margin and must be at most three days before a 120-configuration run is
+started.
+
 Run diagonal-DVI:
 
 ```sh
@@ -230,8 +262,20 @@ previously successful anchors without evaluating any outer-test targets:
 baselines/dvi/run_ddvi_failure_replay.sh
 ```
 
-After that gate passes, `run_bbb_matched_paper.sh` runs and merges all 120 dDVI
-configurations before launching full DVI.
+After parity and the three-day projection gate pass,
+`run_bbb_matched_paper.sh` runs full DVI in a fresh optimized output directory.
+It defaults to four CPU shards. Select the validated Reactant GPU layout with,
+for example:
+
+```sh
+DVI_PAPER_PROFILE_APPROVED=true DVI_PAPER_BACKEND=reactant \
+DVI_PAPER_DEVICE=gpu DVI_PAPER_SHARDS=1 \
+baselines/dvi/run_bbb_matched_paper.sh
+```
+
+`DVI_PAPER_SHARDS` accepts 1, 2, or 4. Set
+`DVI_PAPER_METHODS=diagonal,full` only when both methods intentionally need a
+fresh run; the default is `full`, so the completed dDVI result is not rerun.
 
 After running independent `DVI_SPLIT_IDS` shards, combine them with:
 

@@ -98,6 +98,39 @@ end
     @test observed.covariance[:, 1, 2] == zeros(Float32, 2)
 end
 
+@testset "allocation-efficient full-covariance helpers" begin
+    rng = StableRNG(101)
+    covariance = randn(rng, Float32, 7, 5, 5)
+    covariance = covariance .* permutedims(covariance, (1, 3, 2))
+    weights = randn(rng, Float32, 2, 5)
+
+    expected_diagonal = hcat([
+        covariance[:, index, index] for index in axes(covariance, 2)
+    ]...)
+    @test DVIUCI.covariance_diagonal(covariance) == expected_diagonal
+
+    expected_quadratic = permutedims(cat([
+        weights * covariance[batch, :, :] * transpose(weights)
+        for batch in axes(covariance, 1)
+    ]...; dims = 3), (3, 1, 2))
+    @test DVIUCI.batch_quadratic(weights, covariance) ≈
+        expected_quadratic rtol = 2e-6 atol = 2e-6
+
+    objective(candidate) = sum(DVIUCI.batch_quadratic(
+        candidate, covariance,
+    ))
+    gradient = only(Zygote.gradient(objective, weights))
+    reference_objective(candidate) = sum(permutedims(cat([
+        candidate * covariance[batch, :, :] * transpose(candidate)
+        for batch in axes(covariance, 1)
+    ]...; dims = 3), (3, 1, 2)))
+    reference_gradient = only(Zygote.gradient(
+        reference_objective, weights,
+    ))
+    @test all(isfinite, gradient)
+    @test gradient ≈ reference_gradient rtol = 1e-5 atol = 1e-6
+end
+
 @testset "DVI moments agree with network Monte Carlo" begin
     config = tiny_config(hidden_units = 50)
     params = initialize_model(3, "heteroscedastic", config; seed = 11)
@@ -262,6 +295,40 @@ end
         kl_warmup_steps = 1,
         kl_warmup_epochs = 1,
     ))
+
+    @test_throws ArgumentError validate_config(tiny_config(
+        execution_backend = "zygote",
+        execution_device = "gpu",
+    ))
+    @test validate_config(tiny_config(
+        execution_backend = "reactant",
+        execution_device = "gpu",
+    )).implementation_version == DVIUCI.DVI_IMPLEMENTATION_VERSION
+
+    loss_config = tiny_config()
+    params = initialize_model(
+        2, "heteroscedastic", loss_config; seed = 102,
+    )
+    features = randn(StableRNG(103), Float32, 5, 2)
+    targets = randn(StableRNG(104), Float32, 5)
+    loss_tracker = NumericalTracker()
+    dvi_loss(
+        params,
+        features,
+        targets,
+        "heteroscedastic",
+        loss_config,
+        length(targets);
+        tracker = loss_tracker,
+    )
+    expected_counts = DVIUCI.dvi_loss_clamp_statistics(
+        params, features, "heteroscedastic", loss_config,
+    )
+    observed_counts = tracker_record(loss_tracker)
+    @test observed_counts.calls == expected_counts.calls
+    @test observed_counts.elements == expected_counts.elements
+    @test observed_counts.lower_clamps == expected_counts.lower_clamps
+    @test observed_counts.upper_clamps == expected_counts.upper_clamps
 end
 
 @testset "heteroscedastic variance-head initialization" begin
@@ -341,6 +408,60 @@ end
         config,
         length(targets),
     ))
+end
+
+@testset "optional Reactant training parity" begin
+    if lowercase(get(ENV, "DVI_TEST_REACTANT", "false")) == "true"
+        features = randn(StableRNG(105), Float32, 12, 3)
+        targets = Float32.(
+            0.4 .* features[:, 1] .-
+            0.2 .* features[:, 2] .+
+            0.1 .* features[:, 3]
+        )
+        split = (
+            x_train_standardized = features,
+            y_train_standardized = targets,
+        )
+        reference_config = tiny_config(
+            hidden_units = 4,
+            batch_size = 4,
+            max_epochs = 2,
+            execution_backend = "zygote",
+            execution_device = "cpu",
+        )
+        reactant_config = tiny_config(
+            hidden_units = 4,
+            batch_size = 4,
+            max_epochs = 2,
+            execution_backend = "reactant",
+            execution_device = lowercase(get(
+                ENV, "DVI_TEST_REACTANT_DEVICE", "cpu",
+            )),
+        )
+        reference = refit_model(
+            split, 3, "heteroscedastic", reference_config;
+            seed = 106, epochs = 2,
+        )
+        observed = refit_model(
+            split, 3, "heteroscedastic", reactant_config;
+            seed = 106, epochs = 2,
+        )
+        @test observed.losses ≈ reference.losses rtol = 1e-4 atol = 1e-5
+        for layer in (:hidden, :output), field in (
+            :weight_mu, :weight_log_std, :bias_mu, :bias_log_std,
+        )
+            @test isapprox(
+                getfield(getfield(observed.params, layer), field),
+                getfield(getfield(reference.params, layer), field);
+                rtol = 1e-4,
+                atol = 1e-5,
+            )
+        end
+        @test observed.numerical.clamp_count ==
+            reference.numerical.clamp_count
+    else
+        @test true
+    end
 end
 
 @testset "non-finite loss aborts before an optimizer update" begin

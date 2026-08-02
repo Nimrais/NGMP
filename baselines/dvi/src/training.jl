@@ -326,11 +326,15 @@ function train_with_validation(
     seed::Int,
     history_path::Union{Nothing, AbstractString} = nothing,
 )
-    params = initialize_model(
+    initial_params = initialize_model(
         input_dimension, likelihood, config; seed = seed,
     )
-    optimizer_state = Optimisers.setup(
-        Optimisers.Adam(config.learning_rate), params,
+    backend = initialize_training_backend(
+        initial_params,
+        inner_split.x_train_standardized,
+        inner_split.y_train_standardized,
+        likelihood,
+        config,
     )
     rng = StableRNG(seed + 10)
     history = NamedTuple[]
@@ -346,13 +350,8 @@ function train_with_validation(
     )
 
     for epoch in 1:config.max_epochs
-        params, optimizer_state, training_loss, optimizer_step = train_epoch(
-            params,
-            optimizer_state,
-            inner_split.x_train_standardized,
-            inner_split.y_train_standardized,
-            likelihood,
-            config,
+        backend, training_loss, optimizer_step = training_backend_epoch(
+            backend,
             rng,
             epoch,
             optimizer_step;
@@ -364,8 +363,9 @@ function train_with_validation(
             epoch == config.max_epochs
         should_validate || continue
 
+        validation_params = training_backend_parameters(backend)
         validation_metrics = evaluate_standardized_model(
-            params,
+            validation_params,
             inner_split.x_test_standardized,
             inner_split.y_test_standardized,
             inner_split.y_test,
@@ -407,7 +407,7 @@ function train_with_validation(
            validation_metrics.lpd_original > best_lpd
             best_lpd = validation_metrics.lpd_original
             best_epoch = epoch
-            best_params = deepcopy(params)
+            best_params = deepcopy(validation_params)
             non_improving_checks = 0
         else
             non_improving_checks += 1
@@ -440,24 +440,23 @@ function refit_model(
     epochs::Int,
 )
     epochs >= 1 || throw(ArgumentError("epochs must be positive"))
-    params = initialize_model(
+    initial_params = initialize_model(
         input_dimension, likelihood, config; seed = seed,
     )
-    optimizer_state = Optimisers.setup(
-        Optimisers.Adam(config.learning_rate), params,
+    backend = initialize_training_backend(
+        initial_params,
+        outer_split.x_train_standardized,
+        outer_split.y_train_standardized,
+        likelihood,
+        config,
     )
     rng = StableRNG(seed + 10)
     losses = Vector{Float64}(undef, epochs)
     optimizer_step = 0
     tracker = NumericalTracker()
     for epoch in 1:epochs
-        params, optimizer_state, losses[epoch], optimizer_step = train_epoch(
-            params,
-            optimizer_state,
-            outer_split.x_train_standardized,
-            outer_split.y_train_standardized,
-            likelihood,
-            config,
+        backend, losses[epoch], optimizer_step = training_backend_epoch(
+            backend,
             rng,
             epoch,
             optimizer_step;
@@ -465,6 +464,7 @@ function refit_model(
             tracker = tracker,
         )
     end
+    params = training_backend_parameters(backend)
     return (
         params = params,
         losses = losses,

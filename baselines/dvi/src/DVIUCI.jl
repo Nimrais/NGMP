@@ -29,6 +29,7 @@ using SurrogateModelling:
     uci_regression_splits,
     prepare_uci_regression_partition
 using TOML
+using Tullio
 using Zygote
 
 include("config.jl")
@@ -36,6 +37,7 @@ include("data.jl")
 include("moments.jl")
 include("model.jl")
 include("metrics.jl")
+include("backend.jl")
 include("training.jl")
 include("artifacts.jl")
 include("benchmark.jl")

@@ -249,15 +249,14 @@ function expected_log_likelihood(
     else
         throw(ArgumentError("unknown likelihood '$likelihood'"))
     end
-    precision_log_moment = Float64.(
-        -log_variance .+ 0.5f0 .* log_variance_variance,
-    )
+    precision_log_moment =
+        -log_variance .+ 0.5f0 .* log_variance_variance
+    precision_log_moment = Float64.(precision_log_moment)
     precision_expectation = safe_exp(
         precision_log_moment, config, tracker,
     )
-    squared_residual = Float64.(
-        mean .- mean_log_variance_covariance .- targets,
-    ) .^ 2
+    residual = mean .- mean_log_variance_covariance .- targets
+    squared_residual = Float64.(residual) .^ 2
     return -0.5 .* (
         log(2pi) .+
         Float64.(log_variance) .+
@@ -291,14 +290,89 @@ function dvi_loss(
     tracker::Union{Nothing, NumericalTracker} = nothing,
 )
     n_training >= 1 || throw(ArgumentError("n_training must be positive"))
+    progress = kl_progress(epoch, optimizer_step, config)
+    return dvi_loss_with_kl_weight(
+        params,
+        features,
+        targets,
+        likelihood,
+        config,
+        n_training,
+        kl_weight(progress, config);
+        tracker = tracker,
+    )
+end
+
+function dvi_loss_with_kl_weight(
+    params,
+    features::AbstractMatrix,
+    targets::AbstractVector,
+    likelihood::String,
+    config::DVIConfig,
+    n_training::Int,
+    weight;
+    tracker::Union{Nothing, NumericalTracker} = nothing,
+)
+    n_training >= 1 || throw(ArgumentError("n_training must be positive"))
     output = propagate_dvi(params, features, config; tracker = tracker)
     reconstruction = mean(expected_log_likelihood(
         output, targets, likelihood, config, tracker,
     ))
-    progress = kl_progress(epoch, optimizer_step, config)
-    return kl_weight(progress, config) *
+    return weight *
         empirical_bayes_kl(params, config, tracker) / n_training -
         reconstruction
+end
+
+function clamp_tally(values, config::DVIConfig)
+    lower = convert(eltype(values), config.safe_exp_min)
+    upper = convert(eltype(values), config.safe_exp_max)
+    return (
+        calls = 1,
+        elements = length(values),
+        lower_clamps = sum(values .< lower),
+        upper_clamps = sum(values .> upper),
+    )
+end
+
+function dvi_loss_clamp_statistics(
+    params,
+    features::AbstractMatrix,
+    likelihood::String,
+    config::DVIConfig,
+)
+    parameter_inputs = (
+        2f0 .* params.hidden.weight_log_std,
+        2f0 .* params.hidden.bias_log_std,
+        2f0 .* params.output.weight_log_std,
+        2f0 .* params.output.bias_log_std,
+    )
+    parameter_tallies = map(
+        values -> clamp_tally(values, config), parameter_inputs,
+    )
+
+    output = propagate_dvi(params, features, config)
+    precision_input = if likelihood == "heteroscedastic"
+        -vec(output.mean[:, 2]) .+
+        0.5f0 .* output_covariance_entry(output, 2, 2, config)
+    elseif likelihood == "homoscedastic"
+        fill(-Float32(config.homo_log_variance), size(features, 1))
+    else
+        throw(ArgumentError("unknown likelihood '$likelihood'"))
+    end
+    precision_tally = clamp_tally(precision_input, config)
+
+    return (
+        calls = 2 * sum(tally.calls for tally in parameter_tallies) +
+            precision_tally.calls,
+        elements = 2 * sum(tally.elements for tally in parameter_tallies) +
+            precision_tally.elements,
+        lower_clamps = 2 * sum(
+            tally.lower_clamps for tally in parameter_tallies
+        ) + precision_tally.lower_clamps,
+        upper_clamps = 2 * sum(
+            tally.upper_clamps for tally in parameter_tallies
+        ) + precision_tally.upper_clamps,
+    )
 end
 
 function sample_layer(layer, rng::AbstractRNG, config::DVIConfig)

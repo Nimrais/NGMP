@@ -65,6 +65,14 @@ function tracker_record(tracker::NumericalTracker)
     )
 end
 
+function accumulate_tracker!(tracker::NumericalTracker, record)
+    tracker.calls += Int(record.calls)
+    tracker.elements += Int(record.elements)
+    tracker.lower_clamps += Int(record.lower_clamps)
+    tracker.upper_clamps += Int(record.upper_clamps)
+    return tracker
+end
+
 standard_gaussian(x) = DVI_INV_SQRT2PI .* exp.(-0.5f0 .* x .^ 2)
 gaussian_cdf(x) = 0.5f0 .* (1f0 .+ erf.(DVI_INV_SQRT2 .* x))
 softrelu(x) = standard_gaussian(x) .+ x .* gaussian_cdf(x)
@@ -100,28 +108,25 @@ function batch_diagonal(diagonals::AbstractMatrix)
         reshape(identity_matrix, 1, dimension, dimension)
 end
 
-function covariance_diagonal(covariance::AbstractArray{<:Real, 3})
-    _, dimension, other_dimension = size(covariance)
+function covariance_diagonal(covariance::AbstractArray{T, 3}) where {T}
+    batch, dimension, other_dimension = size(covariance)
     dimension == other_dimension ||
         throw(DimensionMismatch("covariance matrices must be square"))
-    identity_matrix = Matrix{eltype(covariance)}(I, dimension, dimension)
-    return dropdims(
-        sum(
-            covariance .* reshape(identity_matrix, 1, dimension, dimension);
-            dims = 3,
-        );
-        dims = 3,
-    )
+    flattened = reshape(covariance, batch, dimension * dimension)
+    return flattened[:, 1:(dimension + 1):(dimension * dimension)]
 end
 
 function batch_quadratic(
     weight_mean::AbstractMatrix,
-    covariance::AbstractArray{<:Real, 3},
-)
-    matrices = map(axes(covariance, 1)) do batch_index
-        weight_mean * covariance[batch_index, :, :] * transpose(weight_mean)
-    end
-    return permutedims(cat(matrices...; dims = 3), (3, 1, 2))
+    covariance::AbstractArray{T, 3},
+) where {T}
+    size(weight_mean, 2) == size(covariance, 2) == size(covariance, 3) ||
+        throw(DimensionMismatch("weight and activation covariance disagree"))
+    @tullio result[batch, output, other_output] :=
+        weight_mean[output, input] *
+        covariance[batch, input, other_input] *
+        weight_mean[other_output, other_input]
+    return result
 end
 
 """
@@ -132,8 +137,8 @@ equation (6) and Table 1 of Wu et al. (2019).
 """
 function relu_moments_full(
     mean::AbstractMatrix,
-    covariance::AbstractArray{<:Real, 3},
-)
+    covariance::AbstractArray{T, 3},
+) where {T}
     batch, dimension = size(mean)
     variance = max.(covariance_diagonal(covariance), zero(eltype(covariance)))
     standard_deviation = sqrt.(variance)

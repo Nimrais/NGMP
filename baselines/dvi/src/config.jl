@@ -93,12 +93,17 @@ function default_output_directory()
     ))
 end
 
+const DVI_IMPLEMENTATION_VERSION = "full-covariance-optimized-v1"
+
 Base.@kwdef struct DVIConfig
     datasets::Vector{String} = first.(DATASET_REGISTRY)
     n_splits::Int = UCI_DEFAULT_N_SPLITS
     split_ids::Vector{Int} = collect(1:UCI_DEFAULT_N_SPLITS)
     likelihoods::Vector{String} = ["heteroscedastic"]
     propagation::String = "full"
+    execution_backend::String = "zygote"
+    execution_device::String = "cpu"
+    implementation_version::String = DVI_IMPLEMENTATION_VERSION
     hidden_units::Int = 50
     batch_size::Int = 100
     learning_rate::Float64 = 3e-4
@@ -161,6 +166,13 @@ function load_config()
             get(ENV, "DVI_LIKELIHOODS", "heteroscedastic"),
         ),
         propagation = lowercase(strip(get(ENV, "DVI_PROPAGATION", "full"))),
+        execution_backend = lowercase(strip(get(
+            ENV, "DVI_BACKEND", "zygote",
+        ))),
+        execution_device = lowercase(strip(get(
+            ENV, "DVI_DEVICE", "cpu",
+        ))),
+        implementation_version = DVI_IMPLEMENTATION_VERSION,
         hidden_units = env_int("DVI_HIDDEN_UNITS", 50),
         batch_size = env_int("DVI_BATCH_SIZE", 100),
         learning_rate = env_float("DVI_LEARNING_RATE", 3e-4),
@@ -231,6 +243,22 @@ function validate_config(config::DVIConfig)
         ))
     config.propagation in ("full", "diagonal") ||
         throw(ArgumentError("DVI_PROPAGATION must be full or diagonal"))
+    config.execution_backend in ("zygote", "reactant") || throw(
+        ArgumentError("DVI_BACKEND must be zygote or reactant"),
+    )
+    config.execution_device in ("cpu", "gpu") || throw(
+        ArgumentError("DVI_DEVICE must be cpu or gpu"),
+    )
+    config.execution_backend == "reactant" ||
+        config.execution_device == "cpu" || throw(ArgumentError(
+            "DVI_DEVICE=gpu requires DVI_BACKEND=reactant",
+        ))
+    config.implementation_version == DVI_IMPLEMENTATION_VERSION || throw(
+        ArgumentError(
+            "DVI implementation version must be " *
+            DVI_IMPLEMENTATION_VERSION,
+        ),
+    )
     config.hidden_units >= 1 ||
         throw(ArgumentError("DVI_HIDDEN_UNITS must be positive"))
     config.batch_size >= 1 ||
