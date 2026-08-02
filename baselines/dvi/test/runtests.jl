@@ -1,4 +1,6 @@
 using DVIUCI
+using CSV
+using DataFrames
 using LinearAlgebra
 using Optimisers
 using StableRNGs
@@ -10,15 +12,19 @@ function tiny_config(; kwargs...)
     defaults = (
         datasets = ["yacht"],
         n_splits = 1,
+        split_ids = [1],
         likelihoods = ["heteroscedastic"],
         propagation = "full",
         hidden_units = 50,
         batch_size = 16,
-        learning_rate = 1e-3,
+        learning_rate = 3e-4,
         max_epochs = 4,
         min_epochs = 1,
         validation_every = 1,
         patience = 4,
+        kl_schedule_unit = "steps",
+        kl_warmup_steps = 0,
+        kl_anneal_steps = 0,
         kl_warmup_epochs = 0,
         kl_anneal_epochs = 0,
         show_progress = false,
@@ -26,6 +32,13 @@ function tiny_config(; kwargs...)
         make_plot = false,
     )
     return DVIConfig(; merge(defaults, (; kwargs...))...)
+end
+
+@testset "split selection" begin
+    @test parse_split_ids("all", 4) == [1, 2, 3, 4]
+    @test parse_split_ids("4, 2, 2", 4) == [2, 4]
+    @test_throws ArgumentError parse_split_ids("0", 4)
+    @test_throws ArgumentError parse_split_ids("5", 4)
 end
 
 @testset "Gaussian and soft-ReLU helpers" begin
@@ -72,7 +85,7 @@ end
         bias_log_std = log.(Float32[0.25, 0.35]),
     )
     features = Float32[1.5 -0.7; -0.2 0.9]
-    observed = DVIUCI.linear_certain_full(features, layer)
+    observed = DVIUCI.linear_certain_full(features, layer, tiny_config())
     expected_mean =
         features * transpose(layer.weight_mu) .+
         transpose(layer.bias_mu)
@@ -94,7 +107,7 @@ end
     draws = reduce(
         hcat,
         (
-            vec(DVIUCI.sample_forward(params, features, rng))
+            vec(DVIUCI.sample_forward(params, features, rng, config))
             for _ in 1:8_000
         ),
     )
@@ -221,10 +234,78 @@ end
     @test abs(mean(prepared.y_train_standardized)) < 1e-6
     @test DVIUCI.earliest_selection_epoch(tiny_config(
         min_epochs = 2,
-        kl_warmup_epochs = 5,
-        kl_anneal_epochs = 3,
+        batch_size = 10,
+        kl_warmup_steps = 5,
+        kl_anneal_steps = 3,
         max_epochs = 10,
-    )) == 8
+    ), 20) == 4
+end
+
+@testset "bounded numerical protocol" begin
+    config = tiny_config(safe_exp_min = -20.0, safe_exp_max = 20.0)
+    tracker = NumericalTracker()
+    values = Float32[-100, -1, 0, 1, 100]
+    observed = safe_exp(values, config, tracker)
+    @test all(isfinite, observed)
+    @test observed[1] ≈ exp(-20f0)
+    @test observed[end] ≈ exp(20f0)
+    counts = tracker_record(tracker)
+    @test counts.lower_clamps == 1
+    @test counts.upper_clamps == 1
+    @test counts.clamp_count == 2
+    @test counts.clamp_rate == 0.4
+
+    @test kl_weight(14_000, DVIConfig()) == 0.0
+    @test kl_weight(14_500, DVIConfig()) == 0.5
+    @test kl_weight(15_000, DVIConfig()) == 1.0
+    @test_throws ArgumentError validate_config(tiny_config(
+        kl_warmup_steps = 1,
+        kl_warmup_epochs = 1,
+    ))
+end
+
+@testset "heteroscedastic variance-head initialization" begin
+    config = tiny_config(
+        hidden_units = 5,
+        log_variance_head_posterior_std = 0.05,
+        log_variance_head_initial_bias = -0.25,
+    )
+    params = initialize_model(3, "heteroscedastic", config; seed = 17)
+    @test params.output.weight_mu[2, :] == zeros(Float32, 5)
+    @test all(
+        params.output.weight_log_std[2, :] .≈ Float32(log(0.05)),
+    )
+    @test params.output.bias_mu[2] == -0.25f0
+    @test params.output.bias_log_std[2] ≈ Float32(log(0.05))
+end
+
+@testset "extreme posterior scales remain finite" begin
+    config = tiny_config(propagation = "diagonal", hidden_units = 4)
+    params = initialize_model(2, "heteroscedastic", config; seed = 18)
+    extreme_params = (
+        hidden = merge(params.hidden, (
+            weight_log_std = fill(60f0, size(params.hidden.weight_log_std)),
+            bias_log_std = fill(-60f0, size(params.hidden.bias_log_std)),
+        )),
+        output = merge(params.output, (
+            weight_log_std = fill(60f0, size(params.output.weight_log_std)),
+            bias_log_std = fill(-60f0, size(params.output.bias_log_std)),
+        )),
+    )
+    features = Float32[0.2 -0.3; 0.4 0.1]
+    targets = Float32[0.1, -0.2]
+    loss, gradient = Zygote.withgradient(extreme_params) do candidate
+        dvi_loss(
+            candidate,
+            features,
+            targets,
+            "heteroscedastic",
+            config,
+            length(targets),
+        )
+    end
+    @test isfinite(loss)
+    @test DVIUCI.parameters_are_finite(gradient[1])
 end
 
 @testset "finite deterministic ELBO gradient" begin
@@ -262,6 +343,107 @@ end
     ))
 end
 
+@testset "non-finite loss aborts before an optimizer update" begin
+    config = tiny_config(hidden_units = 4)
+    params = initialize_model(2, "heteroscedastic", config; seed = 22)
+    optimizer_state = Optimisers.setup(
+        Optimisers.Adam(config.learning_rate), params,
+    )
+    features = Float32[0.1 -0.2]
+    targets = Float32[Inf]
+    error = try
+        DVIUCI.gradient_step(
+            params,
+            optimizer_state,
+            features,
+            targets,
+            "heteroscedastic",
+            config,
+            1,
+            1,
+            0;
+            batch = 1,
+            phase = "selection",
+            tracker = NumericalTracker(),
+        )
+        nothing
+    catch caught
+        caught
+    end
+    @test error isa DVINumericalError
+    @test error.kind == "non-finite DVI loss"
+    @test error.diagnostics.phase == "selection"
+    @test error.diagnostics.optimizer_step == 1
+    @test DVIUCI.parameters_are_finite(params)
+end
+
+
+@testset "run rows are upserted by configuration identity" begin
+    mktempdir() do output_dir
+        config = tiny_config(output_dir = output_dir)
+        first_row = (
+            dataset = "yacht",
+            split = 1,
+            likelihood = "heteroscedastic",
+            propagation = "diagonal",
+            status = "failure",
+        )
+        replacement = merge(first_row, (status = "success",))
+        runs = DVIUCI.append_run!(DataFrame(), first_row, config)
+        runs = DVIUCI.append_run!(runs, replacement, config)
+        @test nrow(runs) == 1
+        @test only(runs.status) == "success"
+    end
+end
+
+@testset "complete run validation" begin
+    rows = DataFrame([
+        (
+            dataset = "yacht",
+            split = split_id,
+            likelihood = "heteroscedastic",
+            propagation = "diagonal",
+            status = "success",
+        )
+        for split_id in 1:2
+    ])
+    @test DVIUCI.validate_complete_runs(
+        rows,
+        ["yacht"],
+        [1, 2],
+        ["heteroscedastic"],
+        "diagonal",
+    ) === rows
+    @test_throws ArgumentError DVIUCI.validate_complete_runs(
+        rows[1:1, :],
+        ["yacht"],
+        [1, 2],
+        ["heteroscedastic"],
+        "diagonal",
+    )
+    failed = copy(rows)
+    failed.status[2] = "failure"
+    @test_throws ArgumentError DVIUCI.validate_complete_runs(
+        failed,
+        ["yacht"],
+        [1, 2],
+        ["heteroscedastic"],
+        "diagonal",
+    )
+end
+
+@testset "configuration stems accept CSV string subtypes" begin
+    dataset = SubString("xconcrete", 2)
+    likelihood = SubString("xheteroscedastic", 2)
+    propagation = SubString("xdiagonal", 2)
+    @test DVIUCI.configuration_stem(
+        dataset,
+        3,
+        likelihood,
+        propagation,
+    ) == "concrete_split03_heteroscedastic_diagonal"
+end
+
 @testset "offline synthetic integration" begin
     rng = StableRNG(30)
     features = randn(rng, 90, 3)
@@ -285,10 +467,19 @@ end
         max_epochs = 3,
         patience = 3,
     )
+    history_directory = mktempdir()
+    history_path = joinpath(history_directory, "history.csv")
     selection = train_with_validation(
-        prepared, 3, "heteroscedastic", config; seed = 32,
+        prepared,
+        3,
+        "heteroscedastic",
+        config;
+        seed = 32,
+        history_path = history_path,
     )
     @test 1 <= selection.best_epoch <= config.max_epochs
+    @test isfile(history_path)
+    @test nrow(CSV.read(history_path, DataFrame)) == nrow(selection.history)
     refit = refit_model(
         prepared,
         3,
@@ -309,4 +500,30 @@ end
     @test isfinite(metrics.lpd_original)
     @test isfinite(metrics.rmse_original)
     @test metrics.mean_total_variance_original > 0
+end
+
+@testset "BBB-compatible paper tables" begin
+    metric_values = (; (
+        name => 1.0 for name in DVIUCI.DVI_SCALAR_METRIC_NAMES
+    )...)
+    runs = DataFrame([(
+        dataset = "yacht",
+        dataset_name = "Yacht",
+        likelihood = "heteroscedastic",
+        propagation = "full",
+        status = "success",
+        metric_values...,
+    )])
+    summary = DVIUCI.summary_table(runs)
+    mktempdir() do output_dir
+        paths = DVIUCI.write_tables(
+            summary,
+            tiny_config(output_dir = output_dir),
+        )
+        @test isfile(joinpath(output_dir, "summary.csv"))
+        @test isfile(paths.markdown)
+        @test isfile(paths.latex)
+        @test occursin("LPD (standardized)", read(paths.markdown, String))
+        @test occursin("\\begin{tabular}", read(paths.latex, String))
+    end
 end

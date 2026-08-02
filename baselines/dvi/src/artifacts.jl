@@ -3,14 +3,15 @@ const CONFIG_RUNTIME_ONLY_FIELDS = Set([
     "resume",
     "make_plot",
     "show_progress",
+    "selection_only",
 ])
-const DVI_POSTERIOR_SCHEMA_VERSION = "dvi-uci-posterior-v1"
+const DVI_POSTERIOR_SCHEMA_VERSION = "dvi-uci-posterior-v2"
 
 function configuration_stem(
-    dataset::String,
+    dataset::AbstractString,
     split_id::Int,
-    likelihood::String,
-    propagation::String,
+    likelihood::AbstractString,
+    propagation::AbstractString,
 )
     return @sprintf(
         "%s_split%02d_%s_%s",
@@ -67,6 +68,7 @@ end
 function ensure_output_directories(config::DVIConfig)
     mkpath(config.output_dir)
     mkpath(joinpath(config.output_dir, "histories"))
+    mkpath(joinpath(config.output_dir, "failures"))
     config.save_checkpoints &&
         mkpath(joinpath(config.output_dir, "checkpoints"))
     return config.output_dir
@@ -150,15 +152,16 @@ function configuration_succeeded(
     isempty(runs) && return false
     required = (:dataset, :split, :likelihood, :propagation, :status)
     all(name -> name in propertynames(runs), required) || return false
+    expected_status = config.selection_only ? "selection_success" : "success"
     row_succeeded = any(eachrow(runs)) do row
         string(row.dataset) == dataset &&
             Int(row.split) == split_id &&
             string(row.likelihood) == likelihood &&
             string(row.propagation) == propagation &&
-            string(row.status) == "success"
+            string(row.status) == expected_status
     end
     row_succeeded || return false
-    config.save_checkpoints || return true
+    (config.save_checkpoints && !config.selection_only) || return true
     path = posterior_checkpoint_path(
         config, dataset, split_id, likelihood,
     )
@@ -189,10 +192,63 @@ end
 
 function append_run!(runs::DataFrame, row::NamedTuple, config::DVIConfig)
     incoming = DataFrame([row])
-    updated = isempty(runs) ? incoming :
-        vcat(runs, incoming; cols = :union)
+    updated = if isempty(runs)
+        incoming
+    else
+        required = (:dataset, :split, :likelihood, :propagation)
+        all(name -> name in propertynames(runs), required) || throw(
+            ArgumentError("existing runs.csv lacks configuration identity"),
+        )
+        keep = map(eachrow(runs)) do existing
+            !(string(existing.dataset) == string(row.dataset) &&
+              Int(existing.split) == Int(row.split) &&
+              string(existing.likelihood) == string(row.likelihood) &&
+              string(existing.propagation) == string(row.propagation))
+        end
+        vcat(runs[keep, :], incoming; cols = :union)
+    end
+    sort!(updated, [:dataset, :split, :likelihood, :propagation])
     atomic_csv_write(joinpath(config.output_dir, "runs.csv"), updated)
     return updated
+end
+
+function validate_complete_runs(
+    runs::DataFrame,
+    datasets::Vector{String},
+    split_ids::Vector{Int},
+    likelihoods::Vector{String},
+    propagation::String,
+)
+    required = (:dataset, :split, :likelihood, :propagation, :status)
+    all(name -> name in propertynames(runs), required) || throw(
+        ArgumentError("runs table lacks completeness columns"),
+    )
+    identity_columns = [:dataset, :split, :likelihood, :propagation]
+    nrow(unique(runs[:, identity_columns])) == nrow(runs) || throw(
+        ArgumentError("runs table contains duplicate configurations"),
+    )
+    all(string.(runs.status) .== "success") || throw(ArgumentError(
+        "runs table contains failed or selection-only configurations",
+    ))
+    expected = Set(
+        (dataset, split_id, likelihood, propagation)
+        for dataset in datasets
+        for split_id in split_ids
+        for likelihood in likelihoods
+    )
+    observed = Set(
+        (
+            string(row.dataset),
+            Int(row.split),
+            string(row.likelihood),
+            string(row.propagation),
+        )
+        for row in eachrow(runs)
+    )
+    observed == expected || throw(ArgumentError(
+        "runs table does not exactly match the expected configurations",
+    ))
+    return runs
 end
 
 function summary_table(runs::DataFrame)
@@ -247,20 +303,49 @@ function write_tables(summary::DataFrame, config::DVIConfig)
     open(markdown_path, "w") do io
         println(
             io,
-            "| Dataset | Method | Likelihood | Runs | LPD (original) | RMSE |",
+            "| Dataset | Method | Likelihood | Runs | LPD (original) | RMSE | LPD (standardized) |",
         )
-        println(io, "|---|---:|---:|---:|---:|---:|")
+        println(io, "|---|---:|---:|---:|---:|---:|---:|")
         for row in eachrow(summary)
             println(
                 io,
                 "| $(row.dataset_name) | $(row.propagation) | " *
                 "$(row.likelihood) | $(row.n) | " *
                 "$(format_pm(row.lpd_original_mean, row.lpd_original_std)) | " *
-                "$(format_pm(row.rmse_original_mean, row.rmse_original_std)) |",
+                "$(format_pm(row.rmse_original_mean, row.rmse_original_std)) | " *
+                "$(format_pm(row.lpd_standardized_mean, row.lpd_standardized_std)) |",
             )
         end
     end
-    return markdown_path
+
+    latex_path = joinpath(config.output_dir, "table.tex")
+    open(latex_path, "w") do io
+        println(io, "\\begin{tabular}{lllrrr}")
+        println(io, "\\toprule")
+        println(
+            io,
+            "Dataset & Method & Likelihood & Runs & LPD (original) & RMSE \\\\",
+        )
+        println(io, "\\midrule")
+        for row in eachrow(summary)
+            dataset_name = replace(string(row.dataset_name), "_" => "\\_")
+            println(
+                io,
+                "$dataset_name & $(row.propagation) & $(row.likelihood) & " *
+                "$(row.n) & " *
+                @sprintf(
+                    "%.4f \$\\pm\$ %.4f & %.4f \$\\pm\$ %.4f \\\\",
+                    row.lpd_original_mean,
+                    row.lpd_original_std,
+                    row.rmse_original_mean,
+                    row.rmse_original_std,
+                ),
+            )
+        end
+        println(io, "\\bottomrule")
+        println(io, "\\end{tabular}")
+    end
+    return (markdown = markdown_path, latex = latex_path)
 end
 
 function make_summary_plot(summary::DataFrame, config::DVIConfig)
