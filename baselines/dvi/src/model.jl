@@ -334,21 +334,29 @@ function clamp_tally(values, config::DVIConfig)
     )
 end
 
-function dvi_loss_clamp_statistics(
-    params,
-    features::AbstractMatrix,
-    likelihood::String,
-    config::DVIConfig,
-)
+function parameter_variance_clamp_statistics(params, config::DVIConfig)
     parameter_inputs = (
         2f0 .* params.hidden.weight_log_std,
         2f0 .* params.hidden.bias_log_std,
         2f0 .* params.output.weight_log_std,
         2f0 .* params.output.bias_log_std,
     )
-    parameter_tallies = map(
-        values -> clamp_tally(values, config), parameter_inputs,
+    tallies = map(values -> clamp_tally(values, config), parameter_inputs)
+    return (
+        calls = sum(tally.calls for tally in tallies),
+        elements = sum(tally.elements for tally in tallies),
+        lower_clamps = sum(tally.lower_clamps for tally in tallies),
+        upper_clamps = sum(tally.upper_clamps for tally in tallies),
     )
+end
+
+function dvi_loss_clamp_statistics(
+    params,
+    features::AbstractMatrix,
+    likelihood::String,
+    config::DVIConfig,
+)
+    parameter_tally = parameter_variance_clamp_statistics(params, config)
 
     output = propagate_dvi(params, features, config)
     precision_input = if likelihood == "heteroscedastic"
@@ -362,16 +370,12 @@ function dvi_loss_clamp_statistics(
     precision_tally = clamp_tally(precision_input, config)
 
     return (
-        calls = 2 * sum(tally.calls for tally in parameter_tallies) +
-            precision_tally.calls,
-        elements = 2 * sum(tally.elements for tally in parameter_tallies) +
-            precision_tally.elements,
-        lower_clamps = 2 * sum(
-            tally.lower_clamps for tally in parameter_tallies
-        ) + precision_tally.lower_clamps,
-        upper_clamps = 2 * sum(
-            tally.upper_clamps for tally in parameter_tallies
-        ) + precision_tally.upper_clamps,
+        calls = 2 * parameter_tally.calls + precision_tally.calls,
+        elements = 2 * parameter_tally.elements + precision_tally.elements,
+        lower_clamps = 2 * parameter_tally.lower_clamps +
+            precision_tally.lower_clamps,
+        upper_clamps = 2 * parameter_tally.upper_clamps +
+            precision_tally.upper_clamps,
     )
 end
 

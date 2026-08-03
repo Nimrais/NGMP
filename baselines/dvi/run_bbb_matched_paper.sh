@@ -2,6 +2,12 @@
 
 set -euo pipefail
 
+methods="${DVI_PAPER_METHODS:-full}"
+if [[ "$methods" != "full" ]]; then
+    echo "This launcher is full-DVI-only; completed dDVI results must not be rerun." >&2
+    exit 2
+fi
+
 if [[ "${DVI_PAPER_PROFILE_APPROVED:-false}" != "true" ]]; then
     echo "Refusing paper run: set DVI_PAPER_PROFILE_APPROVED=true only after the profiler projects at most three days." >&2
     exit 2
@@ -9,10 +15,9 @@ fi
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_dir="$(cd -- "$script_dir/../.." && pwd)"
-output_root="${DVI_PAPER_OUTPUT_ROOT:-$repo_dir/paper_materials/dvi_uci/wu2019_repeated_holdout_v1_20splits_robust_optimized_v1_20260802}"
-execution_backend="${DVI_PAPER_BACKEND:-zygote}"
-execution_device="${DVI_PAPER_DEVICE:-cpu}"
-methods="${DVI_PAPER_METHODS:-full}"
+output_root="${DVI_PAPER_OUTPUT_ROOT:-$repo_dir/paper_materials/dvi_uci/wu2019_repeated_holdout_v1_20splits_robust_selection_optimized_v2_20260803}"
+execution_backend="${DVI_PAPER_BACKEND:-reactant}"
+execution_device="${DVI_PAPER_DEVICE:-gpu}"
 default_shards=4
 if [[ "$execution_backend" == "reactant" && "$execution_device" == "gpu" ]]; then
     default_shards=1
@@ -76,6 +81,7 @@ run_method() {
             DVI_MIN_EPOCHS=25 \
             DVI_VALIDATION_EVERY=5 \
             DVI_PATIENCE=500 \
+            DVI_FULL_PATIENCE_STEPS="${DVI_PAPER_FULL_PATIENCE_STEPS:-50000}" \
             DVI_LEARNING_RATE=0.0003 \
             DVI_NUMERICAL_PROTOCOL=bounded-exp-step-kl-v1 \
             DVI_SAFE_EXP_MIN=-20 \
@@ -102,9 +108,4 @@ run_method() {
         "$output_root/$method_directory/"*
 }
 
-case ",$methods," in
-    *,diagonal,*) run_method diagonal ;;
-esac
-case ",$methods," in
-    *,full,*) run_method full ;;
-esac
+run_method full

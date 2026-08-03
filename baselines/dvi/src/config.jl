@@ -93,7 +93,8 @@ function default_output_directory()
     ))
 end
 
-const DVI_IMPLEMENTATION_VERSION = "full-covariance-optimized-v1"
+const DVI_IMPLEMENTATION_VERSION =
+    "full-covariance-selection-optimized-v2"
 
 Base.@kwdef struct DVIConfig
     datasets::Vector{String} = first.(DATASET_REGISTRY)
@@ -121,6 +122,7 @@ Base.@kwdef struct DVIConfig
     min_epochs::Int = 25
     validation_every::Int = 5
     patience::Int = 500
+    full_selection_patience_steps::Int = 50_000
     kl_schedule_unit::String = "steps"
     kl_warmup_steps::Int = 14_000
     kl_anneal_steps::Int = 1_000
@@ -197,6 +199,9 @@ function load_config()
         min_epochs = env_int("DVI_MIN_EPOCHS", 25),
         validation_every = env_int("DVI_VALIDATION_EVERY", 5),
         patience = env_int("DVI_PATIENCE", 500),
+        full_selection_patience_steps = env_int(
+            "DVI_FULL_PATIENCE_STEPS", 50_000,
+        ),
         kl_schedule_unit = schedule_unit,
         kl_warmup_steps = env_int(
             "DVI_KL_WARMUP_STEPS", schedule_unit == "steps" ? 14_000 : 0,
@@ -299,6 +304,9 @@ function validate_config(config::DVIConfig)
         throw(ArgumentError("DVI_VALIDATION_EVERY must be positive"))
     config.patience >= 1 ||
         throw(ArgumentError("DVI_PATIENCE must be positive"))
+    config.full_selection_patience_steps >= 1 || throw(ArgumentError(
+        "DVI_FULL_PATIENCE_STEPS must be positive",
+    ))
     config.kl_schedule_unit in ("steps", "epochs") || throw(ArgumentError(
         "DVI_KL_SCHEDULE_UNIT must be steps or epochs",
     ))

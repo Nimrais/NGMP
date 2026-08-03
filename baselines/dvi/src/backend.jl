@@ -103,3 +103,32 @@ training_backend_parameters(backend::ZygoteTrainingBackend) = backend.params
 training_backend_parameters(backend) = call_reactant_backend(
     :training_backend_parameters, backend,
 )
+
+function training_backend_validation_output(
+    backend::ZygoteTrainingBackend,
+    features::AbstractMatrix;
+    tracker::NumericalTracker,
+)
+    return propagate_dvi(
+        backend.params, features, backend.config; tracker = tracker,
+    )
+end
+
+function training_backend_validation_output(
+    backend,
+    features::AbstractMatrix;
+    tracker::NumericalTracker,
+)
+    if backend.config.propagation == "full"
+        return call_reactant_backend(
+            :training_backend_validation_output,
+            backend,
+            features;
+            tracker = tracker,
+        )
+    end
+    params = training_backend_parameters(backend)
+    return propagate_dvi(
+        params, features, backend.config; tracker = tracker,
+    )
+end

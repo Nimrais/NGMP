@@ -14,14 +14,12 @@ const DVI_SCALAR_METRIC_NAMES = (
     :mean_aleatoric_variance_original,
 )
 
-function predictive_distribution(
-    params,
-    features::AbstractMatrix,
+function predictive_distribution_from_output(
+    output,
     likelihood::String,
     config::DVIConfig,
     tracker::Union{Nothing, NumericalTracker} = nothing,
 )
-    output = propagate_dvi(params, features, config; tracker = tracker)
     predictive_mean = vec(output.mean[:, 1])
     epistemic_variance = max.(
         output_covariance_entry(output, 1, 1, config),
@@ -62,13 +60,25 @@ function predictive_distribution(
     )
 end
 
+function predictive_distribution(
+    params,
+    features::AbstractMatrix,
+    likelihood::String,
+    config::DVIConfig,
+    tracker::Union{Nothing, NumericalTracker} = nothing,
+)
+    output = propagate_dvi(params, features, config; tracker = tracker)
+    return predictive_distribution_from_output(
+        output, likelihood, config, tracker,
+    )
+end
+
 coverage(targets, means, standard_deviations, z) = mean(
     abs.(targets .- means) .<= z .* standard_deviations,
 )
 
-function predictive_metrics(
-    params,
-    features::AbstractMatrix,
+function predictive_metrics_from_output(
+    output,
     targets_standardized::AbstractVector,
     targets_original::AbstractVector,
     standardizer,
@@ -76,8 +86,8 @@ function predictive_metrics(
     config::DVIConfig,
     tracker::Union{Nothing, NumericalTracker} = nothing,
 )
-    prediction = predictive_distribution(
-        params, features, likelihood, config, tracker,
+    prediction = predictive_distribution_from_output(
+        output, likelihood, config, tracker,
     )
     residual_squared =
         (targets_standardized .- prediction.mean) .^ 2
@@ -141,5 +151,28 @@ function predictive_metrics(
         mean_aleatoric_variance_original = mean(aleatoric_original),
         predictive_mean_original = mean_original,
         total_variance_original = total_original,
+    )
+end
+
+
+function predictive_metrics(
+    params,
+    features::AbstractMatrix,
+    targets_standardized::AbstractVector,
+    targets_original::AbstractVector,
+    standardizer,
+    likelihood::String,
+    config::DVIConfig,
+    tracker::Union{Nothing, NumericalTracker} = nothing,
+)
+    output = propagate_dvi(params, features, config; tracker = tracker)
+    return predictive_metrics_from_output(
+        output,
+        targets_standardized,
+        targets_original,
+        standardizer,
+        likelihood,
+        config,
+        tracker,
     )
 end

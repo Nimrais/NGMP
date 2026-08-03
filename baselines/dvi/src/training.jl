@@ -318,6 +318,33 @@ function earliest_selection_epoch(config::DVIConfig, n_training::Int)
     return max(config.min_epochs, schedule_epoch)
 end
 
+function should_validate_selection_epoch(
+    epoch::Int,
+    selection_start_epoch::Int,
+    config::DVIConfig,
+)
+    scheduled = epoch % config.validation_every == 0 ||
+        epoch == config.max_epochs
+    full_dvi_is_selectable = config.propagation != "full" ||
+        epoch >= selection_start_epoch
+    return scheduled && full_dvi_is_selectable
+end
+
+function selection_patience_exhausted(
+    config::DVIConfig,
+    non_improving_checks::Int,
+    optimizer_step::Int,
+    best_optimizer_step::Int,
+)
+    check_limit_reached = non_improving_checks >= config.patience
+    full_step_limit_reached =
+        config.propagation == "full" &&
+        best_optimizer_step > 0 &&
+        optimizer_step - best_optimizer_step >=
+            config.full_selection_patience_steps
+    return check_limit_reached || full_step_limit_reached
+end
+
 function train_with_validation(
     inner_split,
     input_dimension::Int,
@@ -340,6 +367,7 @@ function train_with_validation(
     history = NamedTuple[]
     best_lpd = -Inf
     best_epoch = 0
+    best_optimizer_step = 0
     best_params = nothing
     non_improving_checks = 0
     stopped_early = false
@@ -358,15 +386,18 @@ function train_with_validation(
             phase = "selection",
             tracker = tracker,
         )
-        should_validate =
-            epoch % config.validation_every == 0 ||
-            epoch == config.max_epochs
+        should_validate = should_validate_selection_epoch(
+            epoch, selection_start_epoch, config,
+        )
         should_validate || continue
 
-        validation_params = training_backend_parameters(backend)
-        validation_metrics = evaluate_standardized_model(
-            validation_params,
-            inner_split.x_test_standardized,
+        validation_output = training_backend_validation_output(
+            backend,
+            inner_split.x_test_standardized;
+            tracker = tracker,
+        )
+        validation_metrics = predictive_metrics_from_output(
+            validation_output,
             inner_split.y_test_standardized,
             inner_split.y_test,
             inner_split.standardizer,
@@ -402,17 +433,27 @@ function train_with_validation(
             )
         end
 
+        # Full DVI never reaches this branch before the selectable KL phase.
+        # Keep the historical dDVI behavior exactly: record early validation
+        # diagnostics, but do not use them for model selection or patience.
         epoch < selection_start_epoch && continue
+
         if isfinite(validation_metrics.lpd_original) &&
            validation_metrics.lpd_original > best_lpd
             best_lpd = validation_metrics.lpd_original
             best_epoch = epoch
-            best_params = deepcopy(validation_params)
+            best_optimizer_step = optimizer_step
+            best_params = deepcopy(training_backend_parameters(backend))
             non_improving_checks = 0
         else
             non_improving_checks += 1
         end
-        if non_improving_checks >= config.patience
+        if selection_patience_exhausted(
+            config,
+            non_improving_checks,
+            optimizer_step,
+            best_optimizer_step,
+        )
             stopped_early = true
             break
         end

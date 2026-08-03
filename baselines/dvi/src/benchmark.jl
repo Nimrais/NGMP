@@ -57,6 +57,8 @@ function run_configuration(
             execution_backend = config.execution_backend,
             execution_device = config.execution_device,
             implementation_version = config.implementation_version,
+            full_selection_patience_steps =
+                config.full_selection_patience_steps,
             status = "selection_success",
             error = "",
             failure_phase = "",
@@ -169,6 +171,8 @@ function run_configuration(
                 execution_backend = config.execution_backend,
                 execution_device = config.execution_device,
                 implementation_version = config.implementation_version,
+                full_selection_patience_steps =
+                    config.full_selection_patience_steps,
                 model_seed = seeds.model,
                 prediction_config = (
                     hidden_units = config.hidden_units,
@@ -194,6 +198,7 @@ function run_configuration(
         execution_backend = config.execution_backend,
         execution_device = config.execution_device,
         implementation_version = config.implementation_version,
+        full_selection_patience_steps = config.full_selection_patience_steps,
         status = "success",
         error = "",
         failure_phase = "",
@@ -270,6 +275,7 @@ function failure_row(
         execution_backend = config.execution_backend,
         execution_device = config.execution_device,
         implementation_version = config.implementation_version,
+        full_selection_patience_steps = config.full_selection_patience_steps,
         status = "failure",
         error = sprint(showerror, error, backtrace),
         failure_phase = failure_phase,
@@ -346,6 +352,7 @@ function write_failure_diagnostic(
         execution_backend = config.execution_backend,
         execution_device = config.execution_device,
         implementation_version = config.implementation_version,
+        full_selection_patience_steps = config.full_selection_patience_steps,
         numerical_protocol = config.numerical_protocol,
         error = sprint(showerror, error, backtrace),
         diagnostics = diagnostics,

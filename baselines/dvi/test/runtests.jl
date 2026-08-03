@@ -304,6 +304,48 @@ end
         execution_backend = "reactant",
         execution_device = "gpu",
     )).implementation_version == DVIUCI.DVI_IMPLEMENTATION_VERSION
+    @test occursin(
+        "selection-optimized-v2", DVIUCI.DVI_IMPLEMENTATION_VERSION,
+    )
+    @test_throws ArgumentError validate_config(tiny_config(
+        full_selection_patience_steps = 0,
+    ))
+    full_selection_config = tiny_config(
+        propagation = "full",
+        validation_every = 5,
+        max_epochs = 100,
+        full_selection_patience_steps = 50,
+    )
+    diagonal_selection_config = tiny_config(
+        propagation = "diagonal",
+        validation_every = 5,
+        max_epochs = 100,
+        full_selection_patience_steps = 50,
+    )
+    @test !DVIUCI.should_validate_selection_epoch(
+        5, 20, full_selection_config,
+    )
+    @test DVIUCI.should_validate_selection_epoch(
+        20, 20, full_selection_config,
+    )
+    @test DVIUCI.should_validate_selection_epoch(
+        5, 20, diagonal_selection_config,
+    )
+    @test !DVIUCI.selection_patience_exhausted(
+        full_selection_config, 1, 149, 100,
+    )
+    @test DVIUCI.selection_patience_exhausted(
+        full_selection_config, 1, 150, 100,
+    )
+    @test !DVIUCI.selection_patience_exhausted(
+        diagonal_selection_config, 1, 150, 100,
+    )
+    @test DVIUCI.selection_patience_exhausted(
+        diagonal_selection_config,
+        diagonal_selection_config.patience,
+        150,
+        100,
+    )
 
     loss_config = tiny_config()
     params = initialize_model(
@@ -459,6 +501,36 @@ end
         end
         @test observed.numerical.clamp_count ==
             reference.numerical.clamp_count
+
+        validation_params = initialize_model(
+            3, "heteroscedastic", reference_config; seed = 107,
+        )
+        validation_backend = DVIUCI.initialize_training_backend(
+            validation_params,
+            features,
+            targets,
+            "heteroscedastic",
+            reactant_config,
+        )
+        observed_tracker = NumericalTracker()
+        observed_output = DVIUCI.training_backend_validation_output(
+            validation_backend,
+            features;
+            tracker = observed_tracker,
+        )
+        reference_tracker = NumericalTracker()
+        reference_output = propagate_dvi(
+            validation_params,
+            features,
+            reference_config;
+            tracker = reference_tracker,
+        )
+        @test observed_output.mean ≈
+            reference_output.mean rtol = 2e-4 atol = 2e-5
+        @test observed_output.covariance ≈
+            reference_output.covariance rtol = 2e-4 atol = 2e-5
+        @test tracker_record(observed_tracker) ==
+            tracker_record(reference_tracker)
     else
         @test true
     end
@@ -618,9 +690,22 @@ end
         "heteroscedastic",
         config,
     )
+    propagated = propagate_dvi(
+        refit.params, prepared.x_test_standardized, config,
+    )
+    metrics_from_output = DVIUCI.predictive_metrics_from_output(
+        propagated,
+        prepared.y_test_standardized,
+        prepared.y_test,
+        prepared.standardizer,
+        "heteroscedastic",
+        config,
+    )
     @test isfinite(metrics.lpd_original)
     @test isfinite(metrics.rmse_original)
     @test metrics.mean_total_variance_original > 0
+    @test metrics_from_output.lpd_original ≈ metrics.lpd_original
+    @test metrics_from_output.rmse_original ≈ metrics.rmse_original
 end
 
 @testset "BBB-compatible paper tables" begin

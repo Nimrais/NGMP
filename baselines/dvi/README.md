@@ -88,7 +88,12 @@ method and stated protocol, not a claim of bit-for-bit reproduction of Table
 - inner validation for selecting the epoch, followed by a fresh refit on all
   outer-training observations; selection and early stopping begin only after
   any configured KL warmup and annealing are complete;
-- validation patience of 500 checks.
+- validation every five epochs and patience of 500 checks. Full DVI also caps
+  a no-improvement tail at 50,000 optimizer steps; diagonal-dDVI retains only
+  the original check-based patience and is not affected by this cap;
+- full DVI skips validation before the selectable KL phase. With Reactant it
+  propagates validation moments on the selected device and transfers only the
+  small output moments back for the unchanged host-side `Float64` metrics.
 
 The exact repeated-holdout algorithm is shared with BBB through
 `SurrogateModelling`'s versioned `repeated-holdout-v1` protocol. Split IDs
@@ -159,6 +164,9 @@ julia --project=baselines/dvi baselines/dvi/run.jl
 Backend, device, and implementation version are saved as result-affecting
 configuration fields. A result directory therefore cannot be resumed with a
 different execution implementation.
+
+`DVI_FULL_PATIENCE_STEPS` controls the full-DVI-only optimizer-step cap and
+defaults to `50000`. It never changes diagonal-dDVI stopping behavior.
 
 Before launching the paper run, measure warmed gradient/Adam steps without
 writing any result artifact:
@@ -273,9 +281,9 @@ DVI_PAPER_DEVICE=gpu DVI_PAPER_SHARDS=1 \
 baselines/dvi/run_bbb_matched_paper.sh
 ```
 
-`DVI_PAPER_SHARDS` accepts 1, 2, or 4. Set
-`DVI_PAPER_METHODS=diagonal,full` only when both methods intentionally need a
-fresh run; the default is `full`, so the completed dDVI result is not rerun.
+`DVI_PAPER_SHARDS` accepts 1, 2, or 4. The launcher now refuses any
+`DVI_PAPER_METHODS` value other than `full`, ensuring the completed dDVI result
+cannot be rerun accidentally.
 
 After running independent `DVI_SPLIT_IDS` shards, combine them with:
 

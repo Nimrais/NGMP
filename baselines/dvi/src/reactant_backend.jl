@@ -16,9 +16,12 @@ mutable struct ReactantTrainingBackend
     targets::Any
     likelihood::String
     config::DVIUCI.DVIConfig
+    validation_features::Any
+    validation_kernel::Any
 end
 
 const COMPILED_BATCH_KERNELS = Dict{Tuple, Any}()
+const COMPILED_VALIDATION_KERNELS = Dict{Tuple, Any}()
 
 function reactant_gaussian_cdf(values)
     scaled = DVIUCI.DVI_INV_SQRT2 .* values
@@ -253,6 +256,8 @@ function initialize_training_backend(
         Reactant.to_rarray(targets),
         likelihood,
         config,
+        nothing,
+        nothing,
     )
 end
 
@@ -317,6 +322,43 @@ function compile_batch_kernel!(
     end
 end
 
+function validation_kernel_key(
+    backend::ReactantTrainingBackend,
+    validation_features,
+)
+    config = backend.config
+    return (
+        config.execution_device,
+        config.implementation_version,
+        config.propagation,
+        backend.likelihood,
+        size(validation_features),
+        eltype(backend.params.hidden.weight_mu),
+        config.hidden_units,
+        config.safe_exp_min,
+        config.safe_exp_max,
+    )
+end
+
+function compile_validation_kernel!(
+    backend::ReactantTrainingBackend,
+    validation_features,
+)
+    key = validation_kernel_key(backend, validation_features)
+    return get!(COMPILED_VALIDATION_KERNELS, key) do
+        config = backend.config
+        kernel = (params, features) -> (
+            output = DVIUCI.propagate_dvi(params, features, config),
+            numerical = DVIUCI.parameter_variance_clamp_statistics(
+                params, config,
+            ),
+        )
+        Reactant.@compile sync = true kernel(
+            backend.params, validation_features,
+        )
+    end
+end
+
 host_scalar(value::Number) = value
 host_scalar(value) = only(Array(value))
 host_bool(value) = Bool(host_scalar(value))
@@ -326,6 +368,28 @@ function materialize(value::NamedTuple)
 end
 materialize(value::Reactant.RArray) = Array(value)
 materialize(value) = value
+
+function training_backend_validation_output(
+    backend::ReactantTrainingBackend,
+    features::AbstractMatrix;
+    tracker::DVIUCI.NumericalTracker,
+)
+    if backend.validation_features === nothing
+        backend.validation_features = Reactant.to_rarray(features)
+        backend.validation_kernel = compile_validation_kernel!(
+            backend, backend.validation_features,
+        )
+    else
+        size(backend.validation_features) == size(features) || throw(
+            DimensionMismatch("validation feature shape changed"),
+        )
+    end
+    observed = backend.validation_kernel(
+        backend.params, backend.validation_features,
+    )
+    DVIUCI.accumulate_tracker!(tracker, observed.numerical)
+    return materialize(observed.output)
+end
 
 function training_backend_epoch(
     backend::ReactantTrainingBackend,
