@@ -1,0 +1,426 @@
+=== full DVI v2 non-Yacht start 2026-08-03T11:48:05+02:00 ===
+[1/100] Concrete split 1 heteroscedastic full
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+I0000 00:00:1785750571.604484   22770 service.cc:153] XLA service 0x2af95b20 initialized for platform CUDA (this does not guarantee that XLA will be used). Devices:
+I0000 00:00:1785750571.604508   22770 service.cc:161]   StreamExecutor device (0): NVIDIA GeForce RTX 3090, Compute Capability 8.6
+I0000 00:00:1785750571.605165   22770 se_gpu_pjrt_client.cc:1440] Using BFC allocator.
+I0000 00:00:1785750571.605267   22770 gpu_helpers.cc:141] XLA backend allocating 18966577152 bytes on device 0 for BFCAllocator.
+I0000 00:00:1785750571.605357   22770 gpu_helpers.cc:182] XLA backend will use up to 6322192384 bytes on device 0 for CollectiveBFCAllocator.
+I0000 00:00:1785750571.615483   22770 cuda_dnn.cc:461] Loaded cuDNN version 91400
+I0000 00:00:1785750687.074076   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785750687.078878   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785750687.082877   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785750687.086540   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785750687.090081   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785750687.093587   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785750687.096976   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785750700.895467   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785750700.900182   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785750700.904141   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785750700.907773   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785750700.911298   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785750700.914765   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785750700.918112   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785750794.847404   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785750794.852595   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785750794.856713   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785750794.860478   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785750794.864136   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785750794.867715   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785750794.871178   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785750803.149697   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785750803.155930   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785750803.161032   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785750803.165760   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785750803.170340   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785750803.174847   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785750803.179218   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+    test LPD -3.15201  RMSE 6.66506  epoch 1675  301.1s
+[2/100] Concrete split 2 heteroscedastic full
+    test LPD -3.06668  RMSE 5.81721  epoch 1745  132.3s
+[3/100] Concrete split 3 heteroscedastic full
+    test LPD -2.98623  RMSE 5.37829  epoch 5660  329.7s
+[4/100] Concrete split 4 heteroscedastic full
+    test LPD -2.99798  RMSE 4.69587  epoch 1670  144.4s
+[5/100] Concrete split 5 heteroscedastic full
+    test LPD -3.11784  RMSE 6.66473  epoch 1675  144.3s
+[6/100] Concrete split 6 heteroscedastic full
+    test LPD -2.96670  RMSE 5.31350  epoch 9800  508.4s
+[7/100] Concrete split 7 heteroscedastic full
+    test LPD -2.92361  RMSE 4.95061  epoch 3585  278.6s
+[8/100] Concrete split 8 heteroscedastic full
+    test LPD -2.95385  RMSE 4.87887  epoch 8645  475.0s
+[9/100] Concrete split 9 heteroscedastic full
+    test LPD -3.00190  RMSE 5.19921  epoch 1670  144.1s
+[10/100] Concrete split 10 heteroscedastic full
+    test LPD -3.03648  RMSE 5.52457  epoch 1670  143.1s
+[11/100] Concrete split 11 heteroscedastic full
+    test LPD -2.77426  RMSE 4.13370  epoch 3305  228.2s
+[12/100] Concrete split 12 heteroscedastic full
+    test LPD -3.01783  RMSE 5.58278  epoch 9575  513.6s
+[13/100] Concrete split 13 heteroscedastic full
+    test LPD -3.19409  RMSE 6.97116  epoch 1670  146.0s
+[14/100] Concrete split 14 heteroscedastic full
+    test LPD -3.03423  RMSE 5.98161  epoch 5195  332.6s
+[15/100] Concrete split 15 heteroscedastic full
+    test LPD -3.07682  RMSE 5.82103  epoch 1780  161.4s
+[16/100] Concrete split 16 heteroscedastic full
+    test LPD -3.04719  RMSE 6.16812  epoch 3910  265.6s
+[17/100] Concrete split 17 heteroscedastic full
+    test LPD -3.12708  RMSE 5.71978  epoch 1670  152.0s
+[18/100] Concrete split 18 heteroscedastic full
+    test LPD -3.17976  RMSE 6.65091  epoch 1670  154.4s
+[19/100] Concrete split 19 heteroscedastic full
+    test LPD -3.15540  RMSE 6.08999  epoch 1670  153.0s
+[20/100] Concrete split 20 heteroscedastic full
+    test LPD -3.00130  RMSE 5.10131  epoch 7965  477.5s
+[21/100] Energy split 1 heteroscedastic full
+I0000 00:00:1785755769.596773   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785755769.602218   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785755769.606458   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785755769.610320   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785755769.614095   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785755769.617734   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785755769.621280   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785755778.408243   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785755778.413237   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785755778.417358   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785755778.421169   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785755778.424887   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785755778.428507   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785755778.432098   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785755972.310302   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785755972.316405   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785755972.321510   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785755972.326241   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785755972.330812   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785755972.335290   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785755972.339636   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785755980.944840   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785755980.950245   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785755980.954723   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785755980.958787   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785755980.962626   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785755980.966377   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785755980.970017   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+    test LPD -0.69002  RMSE 1.85522  epoch 5655  337.4s
+[22/100] Energy split 2 heteroscedastic full
+    test LPD -0.88256  RMSE 2.87358  epoch 9735  393.9s
+[23/100] Energy split 3 heteroscedastic full
+    test LPD -0.61204  RMSE 0.51110  epoch 5105  264.7s
+[24/100] Energy split 4 heteroscedastic full
+    test LPD -0.86952  RMSE 3.91930  epoch 9930  406.9s
+[25/100] Energy split 5 heteroscedastic full
+    test LPD -0.91721  RMSE 1.82146  epoch 9765  404.6s
+[26/100] Energy split 6 heteroscedastic full
+    test LPD -0.67493  RMSE 2.03655  epoch 9935  416.7s
+[27/100] Energy split 7 heteroscedastic full
+    test LPD -0.63905  RMSE 1.22267  epoch 9880  407.6s
+[28/100] Energy split 8 heteroscedastic full
+    test LPD -0.53943  RMSE 1.18507  epoch 9025  391.4s
+[29/100] Energy split 9 heteroscedastic full
+    test LPD -2.02737  RMSE 2.07740  epoch 9465  396.0s
+[30/100] Energy split 10 heteroscedastic full
+    test LPD -0.80870  RMSE 2.03273  epoch 9525  405.0s
+[31/100] Energy split 11 heteroscedastic full
+    test LPD -0.90229  RMSE 2.31493  epoch 9950  414.7s
+[32/100] Energy split 12 heteroscedastic full
+    test LPD -0.71233  RMSE 1.73560  epoch 9920  412.8s
+[33/100] Energy split 13 heteroscedastic full
+    test LPD -1.21527  RMSE 1.93447  epoch 4280  233.8s
+[34/100] Energy split 14 heteroscedastic full
+    test LPD -3.49223  RMSE 2.11597  epoch 5820  304.1s
+[35/100] Energy split 15 heteroscedastic full
+    test LPD -0.47286  RMSE 0.85101  epoch 9240  411.6s
+[36/100] Energy split 16 heteroscedastic full
+    test LPD -1.05601  RMSE 2.22192  epoch 9615  425.3s
+[37/100] Energy split 17 heteroscedastic full
+    test LPD -1.29116  RMSE 2.60887  epoch 2145  148.0s
+[38/100] Energy split 18 heteroscedastic full
+    test LPD -0.86162  RMSE 2.21087  epoch 8050  403.6s
+[39/100] Energy split 19 heteroscedastic full
+    test LPD -0.95489  RMSE 2.37639  epoch 7870  439.6s
+[40/100] Energy split 20 heteroscedastic full
+    test LPD -0.56873  RMSE 0.96208  epoch 8445  413.1s
+[41/100] Boston split 1 heteroscedastic full
+I0000 00:00:1785763205.743791   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785763205.750415   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785763205.756078   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785763205.761259   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785763205.766156   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785763205.770941   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785763205.775609   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785763218.235177   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785763218.240992   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785763218.245853   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785763218.250331   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785763218.254701   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785763218.258897   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785763218.262914   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785763328.109255   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785763328.116026   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785763328.121370   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785763328.126291   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785763328.131149   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785763328.135813   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785763328.140351   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785763340.910666   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785763340.919751   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785763340.927197   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785763340.933912   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785763340.940536   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785763340.947159   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785763340.953351   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+    test LPD -2.70363  RMSE 3.33291  epoch 3010  195.8s
+[42/100] Boston split 2 heteroscedastic full
+    test LPD -2.40998  RMSE 2.51732  epoch 3000  131.3s
+[43/100] Boston split 3 heteroscedastic full
+    test LPD -2.29501  RMSE 3.43938  epoch 3100  147.6s
+[44/100] Boston split 4 heteroscedastic full
+    test LPD -2.83946  RMSE 4.06959  epoch 3160  149.1s
+[45/100] Boston split 5 heteroscedastic full
+    test LPD -2.47077  RMSE 2.91264  epoch 3135  133.4s
+[46/100] Boston split 6 heteroscedastic full
+    test LPD -2.33972  RMSE 3.02892  epoch 3130  138.9s
+[47/100] Boston split 7 heteroscedastic full
+    test LPD -2.39800  RMSE 2.82283  epoch 3015  153.0s
+[48/100] Boston split 8 heteroscedastic full
+    test LPD -2.36512  RMSE 3.92532  epoch 3185  146.6s
+[49/100] Boston split 9 heteroscedastic full
+    test LPD -2.38278  RMSE 3.22519  epoch 3530  159.9s
+[50/100] Boston split 10 heteroscedastic full
+    test LPD -2.04609  RMSE 2.04080  epoch 3085  138.6s
+[51/100] Boston split 11 heteroscedastic full
+    test LPD -2.41597  RMSE 3.09888  epoch 3250  144.1s
+[52/100] Boston split 12 heteroscedastic full
+    test LPD -2.42132  RMSE 3.25422  epoch 3000  144.8s
+[53/100] Boston split 13 heteroscedastic full
+    test LPD -2.62538  RMSE 4.64068  epoch 3050  154.1s
+[54/100] Boston split 14 heteroscedastic full
+    test LPD -2.62210  RMSE 3.18343  epoch 3510  168.6s
+[55/100] Boston split 15 heteroscedastic full
+    test LPD -2.26720  RMSE 2.46141  epoch 3030  143.8s
+[56/100] Boston split 16 heteroscedastic full
+    test LPD -2.43483  RMSE 4.78348  epoch 3165  149.1s
+[57/100] Boston split 17 heteroscedastic full
+    test LPD -2.88855  RMSE 5.22705  epoch 3000  157.9s
+[58/100] Boston split 18 heteroscedastic full
+    test LPD -2.36955  RMSE 3.01711  epoch 3050  146.9s
+[59/100] Boston split 19 heteroscedastic full
+    test LPD -2.54215  RMSE 5.13356  epoch 3970  164.3s
+[60/100] Boston split 20 heteroscedastic full
+    test LPD -2.14043  RMSE 2.46653  epoch 3020  138.4s
+[61/100] Power split 1 heteroscedastic full
+I0000 00:00:1785766217.119876   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785766217.126074   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785766217.131217   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785766217.136455   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785766217.141166   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785766217.145640   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785766217.150057   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785766228.720103   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785766228.728254   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785766228.735134   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785766228.741388   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785766228.747497   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785766228.753331   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785766228.759031   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785766595.113579   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785766595.129762   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785766595.143027   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785766595.155304   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785766595.166997   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785766595.178415   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785766595.189545   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785766607.311562   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785766607.320567   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785766607.327745   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785766607.334294   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785766607.340658   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785766607.346859   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785766607.352915   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+    test LPD -2.85667  RMSE 4.22834  epoch 765  615.1s
+[62/100] Power split 2 heteroscedastic full
+    test LPD -2.79781  RMSE 4.11844  epoch 780  1047.7s
+[63/100] Power split 3 heteroscedastic full
+    test LPD -2.81722  RMSE 4.15709  epoch 665  1306.7s
+[64/100] Power split 4 heteroscedastic full
+    test LPD -2.88640  RMSE 4.41303  epoch 200  605.4s
+[65/100] Power split 5 heteroscedastic full
+    test LPD -2.80900  RMSE 4.13345  epoch 850  818.4s
+[66/100] Power split 6 heteroscedastic full
+    test LPD -2.86039  RMSE 4.33937  epoch 2585  1451.0s
+[67/100] Power split 7 heteroscedastic full
+    test LPD -2.78780  RMSE 3.95463  epoch 1160  724.4s
+[68/100] Power split 8 heteroscedastic full
+    test LPD -2.85198  RMSE 4.26632  epoch 990  645.1s
+[69/100] Power split 9 heteroscedastic full
+    test LPD -2.78557  RMSE 3.97346  epoch 2230  1253.8s
+[70/100] Power split 10 heteroscedastic full
+    test LPD -2.78476  RMSE 4.03505  epoch 3280  2120.0s
+[71/100] Power split 11 heteroscedastic full
+    test LPD -2.76310  RMSE 3.89135  epoch 305  697.8s
+[72/100] Power split 12 heteroscedastic full
+    test LPD -2.79995  RMSE 4.06235  epoch 580  496.3s
+[73/100] Power split 13 heteroscedastic full
+    test LPD -2.91483  RMSE 4.47901  epoch 760  584.9s
+[74/100] Power split 14 heteroscedastic full
+    test LPD -2.80604  RMSE 4.06049  epoch 220  290.2s
+[75/100] Power split 15 heteroscedastic full
+    test LPD -2.83059  RMSE 4.04913  epoch 2805  1710.9s
+[76/100] Power split 16 heteroscedastic full
+    test LPD -2.84030  RMSE 4.09358  epoch 745  579.4s
+[77/100] Power split 17 heteroscedastic full
+    test LPD -2.82479  RMSE 4.15540  epoch 930  667.1s
+[78/100] Power split 18 heteroscedastic full
+    test LPD -2.91381  RMSE 4.47178  epoch 420  392.8s
+[79/100] Power split 19 heteroscedastic full
+    test LPD -2.82171  RMSE 4.16804  epoch 1150  772.9s
+[80/100] Power split 20 heteroscedastic full
+    test LPD -2.74601  RMSE 3.80553  epoch 955  822.5s
+[81/100] Wine split 1 heteroscedastic full
+I0000 00:00:1785783828.822074   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785783828.828495   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785783828.833736   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785783828.838505   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785783828.843159   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785783828.847737   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785783828.852172   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785783839.315982   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785783839.321025   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785783839.325139   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785783839.328968   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785783839.332665   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785783839.336237   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785783839.339733   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785784031.694134   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785784031.700407   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785784031.705588   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785784031.710392   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785784031.715069   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785784031.719619   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785784031.724047   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785784042.080216   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785784042.088442   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785784042.095344   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785784042.101677   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785784042.107809   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785784042.113783   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1785784042.119672   22770 dot_merger.cc:476] Merging Dots in computation: main.50
+    test LPD -0.95342  RMSE 0.66846  epoch 1275  297.5s
+[82/100] Wine split 2 heteroscedastic full
+    test LPD -0.90581  RMSE 0.62954  epoch 1155  208.4s
+[83/100] Wine split 3 heteroscedastic full
+    test LPD -0.88395  RMSE 0.58989  epoch 1750  260.8s
+[84/100] Wine split 4 heteroscedastic full
+    test LPD -0.90485  RMSE 0.66392  epoch 1155  212.9s
+[85/100] Wine split 5 heteroscedastic full
+    test LPD -1.04251  RMSE 0.73640  epoch 1845  270.2s
+[86/100] Wine split 6 heteroscedastic full
+    test LPD -0.85544  RMSE 0.57180  epoch 7745  775.8s
+[87/100] Wine split 7 heteroscedastic full
+    test LPD -1.01803  RMSE 0.69347  epoch 1155  210.3s
+[88/100] Wine split 8 heteroscedastic full
+    test LPD -0.89590  RMSE 0.63538  epoch 6415  660.3s
+[89/100] Wine split 9 heteroscedastic full
+    test LPD -0.97810  RMSE 0.65526  epoch 1175  201.2s
+[90/100] Wine split 10 heteroscedastic full
+    test LPD -0.96380  RMSE 0.66845  epoch 1160  204.2s
+[91/100] Wine split 11 heteroscedastic full
+    test LPD -0.90913  RMSE 0.58931  epoch 1170  196.8s
+[92/100] Wine split 12 heteroscedastic full
+    test LPD -0.89498  RMSE 0.62511  epoch 1160  202.2s
+[93/100] Wine split 13 heteroscedastic full
+    test LPD -0.88890  RMSE 0.60654  epoch 1190  205.0s
+[94/100] Wine split 14 heteroscedastic full
+    test LPD -0.98208  RMSE 0.66820  epoch 1455  222.4s
+[95/100] Wine split 15 heteroscedastic full
+    test LPD -0.88543  RMSE 0.58380  epoch 1155  203.2s
+[96/100] Wine split 16 heteroscedastic full
+    test LPD -1.15754  RMSE 0.71467  epoch 3080  365.8s
+[97/100] Wine split 17 heteroscedastic full
+    test LPD -0.90235  RMSE 0.62229  epoch 1155  206.4s
+[98/100] Wine split 18 heteroscedastic full
+    test LPD -0.96443  RMSE 0.67112  epoch 3565  415.8s
+[99/100] Wine split 19 heteroscedastic full
+    test LPD -0.96502  RMSE 0.68849  epoch 2895  350.5s
+[100/100] Wine split 20 heteroscedastic full
+    test LPD -0.94405  RMSE 0.65565  epoch 1155  210.2s
+DVI benchmark complete: 100 successful rows, 0 failure rows. Output: /home/nimrais/repos/NGMP/paper_materials/dvi_uci/wu2019_repeated_holdout_v1_20splits_robust_selection_optimized_v2_non_yacht_20260803/dvi_shards/01
+Precompiling DataFrames...
+  19445.4 ms  ✓ PrettyTables
+  58209.2 ms  ✓ DataFrames
+  2 dependencies successfully precompiled in 78 seconds. 30 already precompiled.
+Precompiling DVIUCI...
+   2838.8 ms  ✓ RecursiveArrayTools → RecursiveArrayToolsTablesExt
+   2920.7 ms  ✓ SymbolicIndexingInterface → SymbolicIndexingInterfacePrettyTablesExt
+   2961.5 ms  ✓ RecursiveArrayTools → RecursiveArrayToolsStructArraysExt
+   5465.9 ms  ✓ AdvancedMH → AdvancedMHStructArraysExt
+   6028.7 ms  ✓ Latexify → DataFramesExt
+   7183.4 ms  ✓ BangBang → BangBangDataFramesExt
+   8162.4 ms  ✓ MCMCDiagnosticTools
+   7902.9 ms  ✓ MLDataDevices → MLUtilsExt
+   8118.8 ms  ✓ Lux → MLUtilsExt
+  10493.9 ms  ✓ OptimizationBase → OptimizationMLUtilsExt
+  18604.4 ms  ✓ MCMCChains
+  30561.2 ms  ✓ ChainRules
+   3806.5 ms  ✓ ArrayInterface → ArrayInterfaceChainRulesExt
+  31998.4 ms  ✓ StatsPlots
+   4316.5 ms  ✓ MLDataDevices → ChainRulesExt
+  11823.2 ms  ✓ AdvancedMH → AdvancedMHMCMCChainsExt
+  36767.8 ms  ✓ RxInfer
+  12169.9 ms  ✓ AdvancedHMC → AdvancedHMCMCMCChainsExt
+  14838.0 ms  ✓ DynamicPPL → DynamicPPLMCMCChainsExt
+  18516.7 ms  ✓ RxInfer → PrettyTablesExt
+  20578.9 ms  ✓ RxInfer → ProjectionExt
+  65411.3 ms  ✓ FlexiChains
+  16153.1 ms  ✓ FlexiChains → FlexiChainsAdvancedHMCExt
+  18291.0 ms  ✓ FlexiChains → FlexiChainsRecipesBaseExt
+  24469.3 ms  ✓ FlexiChains → FlexiChainsMCMCChainsExt
+  29234.5 ms  ✓ FlexiChains → FlexiChainsStatsPlotsExt
+  44681.4 ms  ✓ FlexiChains → FlexiChainsDynamicPPLExt
+  20730.8 ms  ✓ Turing
+ 127482.0 ms  ✓ Zygote
+  11652.7 ms  ✓ LogDensityProblemsAD → LogDensityProblemsADZygoteExt
+  12016.9 ms  ✓ DifferentiationInterface → DifferentiationInterfaceZygoteExt
+  12487.0 ms  ✓ MLDataDevices → ZygoteExt
+  13320.8 ms  ✓ Zygote → ZygoteColorsExt
+  16774.9 ms  ✓ Lux → ZygoteExt
+  17518.5 ms  ✓ OptimizationBase → OptimizationZygoteExt
+  19029.3 ms  ✓ Zygote → ZygoteDistancesExt
+  23299.7 ms  ✓ RecursiveArrayTools → RecursiveArrayToolsZygoteExt
+  25035.8 ms  ✓ SciMLBase → SciMLBaseZygoteExt
+ 253093.8 ms  ✓ Reactant
+  23918.8 ms  ✓ Reactant → ReactantStatisticsExt
+  24907.9 ms  ✓ Reactant → ReactantRandom123Ext
+  25026.0 ms  ✓ Reactant → ReactantOffsetArraysExt
+  25005.7 ms  ✓ Reactant → ReactantAbstractFFTsExt
+  25523.1 ms  ✓ LuxCore → ReactantExt
+  25749.9 ms  ✓ Reactant → ReactantSpecialFunctionsExt
+  26103.9 ms  ✓ Reactant → ReactantArrayInterfaceExt
+  26035.5 ms  ✓ WeightInitializers → ReactantExt
+  26162.8 ms  ✓ MLDataDevices → ReactantExt
+  26335.6 ms  ✓ Reactant → ReactantSparseArraysExt
+  26834.6 ms  ✓ Reactant → ReactantFillArraysExt
+  28568.9 ms  ✓ Reactant → ReactantNPZExt
+  30758.1 ms  ✓ Reactant → ReactantKernelAbstractionsExt
+  31955.6 ms  ✓ Reactant → ReactantZygoteExt
+  39726.2 ms  ✓ Optimisers → OptimisersReactantExt
+  18590.4 ms  ✓ LuxLib → ReactantExt
+  17777.7 ms  ✓ Reactant → ReactantNNlibExt
+ 453988.9 ms  ✓ Makie
+┌ Warning: attempting to remove probably stale pidfile
+│   path = "/home/nimrais/.julia/compiled/v1.11/CairoMakie/9mSey_0x98I.ji.pidfile"
+└ @ FileWatching.Pidfile ~/.julia/juliaup/julia-1.11.9+0.x64.linux.gnu/share/julia/stdlib/v1.11/FileWatching/src/pidfile.jl:249
+  26106.7 ms  ✓ DomainSets → DomainSetsMakieExt
+  26567.6 ms  ✓ ManifoldsBase → ManifoldsBaseMakieExt
+  28110.7 ms  ✓ DimensionalData → DimensionalDataMakieExt
+  28337.2 ms  ✓ SciMLBase → SciMLBaseMakieExt
+  22111.3 ms  ✓ FlexiChains → FlexiChainsMakieExt
+  77264.8 ms  ✓ CairoMakie
+  59496.8 ms  ✓ ProbabilisticEnsembling
+  35246.6 ms  ✓ SurrogateModelling
+  38608.6 ms  ✓ DVIUCI
+  66 dependencies successfully precompiled in 673 seconds. 783 already precompiled.
+Merged 1 shards and 100 runs into /home/nimrais/repos/NGMP/paper_materials/dvi_uci/wu2019_repeated_holdout_v1_20splits_robust_selection_optimized_v2_non_yacht_20260803/dvi
+=== full DVI v2 non-Yacht end 2026-08-03T22:55:54+02:00 exit=0 ===

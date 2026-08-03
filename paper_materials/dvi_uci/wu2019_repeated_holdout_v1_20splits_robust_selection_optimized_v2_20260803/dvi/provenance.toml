@@ -1,0 +1,17 @@
+policy = "non-yacht=v2; yacht-1:19=legacy-v1; yacht-20=v2"
+rows = 120
+schema_version = "dvi-paper-consolidation-v1"
+
+[components.non_yacht_v2]
+path = "../wu2019_repeated_holdout_v1_20splits_robust_selection_optimized_v2_non_yacht_20260803/dvi"
+rows = 100
+
+[components.yacht_legacy_v1]
+paths = ["../wu2019_repeated_holdout_v1_20splits_robust_v1_20260731/dvi_shards/01", "../wu2019_repeated_holdout_v1_20splits_robust_v1_20260731/dvi_shards/02", "../wu2019_repeated_holdout_v1_20splits_robust_v1_20260731/dvi_shards/03", "../wu2019_repeated_holdout_v1_20splits_robust_v1_20260731/dvi_shards/04"]
+rows = 19
+splits = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
+
+[components.yacht_v2]
+path = "../wu2019_repeated_holdout_v1_20splits_robust_selection_optimized_v2_yacht_20260803/dvi_shards/20"
+rows = 1
+splits = [20]
