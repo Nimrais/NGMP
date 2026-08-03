@@ -105,8 +105,22 @@ begin
     TARGET_NOISE_SD = 0.08
     DATA_SEED_XOR = 20_260_802
     FEATURE_SEED_XOR = 20_260_803
-    GRID_RESOLUTION = 61
     RXINFER_PREDICTION_BATCH = 256
+
+    # ---- prediction grid --------------------------------------------------
+    # Training inputs are always uniform on the box below; the fit never sees
+    # anything else. The plotting grid is independent of it, so widening the
+    # limits shows how the fitted model extrapolates without changing training.
+    # Cost is quadratic in the point counts, and :rxinfer predicts one batch of
+    # RXINFER_PREDICTION_BATCH rows at a time, so keep the counts modest there.
+    # DATA_LIMITS is not a knob: it records the box that `make_xor_data` and
+    # `checkerboard_label` hardcode, and is only used to draw the training
+    # region on the plots. Edit only alongside the data generator.
+    DATA_LIMITS = (-2.0, 2.0)
+    PLOT_X_LIMITS = (-6.0, 6.0)
+    PLOT_Y_LIMITS = (-6.0, 6.0)
+    PLOT_X_POINTS = 121
+    PLOT_Y_POINTS = 121
 
     BACKEND in (:direct, :rxinfer) ||
         throw(ArgumentError("BACKEND must be :direct or :rxinfer"))
@@ -124,6 +138,13 @@ begin
         throw(ArgumentError("PRECISION_PRIOR_GAIN must be positive"))
     all(dimension -> dimension > 0, CHECKERBOARD_SIZE) ||
         throw(ArgumentError("checkerboard dimensions must be positive"))
+    all(limits -> limits[1] < limits[2], (
+        DATA_LIMITS,
+        PLOT_X_LIMITS,
+        PLOT_Y_LIMITS,
+    )) || throw(ArgumentError("limits must be given as (low, high)"))
+    all(count -> count > 1, (PLOT_X_POINTS, PLOT_Y_POINTS)) ||
+        throw(ArgumentError("grid point counts must exceed one"))
 end
 
 # ╔═╡ 2f21cf06-604e-4c6d-8199-a26bb9d83bbd
@@ -135,6 +156,15 @@ Independent horizontal and vertical counts allow rectangular patterns such as
 ``3×1``, ``3×2``, or ``4×2``. The clean label is perturbed with Gaussian noise
 and clipped to ``[0,1]``. Inputs and targets are standardized using training data
 only; predictions are transformed back before scoring and plotting.
+
+The plotting grid is separate from the data domain and is set by `PLOT_X_LIMITS`,
+`PLOT_Y_LIMITS`, `PLOT_X_POINTS`, and `PLOT_Y_POINTS`. Limits wider than
+``[-2,2]`` evaluate the fitted model outside its training box, which is what the
+plots below show; the fit itself is unaffected. Grid points are standardized with
+the same training mean and scale, so the affine map extends past the data
+correctly, and `training_box!` marks the ``[-2,2]^2`` data region with a dashed
+white rectangle. `checkerboard_label` clamps its cell index and is therefore only
+valid inside that box, so no ground-truth overlay is drawn outside it.
 """
 
 # ╔═╡ d83fc607-c50d-4b75-bde8-98c177f024c4
@@ -204,12 +234,35 @@ begin
     X_test_std = standardize_x(xor_data.X_test)
     y_train_std = standardize_y(xor_data.y_train)
 
-    axis_values = collect(range(-2.0, 2.0; length = GRID_RESOLUTION))
+    axis_x = collect(range(PLOT_X_LIMITS...; length = PLOT_X_POINTS))
+    axis_y = collect(range(PLOT_Y_LIMITS...; length = PLOT_Y_POINTS))
     X_grid = reduce(vcat, (
         reshape([x1, x2], 1, 2)
-        for x2 in axis_values for x1 in axis_values
+        for x2 in axis_y for x1 in axis_x
     ))
     X_grid_std = standardize_x(X_grid)
+
+    # Rows of X_grid vary x₁ fastest, so a flat prediction vector reshapes to
+    # [x₁ index, x₂ index]. Plots.heatmap(x, y, Z) indexes Z as [y, x], hence
+    # the transpose. Plots stores whatever matrix it is handed without checking
+    # the orientation, so omitting it does not raise: the panel simply renders
+    # mirrored about the diagonal, square grid or not.
+    grid_surface(values) = permutedims(
+        reshape(values, PLOT_X_POINTS, PLOT_Y_POINTS),
+    )
+
+    function training_box!(panel)
+        low, high = DATA_LIMITS
+        return plot!(
+            panel,
+            [low, high, high, low, low],
+            [low, low, high, high, low];
+            color = :white,
+            linestyle = :dash,
+            linewidth = 1.5,
+            label = false,
+        )
+    end
 end
 
 # ╔═╡ a4aef29f-a2ce-4bb4-84c0-c22749d0eb6e
@@ -529,16 +582,12 @@ end
 
 # ╔═╡ d505540e-c251-4c34-b256-8214de69929a
 begin
-    mean_surface = reshape(grid_prediction.mean, GRID_RESOLUTION, GRID_RESOLUTION)
-    variance_surface = reshape(
-        max.(grid_prediction.variance, 0.0),
-        GRID_RESOLUTION,
-        GRID_RESOLUTION,
-    )
+    mean_surface = grid_surface(grid_prediction.mean)
+    variance_surface = grid_surface(max.(grid_prediction.variance, 0.0))
 
     mean_panel = heatmap(
-        axis_values,
-        axis_values,
+        axis_x,
+        axis_y,
         mean_surface;
         clim = (0, 1),
         color = :viridis,
@@ -549,8 +598,8 @@ begin
     )
     contour!(
         mean_panel,
-        axis_values,
-        axis_values,
+        axis_x,
+        axis_y,
         mean_surface;
         levels = [0.5],
         color = :white,
@@ -569,10 +618,11 @@ begin
         colorbar = false,
         label = false,
     )
+    training_box!(mean_panel)
 
     uncertainty_panel = heatmap(
-        axis_values,
-        axis_values,
+        axis_x,
+        axis_y,
         variance_surface;
         color = :magma,
         xlabel = "x₁",
@@ -580,6 +630,7 @@ begin
         title = "predictive variance",
         aspect_ratio = :equal,
     )
+    training_box!(uncertainty_panel)
 
     plot(
         mean_panel,
@@ -605,11 +656,14 @@ CHECKERBOARD_SIZE = (6, 4)
 BACKEND = :direct
 ```
 
-Reduce `FEATURE_DIMENSION` temporarily if RxInfer is slow during interactive testing.
+Reduce `FEATURE_DIMENSION` temporarily if RxInfer is slow during interactive testing,
+and reduce `PLOT_X_POINTS` / `PLOT_Y_POINTS` as well, since prediction cost grows with
+their product.
 
 Both backends receive the same standardized data, random-feature realization, prior
 gain, hierarchy depth, optimizer parameters, and prediction grid. The right-hand plot
-shows predictive variance across the complete XOR/checkerboard surface.
+shows predictive variance across the complete XOR/checkerboard surface, including the
+extrapolation region outside the dashed training box.
 """
 
 # ╔═╡ 4df404ce-bd26-42cc-8725-18c2d80d7945
@@ -749,19 +803,11 @@ begin
     suggested_panels = Any[]
     for run in suggested_runs
         board = "$(run.checkerboard_size[1])×$(run.checkerboard_size[2])"
-        run_mean = reshape(
-            run.grid_prediction.mean,
-            GRID_RESOLUTION,
-            GRID_RESOLUTION,
-        )
-        run_variance = reshape(
-            max.(run.grid_prediction.variance, 0.0),
-            GRID_RESOLUTION,
-            GRID_RESOLUTION,
-        )
+        run_mean = grid_surface(run.grid_prediction.mean)
+        run_variance = grid_surface(max.(run.grid_prediction.variance, 0.0))
         mean_plot = heatmap(
-            axis_values,
-            axis_values,
+            axis_x,
+            axis_y,
             run_mean;
             clim = (0, 1),
             color = :viridis,
@@ -772,17 +818,18 @@ begin
         )
         contour!(
             mean_plot,
-            axis_values,
-            axis_values,
+            axis_x,
+            axis_y,
             run_mean;
             levels = [0.5],
             color = :white,
             linewidth = 1.5,
             label = false,
         )
+        training_box!(mean_plot)
         variance_plot = heatmap(
-            axis_values,
-            axis_values,
+            axis_x,
+            axis_y,
             run_variance;
             color = :magma,
             xlabel = "x₁",
@@ -790,6 +837,7 @@ begin
             title = "$board variance",
             aspect_ratio = :equal,
         )
+        training_box!(variance_plot)
         push!(suggested_panels, mean_plot, variance_plot)
     end
 
