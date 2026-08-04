@@ -310,6 +310,24 @@ end
     @test_throws ArgumentError validate_config(tiny_config(
         full_selection_patience_steps = 0,
     ))
+    @test_throws ArgumentError validate_config(tiny_config(
+        selection_max_optimizer_steps = -1,
+    ))
+    @test_throws ArgumentError validate_config(tiny_config(
+        refit_max_optimizer_steps = -1,
+    ))
+    @test_throws ArgumentError validate_config(tiny_config(
+        kl_warmup_steps = 10,
+        kl_anneal_steps = 5,
+        selection_max_optimizer_steps = 14,
+    ))
+    @test validate_config(tiny_config(
+        kl_warmup_steps = 10,
+        kl_anneal_steps = 5,
+        selection_max_optimizer_steps = 15,
+        refit_max_optimizer_steps = 20,
+        training_budget_protocol = "selection-refit-max-50k-v1",
+    )).selection_max_optimizer_steps == 15
     full_selection_config = tiny_config(
         propagation = "full",
         validation_every = 5,
@@ -706,6 +724,42 @@ end
     @test metrics.mean_total_variance_original > 0
     @test metrics_from_output.lpd_original ≈ metrics.lpd_original
     @test metrics_from_output.rmse_original ≈ metrics.rmse_original
+
+    budget_config = tiny_config(
+        hidden_units = 6,
+        initialization_scale = 0.1,
+        max_epochs = 10,
+        validation_every = 10,
+        patience = 10,
+        selection_max_optimizer_steps = 6,
+        refit_max_optimizer_steps = 6,
+        training_budget_protocol = "test-budget-v1",
+    )
+    budget_selection = train_with_validation(
+        prepared,
+        3,
+        "heteroscedastic",
+        budget_config;
+        seed = 32,
+    )
+    @test budget_selection.budget_limited
+    @test nrow(budget_selection.history) == 1
+    @test budget_selection.optimizer_steps >= 6
+    @test budget_selection.optimizer_steps <
+        6 + cld(size(prepared.x_train_standardized, 1), 16)
+    budget_refit = refit_model(
+        prepared,
+        3,
+        "heteroscedastic",
+        budget_config;
+        seed = 32,
+        epochs = 10,
+    )
+    @test budget_refit.budget_limited
+    @test budget_refit.optimizer_steps >= 6
+    @test budget_refit.optimizer_steps <
+        6 + cld(size(prepared.x_train_standardized, 1), 16)
+    @test length(budget_refit.losses) == 2
 end
 
 @testset "BBB-compatible paper tables" begin

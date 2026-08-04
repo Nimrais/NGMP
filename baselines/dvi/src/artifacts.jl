@@ -5,7 +5,7 @@ const CONFIG_RUNTIME_ONLY_FIELDS = Set([
     "show_progress",
     "selection_only",
 ])
-const DVI_POSTERIOR_SCHEMA_VERSION = "dvi-uci-posterior-v2"
+const DVI_POSTERIOR_SCHEMA_VERSION = "dvi-uci-posterior-v3"
 
 function configuration_stem(
     dataset::AbstractString,

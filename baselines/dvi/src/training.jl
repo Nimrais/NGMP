@@ -345,6 +345,9 @@ function selection_patience_exhausted(
     return check_limit_reached || full_step_limit_reached
 end
 
+optimizer_step_budget_reached(optimizer_step::Int, maximum_steps::Int) =
+    maximum_steps > 0 && optimizer_step >= maximum_steps
+
 function train_with_validation(
     inner_split,
     input_dimension::Int,
@@ -371,6 +374,7 @@ function train_with_validation(
     best_params = nothing
     non_improving_checks = 0
     stopped_early = false
+    budget_limited = false
     optimizer_step = 0
     tracker = NumericalTracker()
     selection_start_epoch = earliest_selection_epoch(
@@ -386,9 +390,12 @@ function train_with_validation(
             phase = "selection",
             tracker = tracker,
         )
+        selection_budget_reached = optimizer_step_budget_reached(
+            optimizer_step, config.selection_max_optimizer_steps,
+        )
         should_validate = should_validate_selection_epoch(
             epoch, selection_start_epoch, config,
-        )
+        ) || (selection_budget_reached && epoch >= selection_start_epoch)
         should_validate || continue
 
         validation_output = training_backend_validation_output(
@@ -457,6 +464,10 @@ function train_with_validation(
             stopped_early = true
             break
         end
+        if selection_budget_reached
+            budget_limited = true
+            break
+        end
     end
 
     best_epoch > 0 ||
@@ -467,6 +478,7 @@ function train_with_validation(
         best_params = best_params,
         history = DataFrame(history),
         stopped_early = stopped_early,
+        budget_limited = budget_limited,
         optimizer_steps = optimizer_step,
         numerical = tracker_record(tracker),
     )
@@ -492,11 +504,12 @@ function refit_model(
         config,
     )
     rng = StableRNG(seed + 10)
-    losses = Vector{Float64}(undef, epochs)
+    losses = Float64[]
     optimizer_step = 0
+    budget_limited = false
     tracker = NumericalTracker()
     for epoch in 1:epochs
-        backend, losses[epoch], optimizer_step = training_backend_epoch(
+        backend, loss, optimizer_step = training_backend_epoch(
             backend,
             rng,
             epoch,
@@ -504,11 +517,19 @@ function refit_model(
             phase = "refit",
             tracker = tracker,
         )
+        push!(losses, loss)
+        if optimizer_step_budget_reached(
+            optimizer_step, config.refit_max_optimizer_steps,
+        )
+            budget_limited = epoch < epochs
+            break
+        end
     end
     params = training_backend_parameters(backend)
     return (
         params = params,
         losses = losses,
+        budget_limited = budget_limited,
         optimizer_steps = optimizer_step,
         numerical = tracker_record(tracker),
     )

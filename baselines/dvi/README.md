@@ -168,6 +168,13 @@ different execution implementation.
 `DVI_FULL_PATIENCE_STEPS` controls the full-DVI-only optimizer-step cap and
 defaults to `50000`. It never changes diagonal-dDVI stopping behavior.
 
+`DVI_SELECTION_MAX_STEPS` and `DVI_REFIT_MAX_STEPS` are optional hard
+training-budget ceilings checked at epoch boundaries; zero (the default)
+disables each ceiling. A selection ceiling forces one final validation when
+reached. `DVI_TRAINING_BUDGET_PROTOCOL` records a human-readable identifier in
+the configuration, run rows, and checkpoints. These settings are
+result-affecting and therefore protected by resume validation.
+
 Before launching the paper run, measure warmed gradient/Adam steps without
 writing any result artifact:
 
@@ -284,6 +291,34 @@ baselines/dvi/run_bbb_matched_paper.sh
 `DVI_PAPER_SHARDS` accepts 1, 2, or 4. The launcher now refuses any
 `DVI_PAPER_METHODS` value other than `full`, ensuring the completed dDVI result
 cannot be rerun accidentally.
+
+The separate homoscedastic campaign uses the explicitly reduced
+`selection-refit-max-50000-v1` budget for both propagation methods. It keeps
+the original 14,000-step KL warmup and 1,000-step anneal, but limits selection
+and refit to 50,000 optimizer steps apiece:
+
+```sh
+DVI_HOMO_PROFILE_APPROVED=true \
+baselines/dvi/run_homoscedastic_budgeted_paper.sh
+```
+
+This launcher hardcodes the homoscedastic likelihood, defaults to Reactant on
+CUDA with four shards, and refuses to start until the Power split-1 quality
+and timing pilots have approved the reduced protocol. Its results must be
+reported as the budgeted homoscedastic protocol, not as the unlimited
+heteroscedastic training protocol.
+
+Reproduce the four-process timing and GPU-memory gate with:
+
+```sh
+baselines/dvi/run_homoscedastic_power_scale_gate.sh
+```
+
+It runs dDVI Power splits 2--5 concurrently by default. Set
+`DVI_HOMO_GATE_METHOD=full` to repeat the gate for full DVI.
+The script refuses an existing output directory so resume time cannot be
+mistaken for a fresh timing result, and exits nonzero when the conservative
+two-method projection exceeds ten hours.
 
 After running independent `DVI_SPLIT_IDS` shards, combine them with:
 

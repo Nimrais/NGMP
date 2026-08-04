@@ -123,6 +123,9 @@ Base.@kwdef struct DVIConfig
     validation_every::Int = 5
     patience::Int = 500
     full_selection_patience_steps::Int = 50_000
+    selection_max_optimizer_steps::Int = 0
+    refit_max_optimizer_steps::Int = 0
+    training_budget_protocol::String = "unlimited-v1"
     kl_schedule_unit::String = "steps"
     kl_warmup_steps::Int = 14_000
     kl_anneal_steps::Int = 1_000
@@ -202,6 +205,15 @@ function load_config()
         full_selection_patience_steps = env_int(
             "DVI_FULL_PATIENCE_STEPS", 50_000,
         ),
+        selection_max_optimizer_steps = env_int(
+            "DVI_SELECTION_MAX_STEPS", 0,
+        ),
+        refit_max_optimizer_steps = env_int(
+            "DVI_REFIT_MAX_STEPS", 0,
+        ),
+        training_budget_protocol = strip(get(
+            ENV, "DVI_TRAINING_BUDGET_PROTOCOL", "unlimited-v1",
+        )),
         kl_schedule_unit = schedule_unit,
         kl_warmup_steps = env_int(
             "DVI_KL_WARMUP_STEPS", schedule_unit == "steps" ? 14_000 : 0,
@@ -307,6 +319,15 @@ function validate_config(config::DVIConfig)
     config.full_selection_patience_steps >= 1 || throw(ArgumentError(
         "DVI_FULL_PATIENCE_STEPS must be positive",
     ))
+    config.selection_max_optimizer_steps >= 0 || throw(ArgumentError(
+        "DVI_SELECTION_MAX_STEPS must be nonnegative (zero disables it)",
+    ))
+    config.refit_max_optimizer_steps >= 0 || throw(ArgumentError(
+        "DVI_REFIT_MAX_STEPS must be nonnegative (zero disables it)",
+    ))
+    isempty(config.training_budget_protocol) && throw(ArgumentError(
+        "DVI_TRAINING_BUDGET_PROTOCOL must not be empty",
+    ))
     config.kl_schedule_unit in ("steps", "epochs") || throw(ArgumentError(
         "DVI_KL_SCHEDULE_UNIT must be steps or epochs",
     ))
@@ -320,6 +341,13 @@ function validate_config(config::DVIConfig)
         config.kl_warmup_epochs == 0 && config.kl_anneal_epochs == 0 ||
             throw(ArgumentError(
                 "epoch KL settings must be zero for a step schedule",
+            ))
+        selection_schedule_steps =
+            config.kl_warmup_steps + config.kl_anneal_steps
+        (config.selection_max_optimizer_steps == 0 ||
+         config.selection_max_optimizer_steps >= selection_schedule_steps) ||
+            throw(ArgumentError(
+                "DVI_SELECTION_MAX_STEPS must reach the end of the KL schedule",
             ))
     else
         config.kl_warmup_steps == 0 && config.kl_anneal_steps == 0 ||

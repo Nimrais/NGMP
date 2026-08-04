@@ -59,6 +59,10 @@ function run_configuration(
             implementation_version = config.implementation_version,
             full_selection_patience_steps =
                 config.full_selection_patience_steps,
+            training_budget_protocol = config.training_budget_protocol,
+            selection_max_optimizer_steps =
+                config.selection_max_optimizer_steps,
+            refit_max_optimizer_steps = config.refit_max_optimizer_steps,
             status = "selection_success",
             error = "",
             failure_phase = "",
@@ -74,6 +78,8 @@ function run_configuration(
             model_seed = seeds.model,
             best_epoch = selection.best_epoch,
             stopped_early = selection.stopped_early,
+            selection_budget_limited = selection.budget_limited,
+            refit_budget_limited = false,
             selection_seconds = selection_seconds,
             refit_seconds = NaN,
             evaluation_seconds = NaN,
@@ -173,6 +179,13 @@ function run_configuration(
                 implementation_version = config.implementation_version,
                 full_selection_patience_steps =
                     config.full_selection_patience_steps,
+                training_budget_protocol = config.training_budget_protocol,
+                selection_max_optimizer_steps =
+                    config.selection_max_optimizer_steps,
+                refit_max_optimizer_steps =
+                    config.refit_max_optimizer_steps,
+                selection_budget_limited = selection.budget_limited,
+                refit_budget_limited = refit.budget_limited,
                 model_seed = seeds.model,
                 prediction_config = (
                     hidden_units = config.hidden_units,
@@ -199,6 +212,10 @@ function run_configuration(
         execution_device = config.execution_device,
         implementation_version = config.implementation_version,
         full_selection_patience_steps = config.full_selection_patience_steps,
+        training_budget_protocol = config.training_budget_protocol,
+        selection_max_optimizer_steps =
+            config.selection_max_optimizer_steps,
+        refit_max_optimizer_steps = config.refit_max_optimizer_steps,
         status = "success",
         error = "",
         failure_phase = "",
@@ -214,6 +231,8 @@ function run_configuration(
         model_seed = seeds.model,
         best_epoch = selection.best_epoch,
         stopped_early = selection.stopped_early,
+        selection_budget_limited = selection.budget_limited,
+        refit_budget_limited = refit.budget_limited,
         selection_seconds = selection_seconds,
         refit_seconds = refit_seconds,
         evaluation_seconds = evaluation_seconds,
@@ -276,6 +295,10 @@ function failure_row(
         execution_device = config.execution_device,
         implementation_version = config.implementation_version,
         full_selection_patience_steps = config.full_selection_patience_steps,
+        training_budget_protocol = config.training_budget_protocol,
+        selection_max_optimizer_steps =
+            config.selection_max_optimizer_steps,
+        refit_max_optimizer_steps = config.refit_max_optimizer_steps,
         status = "failure",
         error = sprint(showerror, error, backtrace),
         failure_phase = failure_phase,
@@ -292,6 +315,8 @@ function failure_row(
         model_seed = seeds.model,
         best_epoch = 0,
         stopped_early = false,
+        selection_budget_limited = false,
+        refit_budget_limited = false,
         selection_seconds = NaN,
         refit_seconds = NaN,
         evaluation_seconds = NaN,
@@ -353,6 +378,10 @@ function write_failure_diagnostic(
         execution_device = config.execution_device,
         implementation_version = config.implementation_version,
         full_selection_patience_steps = config.full_selection_patience_steps,
+        training_budget_protocol = config.training_budget_protocol,
+        selection_max_optimizer_steps =
+            config.selection_max_optimizer_steps,
+        refit_max_optimizer_steps = config.refit_max_optimizer_steps,
         numerical_protocol = config.numerical_protocol,
         error = sprint(showerror, error, backtrace),
         diagnostics = diagnostics,
