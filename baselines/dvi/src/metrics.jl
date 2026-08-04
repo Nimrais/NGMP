@@ -14,13 +14,12 @@ const DVI_SCALAR_METRIC_NAMES = (
     :mean_aleatoric_variance_original,
 )
 
-function predictive_distribution(
-    params,
-    features::AbstractMatrix,
+function predictive_distribution_from_output(
+    output,
     likelihood::String,
     config::DVIConfig,
+    tracker::Union{Nothing, NumericalTracker} = nothing,
 )
-    output = propagate_dvi(params, features, config)
     predictive_mean = vec(output.mean[:, 1])
     epistemic_variance = max.(
         output_covariance_entry(output, 1, 1, config),
@@ -32,10 +31,17 @@ function predictive_distribution(
             output_covariance_entry(output, 2, 2, config),
             0f0,
         )
-        exp.(log_variance_mean .+ 0.5f0 .* log_variance_variance)
+        safe_exp(
+            Float64.(
+                log_variance_mean .+
+                0.5f0 .* log_variance_variance,
+            ),
+            config,
+            tracker,
+        )
     elseif likelihood == "homoscedastic"
         fill(
-            exp(Float32(config.homo_log_variance)),
+            safe_exp(config.homo_log_variance, config, tracker),
             length(predictive_mean),
         )
     else
@@ -54,21 +60,34 @@ function predictive_distribution(
     )
 end
 
+function predictive_distribution(
+    params,
+    features::AbstractMatrix,
+    likelihood::String,
+    config::DVIConfig,
+    tracker::Union{Nothing, NumericalTracker} = nothing,
+)
+    output = propagate_dvi(params, features, config; tracker = tracker)
+    return predictive_distribution_from_output(
+        output, likelihood, config, tracker,
+    )
+end
+
 coverage(targets, means, standard_deviations, z) = mean(
     abs.(targets .- means) .<= z .* standard_deviations,
 )
 
-function predictive_metrics(
-    params,
-    features::AbstractMatrix,
+function predictive_metrics_from_output(
+    output,
     targets_standardized::AbstractVector,
     targets_original::AbstractVector,
     standardizer,
     likelihood::String,
     config::DVIConfig,
+    tracker::Union{Nothing, NumericalTracker} = nothing,
 )
-    prediction = predictive_distribution(
-        params, features, likelihood, config,
+    prediction = predictive_distribution_from_output(
+        output, likelihood, config, tracker,
     )
     residual_squared =
         (targets_standardized .- prediction.mean) .^ 2
@@ -78,7 +97,11 @@ function predictive_metrics(
         residual_squared ./ prediction.total_variance
     )
     expected_ll = expected_log_likelihood(
-        prediction.output, targets_standardized, likelihood, config,
+        prediction.output,
+        targets_standardized,
+        likelihood,
+        config,
+        tracker,
     )
 
     y_scale = standardizer.y_scale
@@ -128,5 +151,28 @@ function predictive_metrics(
         mean_aleatoric_variance_original = mean(aleatoric_original),
         predictive_mean_original = mean_original,
         total_variance_original = total_original,
+    )
+end
+
+
+function predictive_metrics(
+    params,
+    features::AbstractMatrix,
+    targets_standardized::AbstractVector,
+    targets_original::AbstractVector,
+    standardizer,
+    likelihood::String,
+    config::DVIConfig,
+    tracker::Union{Nothing, NumericalTracker} = nothing,
+)
+    output = propagate_dvi(params, features, config; tracker = tracker)
+    return predictive_metrics_from_output(
+        output,
+        targets_standardized,
+        targets_original,
+        standardizer,
+        likelihood,
+        config,
+        tracker,
     )
 end

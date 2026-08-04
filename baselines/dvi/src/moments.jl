@@ -5,6 +5,74 @@ const DVI_INV_SQRT2PI = Float32(inv(sqrt(2pi)))
 const DVI_INV_SQRT2 = Float32(inv(sqrt(2)))
 const DVI_TWOPI = Float32(2pi)
 
+Base.@kwdef mutable struct NumericalTracker
+    calls::Int = 0
+    elements::Int = 0
+    lower_clamps::Int = 0
+    upper_clamps::Int = 0
+end
+
+function record_exp_clamps!(tracker::NumericalTracker, values, lower, upper)
+    lower_clamps = values isa Number ? Int(values < lower) :
+        count(value -> value < lower, values)
+    upper_clamps = values isa Number ? Int(values > upper) :
+        count(value -> value > upper, values)
+    elements = values isa Number ? 1 : length(values)
+    Zygote.ignore() do
+        tracker.calls += 1
+        tracker.elements += elements
+        tracker.lower_clamps += lower_clamps
+        tracker.upper_clamps += upper_clamps
+    end
+    return nothing
+end
+
+function safe_exp(
+    values,
+    config::DVIConfig,
+    tracker::Union{Nothing, NumericalTracker} = nothing,
+)
+    tracker === nothing || record_exp_clamps!(
+        tracker, values, config.safe_exp_min, config.safe_exp_max,
+    )
+    return exp.(clamp.(
+        values,
+        convert(eltype(values), config.safe_exp_min),
+        convert(eltype(values), config.safe_exp_max),
+    ))
+end
+
+function safe_exp(
+    value::Number,
+    config::DVIConfig,
+    tracker::Union{Nothing, NumericalTracker} = nothing,
+)
+    tracker === nothing || record_exp_clamps!(
+        tracker, value, config.safe_exp_min, config.safe_exp_max,
+    )
+    return exp(clamp(value, config.safe_exp_min, config.safe_exp_max))
+end
+
+function tracker_record(tracker::NumericalTracker)
+    clamps = tracker.lower_clamps + tracker.upper_clamps
+    return (
+        calls = tracker.calls,
+        elements = tracker.elements,
+        lower_clamps = tracker.lower_clamps,
+        upper_clamps = tracker.upper_clamps,
+        clamp_count = clamps,
+        clamp_rate = tracker.elements == 0 ? 0.0 : clamps / tracker.elements,
+    )
+end
+
+function accumulate_tracker!(tracker::NumericalTracker, record)
+    tracker.calls += Int(record.calls)
+    tracker.elements += Int(record.elements)
+    tracker.lower_clamps += Int(record.lower_clamps)
+    tracker.upper_clamps += Int(record.upper_clamps)
+    return tracker
+end
+
 standard_gaussian(x) = DVI_INV_SQRT2PI .* exp.(-0.5f0 .* x .^ 2)
 gaussian_cdf(x) = 0.5f0 .* (1f0 .+ erf.(DVI_INV_SQRT2 .* x))
 softrelu(x) = standard_gaussian(x) .+ x .* gaussian_cdf(x)
@@ -40,28 +108,25 @@ function batch_diagonal(diagonals::AbstractMatrix)
         reshape(identity_matrix, 1, dimension, dimension)
 end
 
-function covariance_diagonal(covariance::AbstractArray{<:Real, 3})
-    _, dimension, other_dimension = size(covariance)
+function covariance_diagonal(covariance::AbstractArray{T, 3}) where {T}
+    batch, dimension, other_dimension = size(covariance)
     dimension == other_dimension ||
         throw(DimensionMismatch("covariance matrices must be square"))
-    identity_matrix = Matrix{eltype(covariance)}(I, dimension, dimension)
-    return dropdims(
-        sum(
-            covariance .* reshape(identity_matrix, 1, dimension, dimension);
-            dims = 3,
-        );
-        dims = 3,
-    )
+    flattened = reshape(covariance, batch, dimension * dimension)
+    return flattened[:, 1:(dimension + 1):(dimension * dimension)]
 end
 
 function batch_quadratic(
     weight_mean::AbstractMatrix,
-    covariance::AbstractArray{<:Real, 3},
-)
-    matrices = map(axes(covariance, 1)) do batch_index
-        weight_mean * covariance[batch_index, :, :] * transpose(weight_mean)
-    end
-    return permutedims(cat(matrices...; dims = 3), (3, 1, 2))
+    covariance::AbstractArray{T, 3},
+) where {T}
+    size(weight_mean, 2) == size(covariance, 2) == size(covariance, 3) ||
+        throw(DimensionMismatch("weight and activation covariance disagree"))
+    @tullio result[batch, output, other_output] :=
+        weight_mean[output, input] *
+        covariance[batch, input, other_input] *
+        weight_mean[other_output, other_input]
+    return result
 end
 
 """
@@ -72,8 +137,8 @@ equation (6) and Table 1 of Wu et al. (2019).
 """
 function relu_moments_full(
     mean::AbstractMatrix,
-    covariance::AbstractArray{<:Real, 3},
-)
+    covariance::AbstractArray{T, 3},
+) where {T}
     batch, dimension = size(mean)
     variance = max.(covariance_diagonal(covariance), zero(eltype(covariance)))
     standard_deviation = sqrt.(variance)
@@ -121,9 +186,14 @@ function relu_moments_diagonal(
     )
 end
 
-function linear_certain_full(features::AbstractMatrix, layer)
-    weight_variance = exp.(2f0 .* layer.weight_log_std)
-    bias_variance = exp.(2f0 .* layer.bias_log_std)
+function linear_certain_full(
+    features::AbstractMatrix,
+    layer,
+    config::DVIConfig,
+    tracker::Union{Nothing, NumericalTracker} = nothing,
+)
+    weight_variance = safe_exp(2f0 .* layer.weight_log_std, config, tracker)
+    bias_variance = safe_exp(2f0 .* layer.bias_log_std, config, tracker)
     mean = features * transpose(layer.weight_mu) .+
         transpose(layer.bias_mu)
     variance_diagonal =
@@ -132,9 +202,14 @@ function linear_certain_full(features::AbstractMatrix, layer)
     return (mean = mean, covariance = batch_diagonal(variance_diagonal))
 end
 
-function linear_full(activations, layer)
-    weight_variance = exp.(2f0 .* layer.weight_log_std)
-    bias_variance = exp.(2f0 .* layer.bias_log_std)
+function linear_full(
+    activations,
+    layer,
+    config::DVIConfig,
+    tracker::Union{Nothing, NumericalTracker} = nothing,
+)
+    weight_variance = safe_exp(2f0 .* layer.weight_log_std, config, tracker)
+    bias_variance = safe_exp(2f0 .* layer.bias_log_std, config, tracker)
     input_variance = covariance_diagonal(activations.covariance)
     input_second_moment = input_variance .+ activations.mean .^ 2
     mean = activations.mean * transpose(layer.weight_mu) .+
@@ -150,9 +225,14 @@ function linear_full(activations, layer)
     return (mean = mean, covariance = covariance)
 end
 
-function linear_certain_diagonal(features::AbstractMatrix, layer)
-    weight_variance = exp.(2f0 .* layer.weight_log_std)
-    bias_variance = exp.(2f0 .* layer.bias_log_std)
+function linear_certain_diagonal(
+    features::AbstractMatrix,
+    layer,
+    config::DVIConfig,
+    tracker::Union{Nothing, NumericalTracker} = nothing,
+)
+    weight_variance = safe_exp(2f0 .* layer.weight_log_std, config, tracker)
+    bias_variance = safe_exp(2f0 .* layer.bias_log_std, config, tracker)
     return (
         mean = features * transpose(layer.weight_mu) .+
             transpose(layer.bias_mu),
@@ -161,9 +241,14 @@ function linear_certain_diagonal(features::AbstractMatrix, layer)
     )
 end
 
-function linear_diagonal(activations, layer)
-    weight_variance = exp.(2f0 .* layer.weight_log_std)
-    bias_variance = exp.(2f0 .* layer.bias_log_std)
+function linear_diagonal(
+    activations,
+    layer,
+    config::DVIConfig,
+    tracker::Union{Nothing, NumericalTracker} = nothing,
+)
+    weight_variance = safe_exp(2f0 .* layer.weight_log_std, config, tracker)
+    bias_variance = safe_exp(2f0 .* layer.bias_log_std, config, tracker)
     input_second_moment =
         activations.variance .+ activations.mean .^ 2
     return (

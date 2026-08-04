@@ -67,22 +67,33 @@ experiment driver. Consequently this is a reproduction of the published
 method and stated protocol, not a claim of bit-for-bit reproduction of Table
 2. The remaining defaults are recorded in every output `config.toml`:
 
-- Adam with learning rate `0.001`;
+- Adam with learning rate `0.0003`;
 - minibatches of 100;
 - posterior initialization based on the `wider_he` setting in the authors'
   public code: weight variance `5/fan_in`, zero bias means, and bias variance
-  divided by 10;
+  divided by 10. For the heteroscedastic log-variance output only, the robust
+  protocol uses zero mean weights/bias and posterior standard deviation `0.05`;
 - elementwise gradient clipping to `[-0.1, 0.1]`, matching the authors'
   public training utility;
-- 10,000 maximum epochs, with the KL off for 7,000 epochs and annealed over
-  500 epochs. This preserves the 70% warmup ratio used by the authors'
-  released toy notebook (14,000 of 20,000 updates), but is a local adaptation,
-  not a UCI setting stated in the paper;
+- bounded exponent arguments in `[-20, 20]` for posterior variances,
+  likelihood precision moments, and predictive variance moments. Likelihood,
+  KL, and metric scalar arithmetic use `Float64`; model parameters remain
+  `Float32`;
+- 10,000 maximum epochs, with the KL off for 14,000 optimizer steps and
+  annealed over 1,000 steps. This preserves the authors' released toy
+  notebook's 14,000-update warmup without exposing larger datasets to many
+  more unregularized Adam updates. It is a local robust UCI protocol, not a
+  UCI setting stated in the paper;
 - train-only feature and target standardization;
 - inner validation for selecting the epoch, followed by a fresh refit on all
   outer-training observations; selection and early stopping begin only after
   any configured KL warmup and annealing are complete;
-- validation patience of 500 checks.
+- validation every five epochs and patience of 500 checks. Full DVI also caps
+  a no-improvement tail at 50,000 optimizer steps; diagonal-dDVI retains only
+  the original check-based patience and is not affected by this cap;
+- full DVI skips validation before the selectable KL phase. With Reactant it
+  propagates validation moments on the selected device and transfers only the
+  small output moments back for the unchanged host-side `Float64` metrics.
 
 The exact repeated-holdout algorithm is shared with BBB through
 `SurrogateModelling`'s versioned `repeated-holdout-v1` protocol. Split IDs
@@ -138,6 +149,48 @@ DATADEPS_ALWAYS_ACCEPT=true \
 julia --project=baselines/dvi baselines/dvi/run.jl
 ```
 
+The default `zygote`/`cpu` execution backend is the portable numerical
+reference. The optional Reactant backend uses Enzyme differentiation and keeps
+the Float32 model, Adam state, and training data on the selected device. Its
+XLA-compatible Gaussian CDF uses a high-accuracy elementary approximation;
+cross-backend results are checked for numerical, rather than bitwise, parity:
+
+```sh
+DVI_BACKEND=reactant DVI_DEVICE=gpu \
+DATADEPS_ALWAYS_ACCEPT=true DVI_DATASETS=yacht DVI_SPLITS=1 \
+julia --project=baselines/dvi baselines/dvi/run.jl
+```
+
+Backend, device, and implementation version are saved as result-affecting
+configuration fields. A result directory therefore cannot be resumed with a
+different execution implementation.
+
+`DVI_FULL_PATIENCE_STEPS` controls the full-DVI-only optimizer-step cap and
+defaults to `50000`. It never changes diagonal-dDVI stopping behavior.
+
+`DVI_SELECTION_MAX_STEPS` and `DVI_REFIT_MAX_STEPS` are optional hard
+training-budget ceilings checked at epoch boundaries; zero (the default)
+disables each ceiling. A selection ceiling forces one final validation when
+reached. `DVI_TRAINING_BUDGET_PROTOCOL` records a human-readable identifier in
+the configuration, run rows, and checkpoints. These settings are
+result-affecting and therefore protected by resume validation.
+
+Before launching the paper run, measure warmed gradient/Adam steps without
+writing any result artifact:
+
+```sh
+DVI_PROFILE_BACKENDS=zygote \
+julia --project=baselines/dvi baselines/dvi/profile_step.jl
+
+DVI_PROFILE_BACKENDS=reactant DVI_DEVICE=gpu \
+julia --project=baselines/dvi baselines/dvi/profile_step.jl
+```
+
+The profiler reports compilation time, steady-state time and allocations for
+100-row batches with 6 and 13 inputs. Its conservative projection includes a
+25% margin and must be at most three days before a 120-configuration run is
+started.
+
 Run diagonal-DVI:
 
 ```sh
@@ -147,12 +200,14 @@ julia --project=baselines/dvi baselines/dvi/run.jl
 
 ### Checked Yacht reproduction
 
-The following one-split command was run locally:
+The following legacy one-split command was run locally before the robust
+numerical protocol was introduced:
 
 ```sh
 DATADEPS_ALWAYS_ACCEPT=true OPENBLAS_NUM_THREADS=1 \
 DVI_DATASETS=yacht DVI_SPLITS=1 DVI_PROPAGATION=diagonal \
-DVI_MAX_EPOCHS=10000 DVI_KL_WARMUP_EPOCHS=7000 \
+DVI_MAX_EPOCHS=10000 DVI_KL_SCHEDULE_UNIT=epochs \
+DVI_KL_WARMUP_EPOCHS=7000 \
 DVI_KL_ANNEAL_EPOCHS=500 DVI_PATIENCE=500 \
 DVI_OUTPUT_DIR=results/dvi/wu2019_yacht_ddvi_public_warmup_ratio_fixed_20260727 \
 DVI_RESUME=false DVI_SHOW_PROGRESS=false \
@@ -166,13 +221,112 @@ It selected epoch 7,925 after the KL was fully enabled and obtained:
 | Yacht | dDVI | 1 | -0.5284 | 0.7462 |
 | Yacht, Wu et al. Table 2 | dDVI | 20 | -0.47 ± 0.03 | not reported |
 
-This is a close one-split check, not a reproduction of the paper's 20-split
-mean. The split seed and the undisclosed original UCI optimizer details need
-not match the authors' experiment.
+This historical result is a close one-split check, not a result from the
+current `bounded-exp-step-kl-v1` protocol and not a reproduction of the
+paper's 20-split mean.
 
 Outputs are written incrementally under `results/dvi/<timestamp>/`.
 Successful configurations can be resumed by reusing `DVI_OUTPUT_DIR`; a
 configuration is skipped only when its checkpoint is present and valid.
+Long runs can be sharded safely with a comma-separated subset such as
+`DVI_SPLIT_IDS=1,2,3,4,5`. `DVI_SPLITS=20` must remain unchanged so every
+shard records the complete shared manifest; use a distinct output directory
+per shard and combine the resulting run rows only after all shards finish.
+
+For a paper comparison against BBB, run only the heteroscedastic likelihood
+(the DVI regression model from Wu et al.) for both propagation variants.
+Keep the shared split and evaluation settings at their defaults and use
+separate output directories because `propagation` is a result-affecting
+setting:
+
+```sh
+DATADEPS_ALWAYS_ACCEPT=true DVI_PROPAGATION=full \
+DVI_LIKELIHOODS=heteroscedastic \
+DVI_OUTPUT_DIR=paper_materials/dvi_uci/wu2019_repeated_holdout_v1_20splits/dvi \
+julia --project=baselines/dvi baselines/dvi/run.jl
+
+DATADEPS_ALWAYS_ACCEPT=true DVI_PROPAGATION=diagonal \
+DVI_LIKELIHOODS=heteroscedastic \
+DVI_OUTPUT_DIR=paper_materials/dvi_uci/wu2019_repeated_holdout_v1_20splits/ddvi \
+julia --project=baselines/dvi baselines/dvi/run.jl
+```
+
+These runs use the same versioned outer and inner row indices, train-only
+standardization, 20 repeated 90/10 holdouts, validation-based epoch selection,
+full-training refit, target-scale Jacobian for LPD, and aggregate mean, sample
+standard deviation, and standard error as BBB. DVI-specific architecture,
+objective, robust initialization, empirical-Bayes prior, numerical bounds,
+step-based KL schedule, stopping rule, and gradient clipping remain those
+documented above and are saved in each `config.toml`. A 500-epoch equal-budget
+pilot was rejected because both an
+immediate KL and a proportionally shortened warmup failed to converge on the
+checked Yacht split. Each directory contains the same paper artifacts as BBB:
+`runs.csv`, `summary.csv`, `table.md`, `table.tex`, `split_manifest.jld2`,
+histories, and versioned checkpoints.
+
+Losses and gradients are checked before each optimizer update. Validation
+histories are written incrementally, clamp counts/rates are included in run
+rows, and failures have structured diagnostics under `failures/`. Resume uses
+configuration-identity upserts, so a successful retry replaces its failed row.
+Shard merging refuses incomplete, failed, duplicate, or selection-only runs.
+
+Before a paper run, replay the 19 failures from the stopped run plus three
+previously successful anchors without evaluating any outer-test targets:
+
+```sh
+baselines/dvi/run_ddvi_failure_replay.sh
+```
+
+After parity and the three-day projection gate pass,
+`run_bbb_matched_paper.sh` runs full DVI in a fresh optimized output directory.
+It defaults to four CPU shards. Select the validated Reactant GPU layout with,
+for example:
+
+```sh
+DVI_PAPER_PROFILE_APPROVED=true DVI_PAPER_BACKEND=reactant \
+DVI_PAPER_DEVICE=gpu DVI_PAPER_SHARDS=1 \
+baselines/dvi/run_bbb_matched_paper.sh
+```
+
+`DVI_PAPER_SHARDS` accepts 1, 2, or 4. The launcher now refuses any
+`DVI_PAPER_METHODS` value other than `full`, ensuring the completed dDVI result
+cannot be rerun accidentally.
+
+The separate homoscedastic campaign uses the explicitly reduced
+`selection-refit-max-50000-v1` budget for both propagation methods. It keeps
+the original 14,000-step KL warmup and 1,000-step anneal, but limits selection
+and refit to 50,000 optimizer steps apiece:
+
+```sh
+DVI_HOMO_PROFILE_APPROVED=true \
+baselines/dvi/run_homoscedastic_budgeted_paper.sh
+```
+
+This launcher hardcodes the homoscedastic likelihood, defaults to Reactant on
+CUDA with four shards, and refuses to start until the Power split-1 quality
+and timing pilots have approved the reduced protocol. Its results must be
+reported as the budgeted homoscedastic protocol, not as the unlimited
+heteroscedastic training protocol.
+
+Reproduce the four-process timing and GPU-memory gate with:
+
+```sh
+baselines/dvi/run_homoscedastic_power_scale_gate.sh
+```
+
+It runs dDVI Power splits 2--5 concurrently by default. Set
+`DVI_HOMO_GATE_METHOD=full` to repeat the gate for full DVI.
+The script refuses an existing output directory so resume time cannot be
+mistaken for a fresh timing result, and exits nonzero when the conservative
+two-method projection exceeds ten hours.
+
+After running independent `DVI_SPLIT_IDS` shards, combine them with:
+
+```sh
+julia --project=baselines/dvi baselines/dvi/merge_shards.jl \
+  paper_materials/dvi_uci/<run>/dvi \
+  paper_materials/dvi_uci/<run>/dvi_shards/*
+```
 
 ## BibTeX
 

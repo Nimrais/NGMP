@@ -29,6 +29,7 @@ using SurrogateModelling:
     uci_regression_splits,
     prepare_uci_regression_partition
 using TOML
+using Tullio
 using Zygote
 
 include("config.jl")
@@ -36,14 +37,20 @@ include("data.jl")
 include("moments.jl")
 include("model.jl")
 include("metrics.jl")
+include("backend.jl")
 include("training.jl")
 include("artifacts.jl")
 include("benchmark.jl")
 
 export DVIConfig,
+    NumericalTracker,
+    DVINumericalError,
+    safe_exp,
+    tracker_record,
     load_config,
     validate_config,
     parse_datasets,
+    parse_split_ids,
     uci_regression_split,
     uci_regression_splits,
     prepare_uci_regression_partition,
@@ -59,6 +66,7 @@ export DVIConfig,
     empirical_bayes_prior_variances,
     expected_log_likelihood,
     dvi_loss,
+    kl_weight,
     predictive_distribution,
     predictive_metrics,
     train_with_validation,
