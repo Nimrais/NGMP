@@ -430,6 +430,98 @@ function fit_direct_deep(
     )
 end
 
+# Layer-specific feature designs. Entry 1 belongs to the mean layer and the
+# remaining entries to the depth-1 precision layers.
+function fit_direct_deep(
+    depth,
+    Φs::AbstractVector{<:AbstractMatrix},
+    targets,
+    method,
+    beta;
+    prior_builder = direct_prior_parameters,
+)
+    length(Φs) == depth || throw(ArgumentError(
+        "expected $depth layer designs, received $(length(Φs))",
+    ))
+    mean_Φ = Φs[1]
+    level_Φs = Φs[2:end]
+    n, p = size(mean_Φ)
+    all(Φ -> size(Φ) == (n, p), Φs) || throw(ArgumentError(
+        "all layer designs must have the same shape",
+    ))
+    levels = depth - 1
+    prior = prior_builder(depth, mean_Φ, targets)
+    mean_weights = copy(prior.mean_prior_mean)
+    mean_covariance = inv(prior.mean_prior_precision)
+    level_weights = copy.(prior.level_prior_means)
+    level_covariances = inv.(prior.level_prior_precisions)
+    score_means = [level_Φs[level] * level_weights[level] for level in 1:levels]
+    score_variances = [
+        row_quadratic_forms(level_Φs[level], level_covariances[level]) .+
+            inv(TOP_CARRIER) for level in 1:levels
+    ]
+    expected_precisions = [
+        exp.(score_means[level] .+ score_variances[level] ./ 2)
+        for level in 1:levels
+    ]
+    exp_states = new_exp_states(levels, n, method, beta)
+    previous_vector = vcat(mean_weights, level_weights...)
+
+    for _ in 1:DIRECT_ITERATIONS
+        mean_weights, mean_covariance = direct_gaussian_update(
+            mean_Φ, targets, max.(expected_precisions[1], DIRECT_JITTER),
+            prior.mean_prior_mean, prior.mean_prior_precision,
+        )
+        gamma_rate = (abs2.(targets - mean_Φ * mean_weights) +
+            row_quadratic_forms(mean_Φ, mean_covariance)) ./ 2
+
+        for level in 1:levels
+            Φ = level_Φs[level]
+            carrier_precision = level == levels ? fill(TOP_CARRIER, n) :
+                max.(expected_precisions[level + 1], DIRECT_JITTER)
+            conditional_mean = Φ * level_weights[level]
+            conditional_variance = row_quadratic_forms(Φ, level_covariances[level]) +
+                inv.(carrier_precision)
+            site_xi, site_precision = damp_exp_sites!(
+                exp_states, level, 1.5, max.(gamma_rate, DIRECT_JITTER),
+                score_means[level], score_variances[level],
+            )
+            positive_site_precision = max.(site_precision, DIRECT_JITTER)
+            posterior_score_precision = carrier_precision + positive_site_precision
+            effective_precision = carrier_precision .* positive_site_precision ./
+                posterior_score_precision
+            site_target = site_xi ./ positive_site_precision
+            level_weights[level], level_covariances[level] = direct_gaussian_update(
+                Φ, site_target, effective_precision,
+                prior.level_prior_means[level], prior.level_prior_precisions[level],
+            )
+            updated_mean = Φ * level_weights[level]
+            updated_variance = row_quadratic_forms(Φ, level_covariances[level])
+            carrier_fraction = carrier_precision ./ posterior_score_precision
+            posterior_mean = (carrier_precision .* updated_mean + site_xi) ./
+                posterior_score_precision
+            posterior_variance = inv.(posterior_score_precision) +
+                carrier_fraction .^ 2 .* updated_variance
+            score_means[level] = posterior_mean
+            score_variances[level] = posterior_variance
+            expected_precisions[level] = exp.(posterior_mean + posterior_variance / 2)
+            residual_variance = posterior_variance + updated_variance -
+                2 .* carrier_fraction .* updated_variance
+            gamma_rate = (abs2.(posterior_mean - updated_mean) +
+                max.(residual_variance, DIRECT_JITTER)) ./ 2
+        end
+
+        finite_direct_state(mean_weights, mean_covariance, level_weights,
+            level_covariances) || error("direct backend produced a non-finite posterior")
+        current_vector = vcat(mean_weights, level_weights...)
+        delta = norm(current_vector - previous_vector) / max(1.0, norm(previous_vector))
+        delta < DIRECT_TOLERANCE && break
+        previous_vector = current_vector
+    end
+    return (; depth, method, beta, mean_weights, mean_covariance,
+        noise_shape = NaN, noise_rate = NaN, level_weights, level_covariances)
+end
+
 function fit_direct_model(
     depth,
     Φ,
@@ -453,6 +545,12 @@ function fit_direct_model(
     )
 end
 
+function fit_direct_model(depth, Φs::AbstractVector{<:AbstractMatrix}, targets,
+    method, beta; prior_builder = direct_prior_parameters)
+    depth == 1 && return fit_direct_depth_one(Φs[1], targets; prior_builder)
+    return fit_direct_deep(depth, Φs, targets, method, beta; prior_builder)
+end
+
 function predict_direct_model(fit, Φ)
     predictive_mean = Φ * fit.mean_weights
     epistemic_variance =
@@ -473,12 +571,33 @@ function predict_direct_model(fit, Φ)
     return (; mean = predictive_mean, variance = predictive_variance)
 end
 
+
+function predict_direct_model(fit, Φs::AbstractVector{<:AbstractMatrix})
+    mean_Φ = Φs[1]
+    predictive_mean = mean_Φ * fit.mean_weights
+    epistemic_variance = row_quadratic_forms(mean_Φ, fit.mean_covariance)
+    if fit.depth == 1
+        aleatoric_variance = fill(
+            fit.noise_rate / max(fit.noise_shape - 1, DIRECT_JITTER),
+            size(mean_Φ, 1),
+        )
+    else
+        level_Φ = Φs[2]
+        score_mean = level_Φ * fit.level_weights[1]
+        score_variance = row_quadratic_forms(level_Φ, fit.level_covariances[1])
+        aleatoric_variance = exp.(-score_mean + score_variance / 2)
+    end
+    return (; mean = predictive_mean,
+        variance = max.(epistemic_variance + aleatoric_variance, DIRECT_JITTER))
+end
+
 function direct_main(
     ;
     prior_builder = direct_prior_parameters,
     output_stem = "uci_deep_kernel_direct_paper",
     backend_label = "direct",
     fixed_lengthscale = nothing,
+    layerwise_lengthscale_factor = nothing,
     optimizer_configs_for_depth = optimizers_for_depth,
 )
     ENV["DATADEPS_ALWAYS_ACCEPT"] = "true"
@@ -507,94 +626,58 @@ function direct_main(
         runs_per_preprocessing_dimension
     run_index = 0
 
-    cached_splits = Dict{Tuple{Symbol, Symbol, Int}, Any}()
+    isnothing(layerwise_lengthscale_factor) || (
+        !isnothing(fixed_lengthscale) && layerwise_lengthscale_factor > 0
+    ) || throw(ArgumentError(
+        "layerwise lengthscales require a positive fixed base lengthscale and factor",
+    ))
+    first_split_unstable = Dict{Tuple{Symbol, Symbol, Int, Int, Symbol, Float64}, Bool}()
     for dataset in datasets,
         preprocessing in DIRECT_PREPROCESSING,
         feature_dimension in DIRECT_FEATURE_DIMENSIONS
-        cached_splits[(dataset, preprocessing, feature_dimension)] = map(
+        for (split_position, split) in enumerate(
             paper_splits(dataset; count = N_SPLITS),
-        ) do split
+        )
             prepared = prepare_split(split)
-            Φtrain, Φtest = direct_rff_design(
-                prepared.x_train_std,
-                prepared.x_test_std,
-                10_000 * split.split_id,
-                preprocessing,
-                feature_dimension,
-                fixed_lengthscale,
-            )
-            (; split, prepared, Φtrain, Φtest)
-        end
-    end
-
-    for dataset in datasets,
-        preprocessing in DIRECT_PREPROCESSING,
-        feature_dimension in DIRECT_FEATURE_DIMENSIONS,
-        depth in DEPTHS,
-        (method, beta) in optimizer_configs_for_depth(depth)
-        first_split_unstable = false
-        for (split_position, cached) in
-            enumerate(cached_splits[(
-                dataset,
-                preprocessing,
-                feature_dimension,
-            )])
-            split = cached.split
-            prepared = cached.prepared
-            run_index += 1
-            @printf(
-                "[%d/%d] backend=%s dataset=%s preprocessing=%s feature_dimension=%d split=%d/%d depth=%d optimizer=%s beta=%.2f alpha=%.2f\n",
-                run_index,
-                total_runs,
-                backend_label,
-                dataset,
-                preprocessing,
-                feature_dimension,
-                split.split_id,
-                N_SPLITS,
-                depth,
-                method,
-                beta,
-                direct_optimizer_alpha(method),
-            )
-            flush(stdout)
-
-            if split_position > 1 && first_split_unstable
-                println("  skipped: split 1 was unstable for this configuration")
-                push!(rows, (;
-                    dataset,
-                    preprocessing,
-                    feature_dimension,
-                    split = split.split_id,
-                    depth,
-                    optimizer = method,
-                    beta,
-                    status = "skipped",
-                    logpdf_standardized = NaN,
-                    logpdf = NaN,
-                    rmse = NaN,
-                    paper_dvi = split.paper_dvi,
-                    error = "skipped because split 1 was unstable",
-                ))
+            if isnothing(layerwise_lengthscale_factor)
+                Φtrain, Φtest = direct_rff_design(
+                    prepared.x_train_std, prepared.x_test_std,
+                    10_000 * split.split_id, preprocessing,
+                    feature_dimension, fixed_lengthscale,
+                )
             else
-                try
-                    fit = fit_direct_model(
-                        depth,
-                        cached.Φtrain,
-                        prepared.y_train_std,
-                        method,
-                        beta,
-                        ;
-                        prior_builder,
+                # Construct the deepest requested hierarchy once. Shallower
+                # models reuse a prefix, so common layers have identical RFFs.
+                designs = map(1:maximum(DEPTHS)) do layer
+                    direct_rff_design(
+                        prepared.x_train_std, prepared.x_test_std,
+                        10_000 * split.split_id + 101 * (layer - 1),
+                        preprocessing, feature_dimension,
+                        fixed_lengthscale * layerwise_lengthscale_factor^(layer - 1),
                     )
-                    prediction =
-                        predict_direct_model(fit, cached.Φtest)
-                    metrics = gaussian_logpdf_metrics(
-                        prepared.y_test_std,
-                        prediction.mean,
-                        prediction.variance,
-                        prepared.y_scale,
-                    )
+                end
+                Φtrain = first.(designs)
+                Φtest = last.(designs)
+            end
+            for depth in DEPTHS,
+                (method, beta) in optimizer_configs_for_depth(depth)
+                key = (dataset, preprocessing, feature_dimension, depth, method, beta)
+                depth_Φtrain = isnothing(layerwise_lengthscale_factor) ?
+                    Φtrain : Φtrain[1:depth]
+                depth_Φtest = isnothing(layerwise_lengthscale_factor) ?
+                    Φtest : Φtest[1:depth]
+                run_index += 1
+                @printf(
+                    "[%d/%d] backend=%s dataset=%s preprocessing=%s feature_dimension=%d split=%d/%d depth=%d optimizer=%s beta=%.2f alpha=%.2f\n",
+                    run_index, total_runs, backend_label, dataset,
+                    preprocessing, feature_dimension, split.split_id,
+                    N_SPLITS, depth, method, beta,
+                    direct_optimizer_alpha(method),
+                )
+                flush(stdout)
+
+                if split_position > 1 && get(first_split_unstable, key, false)
+                    println("  skipped: split 1 was unstable for this configuration")
                     push!(rows, (;
                         dataset,
                         preprocessing,
@@ -603,42 +686,49 @@ function direct_main(
                         depth,
                         optimizer = method,
                         beta,
-                        status = "ok",
-                        metrics...,
-                        paper_dvi = split.paper_dvi,
-                        error = "",
-                    ))
-                catch error
-                    first_split_unstable = split_position == 1
-                    push!(rows, (;
-                        dataset,
-                        preprocessing,
-                        feature_dimension,
-                        split = split.split_id,
-                        depth,
-                        optimizer = method,
-                        beta,
-                        status = "unstable",
+                        status = "skipped",
                         logpdf_standardized = NaN,
                         logpdf = NaN,
                         rmse = NaN,
                         paper_dvi = split.paper_dvi,
-                        error = replace(
-                            sprint(showerror, error),
-                            '\n' => ' ',
-                        ),
+                        error = "skipped because split 1 was unstable",
                     ))
+                else
+                    try
+                        fit = fit_direct_model(
+                            depth, depth_Φtrain, prepared.y_train_std,
+                            method, beta; prior_builder,
+                        )
+                        prediction = predict_direct_model(fit, depth_Φtest)
+                        metrics = gaussian_logpdf_metrics(
+                            prepared.y_test_std, prediction.mean,
+                            prediction.variance, prepared.y_scale,
+                        )
+                        push!(rows, (;
+                            dataset, preprocessing, feature_dimension,
+                            split = split.split_id, depth,
+                            optimizer = method, beta, status = "ok",
+                            metrics..., paper_dvi = split.paper_dvi, error = "",
+                        ))
+                    catch error
+                        split_position == 1 && (first_split_unstable[key] = true)
+                        push!(rows, (;
+                            dataset, preprocessing, feature_dimension,
+                            split = split.split_id, depth,
+                            optimizer = method, beta, status = "unstable",
+                            logpdf_standardized = NaN, logpdf = NaN, rmse = NaN,
+                            paper_dvi = split.paper_dvi,
+                            error = replace(sprint(showerror, error), '\n' => ' '),
+                        ))
+                    end
                 end
+                write_results(path, rows)
+                write_results(summary_path, direct_summary_rows(
+                    rows, datasets; optimizer_configs_for_depth,
+                ))
             end
-            write_results(path, rows)
-            write_results(
-                summary_path,
-                direct_summary_rows(
-                    rows,
-                    datasets;
-                    optimizer_configs_for_depth,
-                ),
-            )
+            # Encourage prompt reclamation of the large layerwise matrices.
+            GC.gc(false)
         end
     end
 
