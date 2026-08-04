@@ -417,3 +417,19 @@ git status
 
 The final `git check-attr` command must report `filter: lfs`, and staged
 `.jld2` blobs should appear in `git lfs ls-files` before committing.
+
+## Short compute-budget summary
+
+For the final tables alone, excluding exploratory pilots and failed or
+aborted runs, a realistic conservative budget is **about 100 hours on one
+GPU-equipped machine when every fit is run sequentially** (roughly four
+days). About `47.5` of those hours are measured GPU work: `14.1` hours for
+heteroscedastic DVI, `16.3` for homoscedastic dDVI, and `17.1` for
+homoscedastic DVI. The canonical heteroscedastic dDVI implementation used
+`50.2` CPU-hours, and BBB used another `0.7` CPU-hours; during those two stages
+the GPU would be idle. Adding the recorded work gives `98.4` machine-hours,
+rounded to 100 for startup, compilation, downloads, and merging. Thus the
+honest short description is **approximately 100 single-GPU-instance hours,
+of which about 48 hours actively use the GPU**. A full matching Reactant/GPU
+campaign was not measured for heteroscedastic dDVI, so no unverified GPU
+speedup is included.
