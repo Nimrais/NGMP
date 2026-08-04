@@ -8,3 +8,4 @@ data/*
 /cache/
 /results/
 notebooks/vmp_vs_ngmp/dynamic_etth1_h96_cache.jld2
+Manifest.toml
