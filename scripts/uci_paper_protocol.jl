@@ -4,7 +4,8 @@ using CSV
 using DataFrames
 using Random
 using Statistics
-using SurrogateModelling: Yacht, Concrete, EnergyEfficiency
+using SurrogateModelling: Yacht, Concrete, EnergyEfficiency, BostonHousing,
+                          PowerPlant, WineQualityRed
 
 export DATASETS, paper_splits, prepare_split, gaussian_logpdf_metrics,
        summarize_rows, write_results
@@ -13,6 +14,11 @@ const DATASETS = (
     yacht = (constructor = Yacht, paper_dvi = -0.47),
     energy = (constructor = EnergyEfficiency, paper_dvi = -1.01),
     concrete = (constructor = Concrete, paper_dvi = -3.06),
+    housing = (constructor = BostonHousing, paper_dvi = -2.41),
+    # The local red-wine mirror contains 1,599 rows; DVI Table 2 reports
+    # 1,588, so this reference is informative rather than exactly comparable.
+    wine = (constructor = WineQualityRed, paper_dvi = -0.90),
+    power = (constructor = PowerPlant, paper_dvi = -2.80),
 )
 
 function load_dataset(name::Symbol)
