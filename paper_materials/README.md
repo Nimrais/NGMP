@@ -1,22 +1,25 @@
 # Reproducing the UCI paper results
 
-This directory contains the complete BBB, diagonal-DVI (`dDVI`), and
-full-covariance DVI results used for the paper comparison. The final result
-directories contain 720 successful fits and no failed rows:
+This directory contains the complete BBB, diagonal-DVI (`dDVI`),
+full-covariance DVI, and Bayesian Predictive Coding (`BPC`) results used for
+the paper comparison. Treat each likelihood variant as a separate method.
+The final result directories contain 840 successful fits and no failed rows:
 
-| Method | Likelihood | Final directory | Successful fits |
-|---|---|---|---:|
-| BBB | homoscedastic and heteroscedastic | `bbb_uci/blundell2015_repeated_holdout_v1_20splits_20260728` | 240 |
-| dDVI | heteroscedastic | `dvi_uci/wu2019_repeated_holdout_v1_20splits_robust_v1_20260731/ddvi` | 120 |
-| DVI | heteroscedastic | `dvi_uci/wu2019_repeated_holdout_v1_20splits_robust_selection_optimized_v2_20260803/dvi` | 120 |
-| dDVI | homoscedastic | `dvi_uci/wu2019_repeated_holdout_v1_20splits_homoscedastic_budget50k_v1_20260804/ddvi` | 120 |
-| DVI | homoscedastic | `dvi_uci/wu2019_repeated_holdout_v1_20splits_homoscedastic_budget50k_v1_20260804/dvi` | 120 |
+| Method variant | Final directory | Successful fits |
+|---|---|---:|
+| BBB-Homo | `bbb_uci/blundell2015_repeated_holdout_v1_20splits_20260728` | 120 |
+| BBB-Hetero | `bbb_uci/blundell2015_repeated_holdout_v1_20splits_20260728` | 120 |
+| dDVI-Homo | `dvi_uci/wu2019_repeated_holdout_v1_20splits_homoscedastic_budget50k_v1_20260804/ddvi` | 120 |
+| dDVI-Hetero | `dvi_uci/wu2019_repeated_holdout_v1_20splits_robust_v1_20260731/ddvi` | 120 |
+| DVI-Homo | `dvi_uci/wu2019_repeated_holdout_v1_20splits_homoscedastic_budget50k_v1_20260804/dvi` | 120 |
+| DVI-Hetero | `dvi_uci/wu2019_repeated_holdout_v1_20splits_robust_selection_optimized_v2_20260803/dvi` | 120 |
+| BPC-Homo | `bpc_uci/tschantz2025_repeated_holdout_v1_20splits_homoscedastic_20260805` | 120 |
 
 Each set covers Yacht, Concrete, Energy, Housing, Power, and Wine with 20
-deterministic repeated holdouts per dataset. Use the merged `bbb`, `ddvi`, and
-`dvi` directories above for tables. Directories named `*_shards` and
-`pilots` preserve execution provenance and timing/quality checks; they are not
-additional independent paper results.
+deterministic repeated holdouts per dataset. Use the final `bbb`, `ddvi`,
+`dvi`, and `bpc` directories above for tables. Directories named `*_shards`
+and `pilots` preserve execution provenance and timing/quality checks; they are
+not additional independent paper results.
 
 ## Reproducibility scope
 
@@ -59,8 +62,8 @@ cd /path/to/NGMP
 ```
 
 Install Julia 1.11, Git LFS, and, for accelerated DVI, an NVIDIA GPU with a
-working driver. Then fetch the saved checkpoints and instantiate both Julia
-environments:
+working driver. Then fetch the saved checkpoints and instantiate the three
+Julia environments:
 
 ```sh
 git lfs install
@@ -68,6 +71,7 @@ git lfs pull
 
 julia --project=baselines/bbb_uci -e 'using Pkg; Pkg.instantiate()'
 julia --project=baselines/dvi -e 'using Pkg; Pkg.instantiate()'
+julia --project=baselines/bpc -e 'using Pkg; Pkg.instantiate()'
 ```
 
 The UCI loaders use DataDeps. The launch commands set
@@ -88,6 +92,7 @@ Before a long run, the implementation tests can be checked with:
 ```sh
 julia --project=baselines/bbb_uci baselines/bbb_uci/test/runtests.jl
 julia --project=baselines/dvi -e 'using Pkg; Pkg.test()'
+julia --project=baselines/bpc baselines/bpc/test/runtests.jl
 ```
 
 ## Expected runtime
@@ -103,7 +108,8 @@ over concurrent processes:
 | Heteroscedastic DVI clean rerun | one Reactant/GPU shard, 120 fits | 14--16 hours |
 | Homoscedastic dDVI | four concurrent Reactant/GPU shards, 120 fits | 4.1--4.6 hours |
 | Homoscedastic DVI | four concurrent Reactant/GPU shards, 120 fits | 4.3--4.8 hours |
-| All training stages, sequentially | layouts above | approximately 38--42 hours |
+| Homoscedastic BPC | one CPU process, 120 fits | 10--15 minutes |
+| All training stages, sequentially | layouts above | approximately 38--43 hours |
 
 The estimate is derived from each successful row's recorded `total_seconds`,
 which is selection time plus refit time plus evaluation time. For a serial
@@ -128,7 +134,9 @@ The measured workload behind the table was:
 - optimized heteroscedastic DVI on the five non-Yacht datasets: `10.862`
   hours on its single GPU shard. Two completed optimized Yacht measurements
   took `407` and `760` seconds; their mean extrapolates to `3.24` hours for
-  20 Yacht splits, giving about `14.10` hours of recorded training work.
+  20 Yacht splits, giving about `14.10` hours of recorded training work; and
+- homoscedastic BPC: `0.173` CPU-hours summed over all 120 rows (`623.69`
+  seconds of recorded selection, refit, and evaluation work).
 
 The ranges add allowance for process startup, package loading, XLA
 compilation, shard imbalance, and final merging. A cold Julia depot or slow
@@ -139,12 +147,12 @@ homoscedastic campaign.
 
 Reconstructing the canonical heteroscedastic DVI artifact from already
 downloaded components does not retrain anything and should take less than five
-minutes locally. `git lfs pull` transfers approximately 283 MB for all current
-paper materials, so its time depends on the network connection.
+minutes locally. `git lfs pull` transfers hundreds of megabytes for the saved
+paper checkpoints, so its time depends on the network connection.
 
 ## Shared comparison protocol
 
-All three methods use the versioned `repeated-holdout-v1` split
+All four baseline families use the versioned `repeated-holdout-v1` split
 implementation:
 
 - six UCI regression datasets;
@@ -158,9 +166,86 @@ implementation:
   splits.
 
 `split_manifest.jld2` stores the exact original-row indices. Thus BBB, dDVI,
-and DVI are paired on the same held-out examples. The method-specific
-architecture, posterior, optimizer, KL schedule, and numerical safeguards are
-documented in `baselines/bbb_uci/README.md` and `baselines/dvi/README.md`.
+DVI, and BPC are paired on the same held-out examples. The method-specific
+architecture, posterior, optimizer, learning schedule, and numerical
+safeguards are documented in `baselines/bbb_uci/README.md`,
+`baselines/dvi/README.md`, and `baselines/bpc/README.md`.
+
+## Final comparison table
+
+The suffix is part of the method name: `Homo` denotes a homoscedastic
+likelihood and `Hetero` a heteroscedastic likelihood. BPC appears only as
+`BPC-Homo` because the paper-faithful conjugate model implemented here is
+homoscedastic; no unreported heteroscedastic BPC result is inferred. Values
+are mean ± sample standard deviation across the 20 paired splits, in original
+target units. Higher LPD and lower RMSE are better.
+
+| Dataset | Method | Runs | LPD (original) | RMSE |
+|---|---|---:|---:|---:|
+| Concrete | BBB-Homo | 20 | -3.8613 ± 0.0134 | 7.2822 ± 0.4727 |
+| Concrete | BBB-Hetero | 20 | -3.3328 ± 0.0491 | 6.7086 ± 0.7111 |
+| Concrete | dDVI-Homo | 20 | -3.8602 ± 0.0150 | 6.7179 ± 0.6307 |
+| Concrete | dDVI-Hetero | 20 | -3.0477 ± 0.0986 | 5.6591 ± 0.7648 |
+| Concrete | DVI-Homo | 20 | -3.8602 ± 0.0150 | 6.7179 ± 0.6311 |
+| Concrete | DVI-Hetero | 20 | -3.0406 ± 0.1000 | 5.6654 ± 0.7413 |
+| Concrete | BPC-Homo | 20 | -3.9874 ± 0.0460 | 12.9488 ± 0.6095 |
+| Energy | BBB-Homo | 20 | -3.2892 ± 0.0097 | 2.8175 ± 0.3329 |
+| Energy | BBB-Hetero | 20 | -2.4229 ± 0.0799 | 2.7537 ± 0.3533 |
+| Energy | dDVI-Homo | 20 | -3.2970 ± 0.0062 | 2.2486 ± 0.2645 |
+| Energy | dDVI-Hetero | 20 | -1.1920 ± 1.0553 | 2.1088 ± 0.7045 |
+| Energy | DVI-Homo | 20 | -3.2971 ± 0.0062 | 2.2493 ± 0.2649 |
+| Energy | DVI-Hetero | 20 | -1.0094 ± 0.6784 | 1.9434 ± 0.7650 |
+| Energy | BPC-Homo | 20 | -2.6357 ± 0.1201 | 3.3192 ± 0.4685 |
+| Boston | BBB-Homo | 20 | -3.2488 ± 0.0359 | 3.8392 ± 0.9681 |
+| Boston | BBB-Hetero | 20 | -2.6555 ± 0.0879 | 3.7959 ± 1.0011 |
+| Boston | dDVI-Homo | 20 | -3.2571 ± 0.0254 | 3.4801 ± 0.7698 |
+| Boston | dDVI-Hetero | 20 | -2.4646 ± 0.2100 | 3.4741 ± 0.9399 |
+| Boston | DVI-Homo | 20 | -3.2572 ± 0.0254 | 3.4802 ± 0.7700 |
+| Boston | DVI-Hetero | 20 | -2.4489 ± 0.2091 | 3.4291 ± 0.9157 |
+| Boston | BPC-Homo | 20 | -2.9819 ± 0.1967 | 4.7579 ± 1.1463 |
+| Power | BBB-Homo | 20 | -3.7960 ± 0.0043 | 4.2831 ± 0.1605 |
+| Power | BBB-Hetero | 20 | -2.7785 ± 0.0327 | 4.0251 ± 0.1683 |
+| Power | dDVI-Homo | 20 | -3.7918 ± 0.0025 | 4.3009 ± 0.1641 |
+| Power | dDVI-Hetero | 20 | -2.8238 ± 0.0418 | 4.1321 ± 0.1742 |
+| Power | DVI-Homo | 20 | -3.7918 ± 0.0025 | 4.3009 ± 0.1642 |
+| Power | DVI-Hetero | 20 | -2.8249 ± 0.0457 | 4.1428 ± 0.1827 |
+| Power | BPC-Homo | 20 | -3.5396 ± 0.0363 | 8.2997 ± 0.2652 |
+| Wine | BBB-Homo | 20 | -1.0336 ± 0.0396 | 0.6469 ± 0.0422 |
+| Wine | BBB-Hetero | 20 | -0.9438 ± 0.0530 | 0.6470 ± 0.0402 |
+| Wine | dDVI-Homo | 20 | -1.0360 ± 0.0373 | 0.6484 ± 0.0434 |
+| Wine | dDVI-Hetero | 20 | -0.9440 ± 0.0715 | 0.6463 ± 0.0452 |
+| Wine | DVI-Homo | 20 | -1.0360 ± 0.0373 | 0.6484 ± 0.0434 |
+| Wine | DVI-Hetero | 20 | -0.9448 ± 0.0701 | 0.6469 ± 0.0449 |
+| Wine | BPC-Homo | 20 | -1.0545 ± 0.0584 | 0.6971 ± 0.0415 |
+| Yacht | BBB-Homo | 20 | -3.6925 ± 0.0135 | 3.4875 ± 0.9270 |
+| Yacht | BBB-Hetero | 20 | -2.6565 ± 0.1029 | 3.0494 ± 0.9470 |
+| Yacht | dDVI-Homo | 20 | -3.7236 ± 0.0222 | 2.1779 ± 0.5251 |
+| Yacht | dDVI-Hetero | 20 | -0.4641 ± 0.2283 | 0.8491 ± 0.3164 |
+| Yacht | DVI-Homo | 20 | -3.7238 ± 0.0222 | 2.1787 ± 0.5251 |
+| Yacht | DVI-Hetero | 20 | -0.4543 ± 0.2501 | 0.8528 ± 0.3497 |
+| Yacht | BPC-Homo | 20 | -3.0251 ± 0.1625 | 4.8077 ± 1.0919 |
+
+Regenerate this table from the canonical `summary.csv` files with:
+
+```sh
+julia --project=. \
+    paper_materials/make_final_baseline_table.jl
+```
+
+To save the generated Markdown separately:
+
+```sh
+julia --project=. \
+    paper_materials/make_final_baseline_table.jl \
+    > /tmp/final_baseline_table.md
+```
+
+The generator does more than concatenate CSV files. It checks the 840
+underlying rows for successful, non-duplicated splits 1--20; requires all
+seven method variants to have six matching summary rows with `n = 20`;
+verifies the required likelihood and DVI propagation mode; and requires every
+`split_manifest.jld2` to contain exactly the same outer and inner row indices.
+It aborts instead of producing a table if any of these checks fails.
 
 ## 1. Reproduce BBB
 
@@ -346,6 +431,31 @@ or clamp events; the conservative timing projection exceeded the original
 automatic ten-hour gate, so the final run was launched after explicit manual
 approval.
 
+## 5. Reproduce homoscedastic BPC
+
+BPC uses the conjugate homoscedastic Matrix-Normal--Wishart model described in
+the source paper. The following command runs all six datasets and all 20
+canonical splits in one CPU process:
+
+```sh
+DATADEPS_ALWAYS_ACCEPT=true \
+BPC_DATASETS=all \
+BPC_SPLITS=20 \
+BPC_BACKEND=cpu \
+BPC_OUTPUT_DIR="$REPRO_ROOT/bpc" \
+BPC_SHOW_PROGRESS=false \
+julia --project=baselines/bpc baselines/bpc/run.jl
+```
+
+The effective defaults are two 50-unit hidden layers, minibatches of 100, 10
+latent-state Adam steps per update, 20 posterior draws for evaluation, at
+most 100 epochs, and validation patience 10. The selected epoch is followed
+by reinitialization and a refit on the complete outer-training partition. The
+saved canonical run used the portable CPU backend; `BPC_BACKEND=cuda` is also
+implemented, but changing the backend is a new reproduction rather than the
+exact execution configuration of the committed artifact. See
+`baselines/bpc/README.md` for the model equations and CUDA details.
+
 ## Output layout
 
 Every final result directory contains:
@@ -355,11 +465,12 @@ Every final result directory contains:
 | `config.toml` | Complete effective, result-affecting configuration |
 | `runs.csv` | One row per dataset/split/likelihood/method fit |
 | `summary.csv` | Dataset-level aggregate metrics |
-| `table.md`, `table.tex` | Ready-to-use rendered summaries |
+| `table.md` | Ready-to-use rendered summary |
+| `table.tex` | TeX summary for BBB and DVI artifacts |
 | `split_manifest.jld2` | Exact outer and inner row indices |
 | `histories/` | Selection/refit training histories |
 | `checkpoints/` | Model, standardizer, split, and prediction state |
-| `failures/` | Failure diagnostics; empty for the final DVI sets |
+| `failures/` | Failure diagnostics when created; empty for the final DVI sets |
 
 `merge_shards.jl` refuses overlapping/incomplete split coverage and rejects
 result-affecting configuration mismatches. It regenerates the summary and
@@ -382,6 +493,7 @@ expected = [
     ("heteroscedastic_dvi_clean/dvi", 120, 6),
     ("homoscedastic_budget50k/ddvi", 120, 6),
     ("homoscedastic_budget50k/dvi", 120, 6),
+    ("bpc", 120, 6),
 ]
 
 for (relative_path, expected_runs, expected_summaries) in expected
@@ -403,10 +515,10 @@ and budget-related fields should not.
 
 ## Git LFS
 
-All `.jld2` files below `paper_materials/bbb_uci` and
-`paper_materials/dvi_uci` are tracked by Git LFS through `.gitattributes`.
-CSV, TOML, Markdown, and TeX files remain ordinary Git files. To add a new
-reproduction to the repository safely:
+All `.jld2` files below `paper_materials/bbb_uci`,
+`paper_materials/dvi_uci`, and `paper_materials/bpc_uci` are tracked by Git
+LFS through `.gitattributes`. CSV, TOML, Markdown, and TeX files remain
+ordinary Git files. To add a new reproduction to the repository safely:
 
 ```sh
 git add .gitattributes paper_materials
@@ -426,10 +538,10 @@ GPU-equipped machine when every fit is run sequentially** (roughly four
 days). About `47.5` of those hours are measured GPU work: `14.1` hours for
 heteroscedastic DVI, `16.3` for homoscedastic dDVI, and `17.1` for
 homoscedastic DVI. The canonical heteroscedastic dDVI implementation used
-`50.2` CPU-hours, and BBB used another `0.7` CPU-hours; during those two stages
-the GPU would be idle. Adding the recorded work gives `98.4` machine-hours,
-rounded to 100 for startup, compilation, downloads, and merging. Thus the
-honest short description is **approximately 100 single-GPU-instance hours,
-of which about 48 hours actively use the GPU**. A full matching Reactant/GPU
-campaign was not measured for heteroscedastic dDVI, so no unverified GPU
-speedup is included.
+`50.2` CPU-hours, BBB used another `0.7` CPU-hours, and BPC used `0.17`
+CPU-hours; during those stages the GPU would be idle. Adding the recorded work
+gives approximately `98.6` machine-hours, rounded to 100 for startup,
+compilation, downloads, and merging. Thus the honest short description is
+**approximately 100 single-GPU-instance hours, of which about 48 hours
+actively use the GPU**. A full matching Reactant/GPU campaign was not measured
+for heteroscedastic dDVI, so no unverified GPU speedup is included.
