@@ -122,6 +122,45 @@ function uci_regression_splits(
     ]
 end
 
+"""
+    uci_regression_splits(dataset, n_splits = UCI_DEFAULT_N_SPLITS; kwargs...)
+    uci_regression_splits(DatasetType, n_splits = UCI_DEFAULT_N_SPLITS; dir = nothing, kwargs...)
+
+Construct the shared repeated-holdout splits for a specific UCI regression
+dataset. Passing a dataset type, such as `Yacht`, loads the repository's
+checksummed copy of that dataset before determining its number of rows.
+
+The returned indices are one-based original-row indices and are identical to
+those produced by `uci_regression_splits(size(features, 1), n_splits; kwargs...)`.
+The type form makes the dataset association explicit:
+
+```julia
+splits = uci_regression_splits(Yacht, 20)
+first_yacht_test_indices = splits[1].test_indices
+```
+
+Use `dir` with the type form to load a local `data.txt` in the same canonical
+row order. All remaining keyword arguments configure the split protocol, for
+example `base_seed`, `test_fraction`, and `validation_fraction`.
+"""
+function uci_regression_splits(
+    dataset::UCIRegressionDataset,
+    n_splits::Int = UCI_DEFAULT_N_SPLITS;
+    kwargs...,
+)
+    return uci_regression_splits(length(dataset), n_splits; kwargs...)
+end
+
+function uci_regression_splits(
+    ::Type{T},
+    n_splits::Int = UCI_DEFAULT_N_SPLITS;
+    dir = nothing,
+    kwargs...,
+) where {T <: UCIRegressionDataset}
+    dataset = T(; dir = dir, as_df = false)
+    return uci_regression_splits(dataset, n_splits; kwargs...)
+end
+
 function _validate_uci_partition(
     features::AbstractMatrix,
     targets::AbstractVector,

@@ -30,6 +30,17 @@
     first_twenty = uci_regression_splits(40, 20; base_seed = 99)
     @test getfield.(first_five, :test_indices) ==
         getfield.(first_twenty[1:5], :test_indices)
+
+    yacht = Yacht(
+        Dict{String, Any}("n_observations" => 40),
+        zeros(40, 6),
+        zeros(40, 1),
+        nothing,
+    )
+    dataset_splits = uci_regression_splits(yacht, 5; base_seed = 99)
+    @test dataset_splits == first_five
+    @test length(uci_regression_splits(yacht; base_seed = 99)) ==
+        UCI_DEFAULT_N_SPLITS
 end
 
 @testset "shared UCI train-only preprocessing" begin
