@@ -15,7 +15,7 @@ ENV["UCI_DATASETS"] = get(
     "yacht,housing,energy,concrete,wine,power",
 )
 ENV["UCI_DEPTHS"] = "2"
-ENV["UCI_DIRECT_FEATURE_DIMENSIONS"] = "1200"
+ENV["UCI_DIRECT_FEATURE_DIMENSIONS"] = "1000"
 ENV["UCI_DIRECT_PREPROCESSING"] = "multiscale_matern32_linear"
 ENV["UCI_DIRECT_VECTOR_TRANSPORT_ALPHA"] = "0.6"
 ENV["UCI_PRIOR_OPTIMIZER_GAINS"] = "1.0"
@@ -44,7 +44,7 @@ function final_decreasing_matern1000_main()
         prior_builder,
         output_stem =
             "uci_deep_kernel_direct_final_decreasing_matern1000_depth2_vt_beta_0_80",
-        backend_label = "direct-final-decreasing-matern1200",
+        backend_label = "direct-final-decreasing-matern1000",
         fixed_lengthscale = RESIDUAL_LAYERWISE_BASE_LENGTHSCALE,
         layerwise_lengthscale_factor = inv(sqrt(2.0)),
         optimizer_configs_for_depth = final_decreasing_optimizer,

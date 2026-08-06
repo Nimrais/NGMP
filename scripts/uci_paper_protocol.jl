@@ -5,7 +5,10 @@ using DataFrames
 using Random
 using Statistics
 using SurrogateModelling: Yacht, Concrete, EnergyEfficiency, BostonHousing,
-                          PowerPlant, WineQualityRed
+                          PowerPlant, WineQualityRed,
+                          UCI_DEFAULT_SPLIT_SEED,
+                          UCI_DEFAULT_TEST_FRACTION,
+                          uci_regression_splits
 
 export DATASETS, paper_splits, prepare_split, gaussian_logpdf_metrics,
        summarize_rows, write_results
@@ -29,15 +32,24 @@ function load_dataset(name::Symbol)
     return Matrix{Float64}(features), vec(Float64.(targets)), spec.paper_dvi
 end
 
-function paper_splits(name::Symbol; count::Int = 20, seed::Int = 20260728)
+function paper_splits(
+    name::Symbol;
+    count::Int = 20,
+    seed::Int = UCI_DEFAULT_SPLIT_SEED,
+)
     features, targets, paper_dvi = load_dataset(name)
     n = length(targets)
-    n_test = clamp(round(Int, 0.1n), 1, n - 2)
-    return map(1:count) do split_id
-        order = randperm(MersenneTwister(seed + split_id - 1), n)
-        test_indices = sort(order[1:n_test])
-        train_indices = sort(order[(n_test + 1):end])
-        (; split_id, paper_dvi, train_indices, test_indices,
+    specifications = uci_regression_splits(
+        n,
+        count;
+        base_seed = seed,
+        test_fraction = UCI_DEFAULT_TEST_FRACTION,
+    )
+    return map(specifications) do specification
+        train_indices = specification.train_indices
+        test_indices = specification.test_indices
+        (; split_id = specification.split_id, paper_dvi,
+           train_indices, test_indices,
            x_train = features[train_indices, :],
            x_test = features[test_indices, :],
            y_train = targets[train_indices],
