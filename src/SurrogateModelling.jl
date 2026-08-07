@@ -126,6 +126,9 @@ include("nodes/softdot/rules/structured_info_form.jl")
 include("nodes/softdot/rules/vmp_with_dumping.jl")
 include("nodes/softdot/rules/relaxed_structure.jl")
 include("nodes/softdot/rules/natural_gradient.jl")
+include("nodes/mv_normal_exp_precision/node.jl")
+include("nodes/mv_normal_exp_precision/rules/vmp.jl")
+include("nodes/mv_normal_exp_precision/rules/natural_gradient.jl")
 
 include("moment_form.jl")
 
