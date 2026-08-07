@@ -33,6 +33,13 @@ struct UCISplitSpec
     validation_indices::Vector{Int}
 end
 
+# The default struct `==` compares the Vector fields by identity, so two
+# independently generated but protocol-identical specs would never be equal.
+Base.:(==)(a::UCISplitSpec, b::UCISplitSpec) =
+    all(getfield(a, f) == getfield(b, f) for f in fieldnames(UCISplitSpec))
+Base.hash(spec::UCISplitSpec, h::UInt) =
+    foldl((acc, f) -> hash(getfield(spec, f), acc), fieldnames(UCISplitSpec); init = hash(UCISplitSpec, h))
+
 function _uci_partition_indices(
     source_indices::AbstractVector{<:Integer};
     seed::Int,
