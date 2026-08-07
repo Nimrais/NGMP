@@ -1,0 +1,21 @@
+method = "NGMP direct deep kernel depth ablation"
+split_protocol = "repeated-holdout-v1"
+split_seed = 20260726
+n_splits = 20
+test_fraction = 0.1
+datasets = ["yacht", "housing", "energy", "concrete", "wine", "power"]
+
+preprocessing = "multiscale_matern32_linear"
+feature_dimension = 1000
+depths = [1, 2, 3, 4, 5]
+lengthscale_schedule = "decreasing"
+base_lengthscale = 1.5
+lengthscale_factor = 0.7071067811865476
+
+depth1_optimizer = "damped"
+deep_optimizer = "vector_transport"
+alpha = 0.6
+beta = 0.8
+prior_gain = 1.0
+residual_variance_init_min = 1.0e-3
+residual_variance_init_max = 1.0e3
