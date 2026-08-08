@@ -7,10 +7,11 @@ datasets = ["yacht", "housing", "energy", "concrete", "wine", "power"]
 
 preprocessing = "multiscale_matern32_linear"
 feature_dimension = 1000
-depth = 2
+depth = 3
 lengthscale_schedule = "decreasing"
 base_lengthscale = 1.5
 second_lengthscale = 1.0606601717798212
+third_lengthscale = 0.75
 
 optimizer = "vector_transport"
 alpha = 0.6
