@@ -17,9 +17,9 @@ using ExponentialFamily:
     MvNormalWeightedMeanPrecision,
     MultivariateNormalDistributionsFamily,
     weightedmean_precision
-using LinearAlgebra: vec
+using LinearAlgebra: vec, diag, cholesky, issuccess, Symmetric, I
 
-export NaturalGradientMessage, NGMPDependencies, DampingMeta, NGMPEdgeState, ClosedFormDefault, getprojection
+export NaturalGradientMessage, NGMPDependencies, DampingMeta, NGMPEdgeState, ClosedFormDefault, getprojection, PrecisionTempering
 
 include("constraint.jl")
 include("damping.jl")

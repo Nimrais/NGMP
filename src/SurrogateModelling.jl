@@ -29,8 +29,8 @@ import ExponentialFamily: GaussianDistributionsFamily
 import ProbabilisticEnsembling
 
 include("NaturalGradientMP/NaturalGradientMP.jl")
-using .NaturalGradientMP: NaturalGradientMessage, NGMPDependencies, DampingMeta, NGMPEdgeState, ClosedFormDefault, getprojection
-export NaturalGradientMP, NaturalGradientMessage, NGMPDependencies, DampingMeta, NGMPEdgeState, getprojection
+using .NaturalGradientMP: NaturalGradientMessage, NGMPDependencies, DampingMeta, NGMPEdgeState, ClosedFormDefault, getprojection, PrecisionTempering
+export NaturalGradientMP, NaturalGradientMessage, NGMPDependencies, DampingMeta, NGMPEdgeState, getprojection, PrecisionTempering
 
 include("ManyPlusNode/ManyPlusNode.jl")
 using .ManyPlusNode: ManyPlus
@@ -117,6 +117,7 @@ include("nodes/residual_sine/rules/natural_gradient.jl")
 include("nodes/residual_sine/rules/marginal.jl")
 include("nodes/ContinuousTransition/linear_low_rank_meta.jl")
 include("nodes/ContinuousTransition/linear_reshape_meta.jl")
+include("nodes/ContinuousTransition/pointmass_transition.jl")
 include("nodes/exp/rules/natural_gradient.jl")
 include("nodes/log/rules/natural_gradient.jl")
 include("nodes/probit/categorical_message.jl")
@@ -129,6 +130,9 @@ include("nodes/softdot/rules/natural_gradient.jl")
 include("nodes/mv_normal_exp_precision/node.jl")
 include("nodes/mv_normal_exp_precision/rules/vmp.jl")
 include("nodes/mv_normal_exp_precision/rules/natural_gradient.jl")
+include("nodes/mv_normal_exp_precision/rules/univariate.jl")
+include("nodes/mv_normal_exp_precision/rules/structured.jl")
+include("nodes/mv_normal_exp_precision/rules/tempering.jl")
 
 include("moment_form.jl")
 

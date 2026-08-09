@@ -1,6 +1,8 @@
 import SurrogateModelling: NaturalGradientMP, ExpGammaSiteMessage, MvExpGammaSiteMessage
-import LinearAlgebra: Diagonal, diag, I
+import LinearAlgebra: Diagonal, Symmetric, diag, I
 import StableRNGs: StableRNG
+import ReactiveMP: @call_marginalrule
+import BayesBase: weightedmean_precision
 
 # Heteroscedastic toy: one shared mean vector μ and one shared log-precision
 # vector s explain all observations; each output dimension owns its precision
@@ -139,6 +141,169 @@ end
                        DampingMeta(alpha = 0.2, beta = 0.0))
         @test stock ≈ expected
         @test damped ≈ expected
+    end
+
+    @testset "univariate twins match the d = 1 math" begin
+        m_s, v_s = 0.3, 0.8
+        m_μ, v_μ = 0.9, 0.4
+        y1 = 1.4
+        ρ1 = exp(m_s + v_s / 2)
+
+        out_msg = @call_rule MvNormalExpPrecision(:out, Marginalisation) (
+            q_μ = NormalMeanVariance(m_μ, v_μ), q_s = NormalMeanVariance(m_s, v_s),
+        )
+        @test mean(out_msg) ≈ m_μ
+        @test precision(out_msg) ≈ ρ1
+
+        μ_msg = @call_rule MvNormalExpPrecision(:μ, Marginalisation) (
+            q_out = PointMass(y1), q_s = NormalMeanVariance(m_s, v_s),
+        )
+        @test mean(μ_msg) ≈ y1
+        @test precision(μ_msg) ≈ ρ1
+
+        E1 = abs2(y1 - m_μ) + v_μ
+        state = NGMPEdgeState(DampingMeta(alpha = 1.0, beta = 0.0))
+        s_msg = @call_rule MvNormalExpPrecision(:s, NaturalGradientMessage()) (
+            q_out = PointMass(y1), q_μ = NormalMeanVariance(m_μ, v_μ),
+            q_s = NormalMeanVariance(m_s, v_s), meta = state,
+        )
+        Λ1 = (E1 / 2) * ρ1
+        @test weightedmean(s_msg) ≈ 0.5 + (m_s - 1) * Λ1
+        @test precision(s_msg) ≈ Λ1
+        @test state.nfired == 1
+
+        energy = score(AverageEnergy(), MvNormalExpPrecision, Val{(:out, :μ, :s)}(),
+            (Marginal(PointMass(y1), false, false),
+             Marginal(NormalMeanVariance(m_μ, v_μ), false, false),
+             Marginal(NormalMeanVariance(m_s, v_s), false, false)), nothing)
+        @test energy ≈ log(2π) / 2 - m_s / 2 + ρ1 * E1 / 2
+    end
+
+    @testset "structured (out, μ) cluster rules" begin
+        m_ν_msg = MvNormalMeanCovariance([0.9, -0.2, 0.5], [0.4 0.05 0.0; 0.05 0.3 0.02; 0.0 0.02 0.5])
+        m_μ_msg = MvNormalMeanCovariance([1.1, 0.1, -0.4], [0.6 0.1 0.0; 0.1 0.2 0.03; 0.0 0.03 0.4])
+        q_s = MvNormalMeanCovariance(ms, Vs)
+        P = exp.(ms .+ diag(Vs) ./ 2)
+
+        out_msg = @call_rule MvNormalExpPrecision(:out, Marginalisation) (
+            m_μ = m_μ_msg, q_s = q_s,
+        )
+        @test mean(out_msg) ≈ mean(m_μ_msg)
+        @test cov(out_msg) ≈ cov(m_μ_msg) + Matrix(Diagonal(inv.(P)))
+
+        joint = @call_marginalrule MvNormalExpPrecision(:out_μ) (
+            m_out = m_ν_msg, m_μ = m_μ_msg, q_s = q_s,
+        )
+        ξν, Λν = weightedmean_precision(m_ν_msg)
+        ξμ, Λμ = weightedmean_precision(m_μ_msg)
+        @test weightedmean(joint) ≈ [ξν; ξμ]
+        @test precision(joint) ≈ [(Λν + Diagonal(P)) (-Matrix(Diagonal(P)));
+                                  (-Matrix(Diagonal(P))) (Λμ + Diagonal(P))]
+
+        # the structured s-site uses the joint second moment incl. cross-covariance
+        mj, Vj = mean_cov(joint)
+        E = [abs2(mj[j] - mj[3 + j]) + Vj[j, j] + Vj[3 + j, 3 + j] - 2 * Vj[j, 3 + j]
+             for j in 1:3]
+        state = NGMPEdgeState(DampingMeta(alpha = 1.0, beta = 0.0))
+        s_msg = @call_rule MvNormalExpPrecision(:s, NaturalGradientMessage()) (
+            q_out_μ = joint, q_s = q_s, meta = state,
+        )
+        Λref = (E ./ 2) .* P
+        @test weightedmean(s_msg) ≈ 0.5 .+ (ms .- 1) .* Λref
+        @test precision(s_msg) ≈ Matrix(Diagonal(Λref))
+        @test state.nfired == 1
+
+        energy = score(AverageEnergy(), MvNormalExpPrecision, Val{(:out_μ, :s)}(),
+            (Marginal(joint, false, false), Marginal(q_s, false, false)), nothing)
+        @test energy ≈ 3 * log(2π) / 2 - sum(ms) / 2 + sum(P .* E) / 2
+    end
+
+    @testset "Mv Gaussian diagonal Fisher metric (vector-transport support)" begin
+        m1, v1 = 0.7, 0.6
+        η1 = [m1 / v1, -1 / (2 * v1), 0.0]                # d = 1 flat layout (ξ, −Λ/2)
+        metric = NaturalGradientMP.diagonal_fisher_metric(
+            MvNormalMeanCovariance, η1[1:2], 1e-6)
+        @test metric ≈ [v1, 2 * v1^2 + 4 * m1^2 * v1]      # univariate reduction
+
+        m2 = [0.4, -0.9]
+        V2 = [0.8 0.25; 0.25 0.5]
+        Λ2 = inv(V2)
+        η2 = vcat(Λ2 * m2, vec(-Λ2 ./ 2))
+        metric2 = NaturalGradientMP.diagonal_fisher_metric(
+            MvNormalMeanCovariance, η2, 1e-6)
+        @test metric2[1:2] ≈ diag(V2)
+        wick(i, j) = V2[i, i] * V2[j, j] + V2[i, j]^2 +
+            m2[i]^2 * V2[j, j] + m2[j]^2 * V2[i, i] + 2 * m2[i] * m2[j] * V2[i, j]
+        @test metric2[3:end] ≈ [wick(1, 1), wick(2, 1), wick(1, 2), wick(2, 2)]
+        # improper state falls back to the magnitude metric
+        @test NaturalGradientMP.diagonal_fisher_metric(
+            MvNormalMeanCovariance, vcat([1.0, 1.0], vec([0.5 0.0; 0.0 0.5])), 1e-6,
+        ) == max.(abs.(vcat([1.0, 1.0], vec([0.5 0.0; 0.0 0.5]))), 1e-6)
+    end
+
+    @testset "exact dual (m-connection) transport via Amari duality" begin
+        # η ↦ μ maps used as ground truth via central finite differences
+        function μ_gaussian(η)
+            dg = div(isqrt(1 + 4 * length(η)) - 1, 2)
+            Λ = -2 .* reshape(η[(dg + 1):end], dg, dg)
+            V = inv(Symmetric(Matrix(Λ)))
+            m = V * η[1:dg]
+            return vcat(m, vec(V .+ m * m'))
+        end
+        μ_gamma(η) = [SpecialFunctions.digamma(η[1] + 1) - log(-η[2]), (η[1] + 1) / (-η[2])]
+        jvp(f, η, u; ε = 1e-6) = (f(η .+ ε .* u) .- f(η .- ε .* u)) ./ (2ε)
+
+        V1 = [0.8 0.25; 0.25 0.5]; m1 = [0.4, -0.9]
+        V2 = [0.4 -0.1; -0.1 0.9]; m2 = [-0.2, 0.3]
+        Λ1, Λ2 = inv(V1), inv(V2)
+        η1 = vcat(Λ1 * m1, vec(-Λ1 ./ 2))
+        η2 = vcat(Λ2 * m2, vec(-Λ2 ./ 2))
+        vtan = [0.3, -0.2, 0.05, 0.02, 0.02, -0.04]
+
+        @test NaturalGradientMP.transport_natural_vector(
+            MvNormalMeanCovariance, η1, η1, vtan) ≈ vtan atol = 1e-12
+        transported = NaturalGradientMP.transport_natural_vector(
+            MvNormalMeanCovariance, η1, η2, vtan)
+        # m-transport is the identity in expectation coordinates:
+        # G(η1)·v (pushforward at old) must equal G(η2)·v′ (pushforward at new)
+        @test jvp(μ_gaussian, η2, transported) ≈ jvp(μ_gaussian, η1, vtan) rtol = 1e-5
+
+        ηγ1, ηγ2, vγ = [2.0, -1.5], [3.5, -0.7], [0.4, 0.3]
+        tγ = NaturalGradientMP.transport_natural_vector(Gamma, ηγ1, ηγ2, vγ)
+        @test jvp(μ_gamma, ηγ2, tγ) ≈ jvp(μ_gamma, ηγ1, vγ) rtol = 1e-5
+
+        # improper endpoint falls back to identity (e-transport)
+        @test NaturalGradientMP.transport_natural_vector(
+            MvNormalMeanCovariance, zero(η1), η2, vtan) == vtan
+
+        # the optimizer accepts the new methods
+        @test DampingMeta(alpha = 0.1, beta = 0.2, method = :dual_transport) isa DampingMeta
+        @test DampingMeta(alpha = 0.1, beta = 0.2, method = :dual_transport_nesterov) isa DampingMeta
+    end
+
+    @testset "β-NLL precision tempering (faithful mean pathway)" begin
+        β = 0.5
+        temper = SurrogateModelling.PrecisionTempering(β, DampingMeta(alpha = 0.2, beta = 0.0))
+        μ_msg = @call_rule MvNormalExpPrecision(:μ, Marginalisation) (
+            q_out = PointMass(yobs), q_s = MvNormalMeanCovariance(ms, Vs), meta = temper,
+        )
+        @test mean(μ_msg) ≈ yobs
+        @test precision(μ_msg) ≈ Matrix(Diagonal(ρ .^ (1 - β)))
+
+        μ1 = @call_rule MvNormalExpPrecision(:μ, Marginalisation) (
+            q_out = PointMass(1.4), q_s = NormalMeanVariance(0.3, 0.8),
+            meta = SurrogateModelling.PrecisionTempering(β, nothing),
+        )
+        @test precision(μ1) ≈ exp(0.3 + 0.8 / 2)^(1 - β)
+
+        # the s-site is untempered: NGMPEdgeState unwraps the inner damping
+        state = NGMPEdgeState(temper)
+        s_msg = @call_rule MvNormalExpPrecision(:s, NaturalGradientMessage()) (
+            q_out = PointMass(yobs), q_μ = MvNormalMeanCovariance(mμ, Vμ),
+            q_s = MvNormalMeanCovariance(ms, Vs), meta = state,
+        )
+        E = abs2.(yobs .- mμ) .+ diag(Vμ)
+        @test precision(s_msg) ≈ 0.2 .* Matrix(Diagonal((E ./ 2) .* ρ))  # α from inner DampingMeta
     end
 
     @testset "integration: recovers per-dimension precisions spanning 4 orders" begin

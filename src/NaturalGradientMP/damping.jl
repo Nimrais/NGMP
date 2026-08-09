@@ -45,7 +45,13 @@ so per-node mutable state cannot live here. The mutable state lives in
   velocity is retained as optimizer state, while `Δη` is the step applied to
   the message.
 
-The latter two methods use the same per-edge state and `apply_damping!` entry
+- `:dual_transport` / `:dual_transport_nesterov`: like the two transport
+  methods above, but the momentum is transported EXACTLY via Amari duality —
+  `G(η_new)⁻¹ G(η_old) v` computed as two closed-form Jacobian-vector products
+  through expectation coordinates (see [`transport_natural_vector`](@ref)) —
+  instead of the diagonal-metric √-ratio approximation.
+
+The transport methods use the same per-edge state and `apply_damping!` entry
 point as ordinary damping, so existing NGMP rules need no optimizer-specific
 branches. `eps` stabilizes the projected-direction denominator and
 `metric_damping` bounds the diagonal metric away from zero.
@@ -75,10 +81,13 @@ function DampingMeta(;
         :projected_nesterov,
         :vector_transport,
         :vector_transport_nesterov,
+        :dual_transport,
+        :dual_transport_nesterov,
     ) ||
         throw(ArgumentError(
             "method must be :damped, :projected_nesterov, " *
-            ":vector_transport, or :vector_transport_nesterov",
+            ":vector_transport, :vector_transport_nesterov, " *
+            ":dual_transport, or :dual_transport_nesterov",
         ))
     α, β, step, stabilizer, metric_floor =
         promote(alpha, beta, max_step, eps, metric_damping)
@@ -114,11 +123,12 @@ mutable struct NGMPEdgeState{M, D}
     momentum::Vector{Float64}  # heavy-ball momentum in natural-parameter space
     previous_direction::Vector{Float64}
     metric::Vector{Float64}    # diagonal Fisher metric at the last sent message
+    transport_point::Vector{Float64}  # η at which the momentum currently lives (:dual_transport*)
     nfired::Int
 end
 
 NGMPEdgeState(usermeta; damping = nothing) =
-    NGMPEdgeState(usermeta, damping, nothing, Float64[], Float64[], Float64[], Float64[], 0)
+    NGMPEdgeState(usermeta, damping, nothing, Float64[], Float64[], Float64[], Float64[], Float64[], 0)
 
 # Preserve the original full-state positional constructor for callers that
 # checkpoint or construct edge state explicitly. The optimizer buffers are
@@ -126,13 +136,38 @@ NGMPEdgeState(usermeta; damping = nothing) =
 # restored state with `nfired > 0` gets direction/metric buffers shaped like
 # its momentum.
 NGMPEdgeState(usermeta, message, η, momentum, nfired) =
-    NGMPEdgeState(usermeta, nothing, message, η, momentum, zero(momentum), zero(momentum), nfired)
+    NGMPEdgeState(usermeta, nothing, message, η, momentum, zero(momentum), zero(momentum), zero(momentum), nfired)
+
+"""
+    PrecisionTempering(beta, inner)
+
+β-NLL-style faithful-heteroscedastic node meta (Seitzer et al. 2022; Stirn et
+al. 2023), message-passing form: rules that send the likelihood precision into
+the MEAN pathway temper it to `ρ^(1-beta)` (`beta = 0` → full heteroscedastic
+weighting, `beta = 1` → homoscedastic unit weighting, `beta = 0.5` recommended),
+while the log-precision site itself stays untempered — the variance channel
+trains on the residuals of the tempered-mean posterior, which is the
+stop-gradient scheme. `inner` carries the ordinary optimizer meta (e.g. a
+[`DampingMeta`](@ref)) for the node's NGMP edges.
+"""
+struct PrecisionTempering{T <: Real, M}
+    beta::T
+    inner::M
+end
+
+function PrecisionTempering(beta::Real, inner)
+    0 <= beta <= 1 || throw(ArgumentError("tempering beta must lie in [0, 1]"))
+    b = float(beta)
+    return PrecisionTempering{typeof(b), typeof(inner)}(b, inner)
+end
 
 function damping_configuration(state::NGMPEdgeState)
     if !isnothing(state.damping)
         return state.damping
     elseif state.usermeta isa DampingMeta
         return state.usermeta
+    elseif state.usermeta isa PrecisionTempering && state.usermeta.inner isa DampingMeta
+        return state.usermeta.inner
     else
         return nothing
     end
@@ -232,7 +267,95 @@ function diagonal_fisher_metric(::Type{Gamma}, η, damping)
     ]
 end
 
+# Diagonal of the multivariate Gaussian Fisher in the flat natural layout
+# η = (ξ, vec(−Λ/2)) with sufficient statistics T = (x, vec(x xᵀ)):
+# Var[xᵢ] = Vᵢᵢ and, by Wick's theorem,
+# Var[xᵢxⱼ] = VᵢᵢVⱼⱼ + Vᵢⱼ² + mᵢ²Vⱼⱼ + mⱼ²Vᵢᵢ + 2mᵢmⱼVᵢⱼ
+# (reduces to the univariate [v, 2v² + 4m²v] at d = 1). Falls back to the
+# generic magnitude metric for improper (non-PD) message states.
+function diagonal_fisher_metric(::Type{MvNormalMeanCovariance}, η, damping)
+    d = div(isqrt(1 + 4 * length(η)) - 1, 2)
+    all(isfinite, η) || return max.(abs.(η), damping)
+    Λ = Matrix(Symmetric(-2 .* reshape(η[(d + 1):end], d, d)))
+    F = cholesky(Symmetric(Λ); check = false)
+    issuccess(F) || return max.(abs.(η), damping)
+    V = F \ Matrix{Float64}(I, d, d)
+    m = V * η[1:d]
+    metric = Vector{Float64}(undef, length(η))
+    metric[1:d] = diag(V)
+    for j in 1:d, i in 1:d
+        metric[d + i + (j - 1) * d] =
+            V[i, i] * V[j, j] + V[i, j]^2 +
+            m[i]^2 * V[j, j] + m[j]^2 * V[i, i] + 2 * m[i] * m[j] * V[i, j]
+    end
+    return max.(metric, damping)
+end
+
 diagonal_fisher_metric(::Type, η, damping) = max.(abs.(η), damping)
+
+"""
+    transport_natural_vector(family, η_from, η_to, v) -> Vector
+
+EXACT m-connection (mixture) parallel transport of a natural-coordinate
+tangent vector between two message states, via Amari duality: push `v` to
+expectation coordinates with the closed-form Jacobian of `η ↦ μ` at the old
+point (`u = G(η_from)·v`), where m-transport is the identity, then pull back
+through the Jacobian of `μ ↦ η` at the new point (`G(η_to)⁻¹·u`). Both maps
+are closed-form for the flat families here, so no Fisher matrix is ever
+materialized and no diagonal truncation is made — this is
+`G(η_to)⁻¹ G(η_from) v` computed as two Jacobian-vector products.
+
+Improper endpoints (non-PD precision, non-positive Gamma parameters) fall back
+to the identity (e-connection transport, which is exact in η coordinates).
+"""
+transport_natural_vector(::Type, η_from, η_to, v) = v
+
+function transport_natural_vector(::Type{MvNormalMeanCovariance}, η_from, η_to, v)
+    d = div(isqrt(1 + 4 * length(η_from)) - 1, 2)
+    unpack(η) = begin
+        all(isfinite, η) || return nothing
+        Λ = Matrix(Symmetric(-2 .* reshape(η[(d + 1):end], d, d)))
+        F = cholesky(Symmetric(Λ); check = false)
+        issuccess(F) || return nothing
+        V = F \ Matrix{Float64}(I, d, d)
+        (V * η[1:d], V, Λ)
+    end
+    from = unpack(η_from)
+    to = unpack(η_to)
+    (isnothing(from) || isnothing(to)) && return v
+    m₁, V₁, _ = from
+    m₂, _, Λ₂ = to
+    δξ = v[1:d]
+    δΛ = Matrix(Symmetric(-2 .* reshape(v[(d + 1):end], d, d)))
+    # η → μ at the old point: μ₁ = m, μ₂ = V + mmᵀ
+    δm = V₁ * (δξ - δΛ * m₁)
+    δμ₂ = -V₁ * δΛ * V₁ + δm * m₁' + m₁ * δm'
+    # μ → η at the new point
+    δV = δμ₂ - δm * m₂' - m₂ * δm'
+    δΛ′ = -Λ₂ * δV * Λ₂
+    δξ′ = δΛ′ * m₂ + Λ₂ * δm
+    return vcat(δξ′, vec(-δΛ′ ./ 2))
+end
+
+function transport_natural_vector(::Type{NormalMeanVariance}, η_from, η_to, v)
+    mv = transport_natural_vector(MvNormalMeanCovariance, η_from, η_to, v)
+    return mv
+end
+
+function transport_natural_vector(::Type{Gamma}, η_from, η_to, v)
+    a₁, b₁ = η_from[1] + 1, -η_from[2]
+    a₂, b₂ = η_to[1] + 1, -η_to[2]
+    (a₁ > 0 && b₁ > 0 && a₂ > 0 && b₂ > 0) || return v
+    δa, δb = v[1], -v[2]
+    # η → μ at the old point: μ = (ψ(a) − log b, a/b)
+    δμ₁ = trigamma(a₁) * δa - δb / b₁
+    δμ₂ = δa / b₁ - a₁ * δb / b₁^2
+    # μ → η at the new point: solve the 2×2 Jacobian system
+    determinant = (1 - a₂ * trigamma(a₂)) / b₂^2
+    δa′ = (-a₂ * δμ₁ / b₂^2 + δμ₂ / b₂) / determinant
+    δb′ = (trigamma(a₂) * δμ₂ - δμ₁ / b₂) / determinant
+    return [δa′, -δb′]
+end
 
 function optimizer_step!(state::NGMPEdgeState, family, direction)
     α, β = damping_parameters(state)
@@ -254,6 +377,19 @@ function optimizer_step!(state::NGMPEdgeState, family, direction)
         # The new update lives in the tangent space at the current message.
         # Keep that base metric so it can be transported on the next firing.
         state.metric = current_metric
+    elseif method === :dual_transport
+        transported = transport_natural_vector(
+            family, state.transport_point, state.η, state.momentum)
+        @. state.momentum = β * transported + α * direction
+        state.transport_point = copy(state.η)
+    elseif method === :dual_transport_nesterov
+        transported = transport_natural_vector(
+            family, state.transport_point, state.η, state.momentum)
+        @. state.momentum = β * transported + α * direction
+        nesterov_step = β .* state.momentum .+ α .* direction
+        state.transport_point = copy(state.η)
+        state.previous_direction .= direction
+        return nesterov_step
     elseif method === :vector_transport_nesterov
         current_metric = diagonal_fisher_metric(
             family, state.η, optimizer_metric_damping(state))
@@ -290,6 +426,7 @@ function apply_damping!(state::NGMPEdgeState, target)
         state.η = zero(ηt)
         state.momentum = zero(ηt)
         state.previous_direction = zero(ηt)
+        state.transport_point = zero(ηt)
         state.metric = diagonal_fisher_metric(
             T, state.η, optimizer_metric_damping(state))
     end

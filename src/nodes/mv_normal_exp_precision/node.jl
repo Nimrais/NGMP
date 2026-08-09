@@ -112,6 +112,7 @@ end
 # residual floor (cavity-floor idiom): a zero residual would make the site
 # log-linear in sⱼ and launch sⱼ → ∞
 _mnep_floor_residuals(E::AbstractVector) = max.(E, sqrt(eps(Float64)))
+_mnep_floor_residuals(E::Real) = max(E, sqrt(eps(Float64)))
 
 # E[(yⱼ − μⱼ)²] per coordinate under independent q(out), q(μ)
 function _mnep_expected_square_residuals(q_out, q_μ)

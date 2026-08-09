@@ -30,5 +30,6 @@ end
 # rules/natural_gradient.jl, which projects it onto the Gaussian tangent space.
 @rule MvNormalExpPrecision(:s, Marginalisation) (q_out::Any, q_μ::Any, meta::Any) = begin
     E = _mnep_expected_square_residuals(q_out, q_μ)
+    E isa Real && return ExpGammaSiteMessage(one(E) / 2, E / 2)
     return MvExpGammaSiteMessage(fill(one(eltype(E)) / 2, length(E)), E ./ 2)
 end
