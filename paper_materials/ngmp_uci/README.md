@@ -2,7 +2,8 @@
 
 Final selected NGMP direct deep-kernel benchmark on the repository's shared
 `repeated-holdout-v1` UCI splits (base seed `20260726`, 20 repetitions, 90/10
-outer train/test partition).
+outer train/test partition). The selected default is hierarchy depth 3, with
+two heteroscedastic precision levels above the mean layer.
 
 - `runs.csv`: one row per dataset and split (120 successful runs).
 - `summary.csv`: mean, split standard deviation, and standard error.

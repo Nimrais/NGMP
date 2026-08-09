@@ -1,11 +1,11 @@
 | Dataset | Likelihood | Runs | LPD (original) | RMSE | LPD (standardized) |
 |---|---:|---:|---:|---:|---:|
-| Concrete | heteroscedastic | 20 | -2.9851 ± 0.0435 | 6.2023 ± 0.3866 | -0.1686 ± 0.0434 |
-| Energy | heteroscedastic | 20 | -0.9779 ± 0.0663 | 0.7197 ± 0.0537 | 1.3330 ± 0.0662 |
-| Boston | heteroscedastic | 20 | -2.6705 ± 0.0752 | 3.8160 ± 0.3951 | -0.4535 ± 0.0777 |
-| Power | heteroscedastic | 20 | -2.7601 ± 0.0222 | 3.9491 ± 0.0725 | 0.0775 ± 0.0223 |
-| Wine | heteroscedastic | 20 | -0.9572 ± 0.0297 | 0.6582 ± 0.0189 | -1.1705 ± 0.0302 |
-| Yacht | heteroscedastic | 20 | -0.2799 ± 0.1444 | 0.9315 ± 0.1553 | 2.4395 ± 0.1456 |
+| Concrete | heteroscedastic | 20 | -2.9845 ± 0.0433 | 6.1986 ± 0.3871 | -0.1680 ± 0.0432 |
+| Energy | heteroscedastic | 20 | -0.9783 ± 0.0655 | 0.7198 ± 0.0534 | 1.3325 ± 0.0655 |
+| Boston | heteroscedastic | 20 | -2.6720 ± 0.0752 | 3.8201 ± 0.3952 | -0.4549 ± 0.0777 |
+| Power | heteroscedastic | 20 | -2.7610 ± 0.0226 | 3.9541 ± 0.0729 | 0.0766 ± 0.0227 |
+| Wine | heteroscedastic | 20 | -0.9571 ± 0.0293 | 0.6582 ± 0.0189 | -1.1703 ± 0.0298 |
+| Yacht | heteroscedastic | 20 | -0.2782 ± 0.1437 | 0.9295 ± 0.1548 | 2.4412 ± 0.1449 |
 
 Values are means ± 95% confidence-interval half-widths across splits,
 computed as `1.96 × standard error`.
