@@ -551,6 +551,51 @@ function fit_direct_model(depth, Φs::AbstractVector{<:AbstractMatrix}, targets,
     return fit_direct_deep(depth, Φs, targets, method, beta; prior_builder)
 end
 
+function direct_hierarchy_aleatoric_variance(
+    fit,
+    level_Φs::AbstractVector{<:AbstractMatrix},
+)
+    levels = fit.depth - 1
+    levels > 0 || throw(ArgumentError(
+        "hierarchical prediction requires depth greater than one",
+    ))
+    length(level_Φs) == levels || throw(DimensionMismatch(
+        "depth $(fit.depth) requires $levels precision feature matrices, " *
+        "got $(length(level_Φs))",
+    ))
+    length(fit.level_weights) == levels || throw(DimensionMismatch(
+        "depth $(fit.depth) requires $levels precision weight posteriors, " *
+        "got $(length(fit.level_weights))",
+    ))
+    length(fit.level_covariances) == levels || throw(DimensionMismatch(
+        "depth $(fit.depth) requires $levels precision covariance posteriors, " *
+        "got $(length(fit.level_covariances))",
+    ))
+
+    observations = size(level_Φs[1], 1)
+    carrier_precision = fill(TOP_CARRIER, observations)
+    aleatoric_variance = similar(carrier_precision)
+
+    # The hierarchy is generated from the top down. Mirror the fitting update
+    # at prediction time so every deeper level supplies the expected carrier
+    # precision for the level below it.
+    for level in levels:-1:1
+        Φ = level_Φs[level]
+        size(Φ, 1) == observations || throw(DimensionMismatch(
+            "all prediction feature matrices must have the same row count",
+        ))
+        score_mean = Φ * fit.level_weights[level]
+        score_variance = row_quadratic_forms(Φ, fit.level_covariances[level]) .+
+            inv.(max.(carrier_precision, DIRECT_JITTER))
+        if level == 1
+            aleatoric_variance .= exp.(-score_mean + score_variance / 2)
+        else
+            carrier_precision .= exp.(score_mean + score_variance / 2)
+        end
+    end
+    return aleatoric_variance
+end
+
 function predict_direct_model(fit, Φ)
     predictive_mean = Φ * fit.mean_weights
     epistemic_variance =
@@ -561,10 +606,10 @@ function predict_direct_model(fit, Φ)
             size(Φ, 1),
         )
     else
-        score_mean = Φ * fit.level_weights[1]
-        score_variance =
-            row_quadratic_forms(Φ, fit.level_covariances[1])
-        exp.(-score_mean + score_variance / 2)
+        direct_hierarchy_aleatoric_variance(
+            fit,
+            fill(Φ, fit.depth - 1),
+        )
     end
     predictive_variance =
         max.(epistemic_variance + aleatoric_variance, DIRECT_JITTER)
@@ -582,10 +627,11 @@ function predict_direct_model(fit, Φs::AbstractVector{<:AbstractMatrix})
             size(mean_Φ, 1),
         )
     else
-        level_Φ = Φs[2]
-        score_mean = level_Φ * fit.level_weights[1]
-        score_variance = row_quadratic_forms(level_Φ, fit.level_covariances[1])
-        aleatoric_variance = exp.(-score_mean + score_variance / 2)
+        length(Φs) == fit.depth || throw(DimensionMismatch(
+            "depth $(fit.depth) requires $(fit.depth) prediction feature " *
+            "matrices, got $(length(Φs))",
+        ))
+        aleatoric_variance = direct_hierarchy_aleatoric_variance(fit, Φs[2:end])
     end
     return (; mean = predictive_mean,
         variance = max.(epistemic_variance + aleatoric_variance, DIRECT_JITTER))

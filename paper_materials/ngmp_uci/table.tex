@@ -1,14 +1,13 @@
-\begin{tabular}{llrrr}
+\begin{tabular}{lrrrrr}
 \toprule
-Dataset & Likelihood & Runs & LPD (original) & RMSE \\
+Dataset & Likelihood & Runs & LPD (original) & RMSE & LPD (standardized) \\
 \midrule
-Concrete & heteroscedastic & 20 & -2.9851 $\pm$ 0.0435 & 6.2023 $\pm$ 0.3866 \\
-Energy & heteroscedastic & 20 & -0.9779 $\pm$ 0.0663 & 0.7197 $\pm$ 0.0537 \\
-Boston & heteroscedastic & 20 & -2.6705 $\pm$ 0.0752 & 3.8160 $\pm$ 0.3951 \\
-Power & heteroscedastic & 20 & -2.7601 $\pm$ 0.0222 & 3.9491 $\pm$ 0.0725 \\
-Wine & heteroscedastic & 20 & -0.9572 $\pm$ 0.0297 & 0.6582 $\pm$ 0.0189 \\
-Yacht & heteroscedastic & 20 & -0.2799 $\pm$ 0.1444 & 0.9315 $\pm$ 0.1553 \\
+Concrete & heteroscedastic & 20 & -2.9845 $\pm$ 0.0433 & 6.1986 $\pm$ 0.3871 & -0.1680 $\pm$ 0.0432 \\
+Energy & heteroscedastic & 20 & -0.9783 $\pm$ 0.0655 & 0.7198 $\pm$ 0.0534 & 1.3325 $\pm$ 0.0655 \\
+Boston & heteroscedastic & 20 & -2.6720 $\pm$ 0.0752 & 3.8201 $\pm$ 0.3952 & -0.4549 $\pm$ 0.0777 \\
+Power & heteroscedastic & 20 & -2.7610 $\pm$ 0.0226 & 3.9541 $\pm$ 0.0729 & 0.0766 $\pm$ 0.0227 \\
+Wine & heteroscedastic & 20 & -0.9571 $\pm$ 0.0293 & 0.6582 $\pm$ 0.0189 & -1.1703 $\pm$ 0.0298 \\
+Yacht & heteroscedastic & 20 & -0.2782 $\pm$ 0.1437 & 0.9295 $\pm$ 0.1548 & 2.4412 $\pm$ 0.1449 \\
 \bottomrule
 \end{tabular}
-% Values are means plus/minus 95% confidence-interval half-widths across
-% splits, computed as 1.96 times the standard error.
+% Values are means plus/minus 95% CI half-widths (1.96 times SE).

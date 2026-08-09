@@ -86,6 +86,7 @@ end
     include("ngmp/softdot_info_form_tests.jl")
     include("ngmp/softdot_relaxed_structure_tests.jl")
     include("ngmp/mv_normal_exp_precision_tests.jl")
+    include("ngmp/softdot_cavity_tests.jl")
     include("ngmp/dense_last_layer_gp_tests.jl")
     include("mv_stack_tests.jl")
     include("ngmp/unscented_tests.jl")
