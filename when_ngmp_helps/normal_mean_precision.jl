@@ -302,12 +302,12 @@ end
 function kl_performance_panel(summary, value_field, ci_field)
     panel = plot(
         xlabel = "number of observations N",
-        ylabel = "mean KL(exact ∥ method)",
-        title = "KL",
+        ylabel = "KL",
         xscale = :log2,
         yscale = :log10,
         xticks = let ticks = sort(unique(summary.n)); (ticks, string.(ticks)) end,
         legend = :best,
+        left_margin = 5Plots.mm,
     )
     for (method, color, linestyle) in (
         ("VMP", COLORS.vmp, :dash),

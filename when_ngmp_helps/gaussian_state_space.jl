@@ -636,14 +636,14 @@ function main()
         repetitions = smoke ? 1 : 20,
         chain_lengths = smoke ? [12, 24] : [25, 50, 100, 200, 400],
         representative_length = smoke ? 24 : 25,
-        process_variance = 2.0,
-        true_precision = 0.01,
+        process_variance = 5.0,
+        true_precision = 0.02,
         precision_grid_size = smoke ? 160 : 1200,
         hermite_nodes = smoke ? 16 : 64,
         legendre_nodes = smoke ? 64 : 400,
         damping = 0.5,
-        ngmp_iterations = smoke ? 12 : 150,
-        mean_field_iterations = smoke ? 4 : 25,
+        ngmp_iterations = smoke ? 30 : 150,
+        mean_field_iterations = smoke ? 15 : 25,
     )
     runs, representative, crosscheck, parameters = run_study(config)
     summary = summarize_runs(runs)
