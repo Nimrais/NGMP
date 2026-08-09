@@ -88,6 +88,8 @@ include("expressions/student_t_message.jl")
 
 include("expressions/gaussian_student_t_message.jl")
 
+include("features/gauss_hermite_fourier.jl")
+
 include("distributions/mv_inverse_softplus_normal.jl")
 
 include("tangent_projections/common.jl")
