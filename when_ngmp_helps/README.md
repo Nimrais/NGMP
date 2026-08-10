@@ -19,9 +19,22 @@ The examples answer one question in three steps:
    prediction protocol removes nested 5%, 10%, 20%, and 50% subsets for 20 mask
    seeds, reports seed-averaged predictive NLL and RMSE, and generates separate
    trajectory and four-panel Bethe free-energy figures.
-3. `gaussian_state_space.jl`: in a dynamic Normal model, increasing the chain
-   length does not drive each local state's smoothing uncertainty to zero. The
-   projected exact-BP correction therefore remains relevant.
+3. `hetero_hierarchy.jl`: an `L = 2` heteroscedastic hierarchy on two 1D
+   regression benchmarks — an aleatoric one (input-dependent noise variance)
+   and an epistemic control (near-noiseless data with a wide input gap). Both
+   arms share one graph; they differ in how the non-conjugate site toward each
+   per-observation log-precision `s[o]` is executed. The NGMP site is Gaussian
+   and composes with the exact conjugate `q(w, s)` cluster; the VMP arm
+   projects the marginal product (`ProjectedTo` + `ClosedFormStrategy`), which
+   forces a mean-field split between `w` and `s`. Per-observation noise levels
+   are aleatoric: more data adds new uncertain edges instead of sharpening old
+   ones. Overridables: `WHEN_NGMP_HETERO_REPETITIONS`,
+   `WHEN_NGMP_HETERO_ITERATIONS`.
+
+(The retired `gaussian_state_space.jl` remains in the directory but is no
+longer part of `run_all.jl`: its single global precision is reducible — exactly
+the regime where NGMP and VMP coincide — so it demonstrates neither side of the
+comparison sharply.)
 
 ## Reproduce all figures
 
@@ -72,3 +85,11 @@ an expected log-factor. When neighboring cavity beliefs concentrate these local
 objects agree. State-space process and observation noise can keep local cavity
 beliefs broad even as the sequence grows, which is the regime where NGMP retains
 an advantage.
+
+In the hierarchy study the comparison is deliberately asymmetric in
+factorization: the NGMP arm keeps the exact conjugate `q(w, s)` cluster because
+its projected site is Gaussian, while the marginal projection of the VMP arm
+forces `q(w)q(s)`. With identical mean-field splits on both arms the two
+methods reach nearly the same fixed point — the structured cluster is where
+the natural-gradient message earns its advantage, mirroring how the Poisson
+baseline pays for executability with its mean-field constraint.

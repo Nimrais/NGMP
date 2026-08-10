@@ -301,7 +301,7 @@ end
 
 function kl_performance_panel(summary, value_field, ci_field)
     panel = plot(
-        xlabel = "number of observations N",
+        xlabel = "number of samples N",
         ylabel = "KL",
         xscale = :log2,
         yscale = :log10,
@@ -341,7 +341,7 @@ function main()
         smoke,
         seed = 42,
         repetitions = smoke ? 2 : 20,
-        sample_sizes = smoke ? [4, 8, 16] : [4, 8, 16, 32, 64, 128],
+        sample_sizes = smoke ? [4, 8, 16] : [4, 8, 16, 32, 64, 128, 256, 512],
         grid_size = smoke ? 600 : 4000,
         kl_grid_size = smoke ? 240 : 800,
         vmp_iterations = smoke ? 5 : 15,

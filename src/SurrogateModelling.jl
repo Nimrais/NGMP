@@ -88,6 +88,10 @@ include("expressions/student_t_message.jl")
 
 include("expressions/gaussian_student_t_message.jl")
 
+include("expressions/normal_log_precision_message.jl")
+
+include("expressions/gaussian_lognormal_scale_message.jl")
+
 include("features/gauss_hermite_fourier.jl")
 
 include("distributions/mv_inverse_softplus_normal.jl")
@@ -135,6 +139,7 @@ include("nodes/mv_normal_exp_precision/rules/natural_gradient.jl")
 include("nodes/mv_normal_exp_precision/rules/univariate.jl")
 include("nodes/mv_normal_exp_precision/rules/structured.jl")
 include("nodes/mv_normal_exp_precision/rules/tempering.jl")
+include("nodes/mv_normal_exp_precision/rules/cavity.jl")
 
 include("moment_form.jl")
 

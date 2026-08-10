@@ -38,10 +38,14 @@ import LinearAlgebra: Diagonal, diag, dot
 #                           Williams product) and damping
 #   (5) @average_energy   — the Bethe energy contribution U = E_q[−log f]
 #
-# REQUIRED FACTORIZATION: mean-field `q(out, μ, s) = q(out)q(μ)q(s)` (y is data
-# in the target models, so q(out) is a PointMass automatically). No joint
-# marginal rule is provided — a structured cluster over (μ, s) errors at
-# rule-resolution time.
+# FACTORIZATION: the marginal-based rules ((3)-(4) above) require mean-field
+# `q(out, μ, s) = q(out)q(μ)q(s)` (y is data in the target models, so q(out) is
+# a PointMass automatically). Alternatively, keeping μ and s in ONE cluster and
+# naming both in `NGMPDependencies(s = nothing, μ = nothing)` activates the
+# CAVITY-based rules in rules/cavity.jl — the true NGMP messages that project
+# the exact BP log-messages (with the determinant correction) instead of the
+# expected-log-factor sites; those need a quadrature/unscented projection and
+# run with `free_energy = false` (no joint (μ, s) marginal rule is provided).
 # ============================================================================
 """
 MvNormalExpPrecision — multivariate Gaussian with per-dimension log-precision.

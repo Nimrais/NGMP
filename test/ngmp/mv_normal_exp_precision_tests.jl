@@ -1,4 +1,5 @@
 import SurrogateModelling: NaturalGradientMP, ExpGammaSiteMessage, MvExpGammaSiteMessage
+import SurrogateModelling: NormalLogPrecisionMessage, GaussianLogNormalScaleMessage, Quadrature
 import LinearAlgebra: Diagonal, Symmetric, diag, I
 import StableRNGs: StableRNG
 import ReactiveMP: @call_marginalrule
@@ -8,6 +9,23 @@ import ExponentialFamilyProjection: ProjectedTo, ProjectionParameters, ClosedFor
 # Heteroscedastic toy: one shared mean vector μ and one shared log-precision
 # vector s explain all observations; each output dimension owns its precision
 # e^{sⱼ} — the structure a scalar softdot τ cannot express.
+@model function mnep_cavity_toy(y, deps, damping)
+    location ~ NormalMeanVariance(0.0, 4.0)
+    logprec ~ NormalMeanVariance(0.0, 4.0)
+    for k in eachindex(y)
+        y[k] ~ MvNormalExpPrecision(location, logprec) where {
+            dependencies = deps, meta = damping,
+        }
+    end
+end
+
+@initialization function mnep_cavity_init()
+    q(location) = NormalMeanVariance(0.0, 1.0)
+    q(logprec) = NormalMeanVariance(0.0, 1.0)
+    μ(location) = NormalMeanVariance(0.0, 1.0)
+    μ(logprec) = NormalMeanVariance(0.0, 1.0)
+end
+
 @model function mnep_hetero_toy(y, dim, deps, damping)
     μ ~ MvNormalMeanCovariance(zeros(dim), Matrix(Diagonal(fill(1.0, dim))))
     s ~ MvNormalMeanCovariance(zeros(dim), Matrix(Diagonal(fill(4.0, dim))))
@@ -398,5 +416,99 @@ end
         v_ref = sum(weights .* abs2.(grid .- m_ref))
         @test abs(mean(projected) - m_ref) < 0.2
         @test abs(var(projected) - v_ref) / v_ref < 0.5
+    end
+
+    @testset "cavity (true NGMP) univariate rules" begin
+        y, m̃, ṽ = 1.3, 0.4, 0.6
+
+        # s-site log matches the direct determinant-corrected formula
+        s_site = NormalLogPrecisionMessage(y, m̃, ṽ)
+        for s in (-2.0, 0.0, 1.5)
+            total = ṽ + exp(-s)
+            direct = -(log(2π * total) + (y - m̃)^2 / total) / 2
+            @test log(s_site, s) ≈ direct atol = 1e-10
+        end
+
+        # μ-site log matches a dense numeric integral over s, up to one
+        # shared additive constant
+        ms, vs = 0.3, 0.8
+        μ_site = GaussianLogNormalScaleMessage(y, ms, vs)
+        dense = range(ms - 10sqrt(vs), ms + 10sqrt(vs); length = 40001)
+        brute_log = function (z)
+            logw = @. -(dense - ms)^2 / (2vs) + dense / 2 -
+                exp(dense) * (z - y)^2 / 2
+            mx = maximum(logw)
+            mx + log(sum(exp.(logw .- mx)))
+        end
+        zs = (0.0, 0.9, 1.3, 2.5)
+        offsets = [log(μ_site, z) - brute_log(z) for z in zs]
+        @test maximum(abs, offsets .- offsets[1]) < 2e-3
+
+        # undamped rules reproduce the raw projections
+        q_s = NormalMeanVariance(-0.2, 0.7)
+        q_μ = NormalMeanVariance(0.5, 0.4)
+        proj = TangentProjection(type = Quadrature(128))
+        state = NGMPEdgeState(DampingMeta(alpha = 1.0, beta = 0.0))
+        s_msg = @call_rule MvNormalExpPrecision(:s, NaturalGradientMessage(proj)) (
+            m_μ = NormalMeanVariance(m̃, ṽ), q_out = PointMass(y),
+            q_s = q_s, meta = state,
+        )
+        η = getnaturalparameters(project(
+            proj, q_s, Logpdf(NormalLogPrecisionMessage(y, m̃, ṽ)),
+        ))
+        @test weightedmean(s_msg) ≈ η[1]
+        @test precision(s_msg) ≈ -2η[2]
+
+        state = NGMPEdgeState(DampingMeta(alpha = 1.0, beta = 0.0))
+        μ_msg = @call_rule MvNormalExpPrecision(:μ, NaturalGradientMessage(proj)) (
+            m_s = NormalMeanVariance(ms, vs), q_out = PointMass(y),
+            q_μ = q_μ, meta = state,
+        )
+        η = getnaturalparameters(project(
+            proj, q_μ, Logpdf(GaussianLogNormalScaleMessage(y, ms, vs)),
+        ))
+        @test weightedmean(μ_msg) ≈ η[1]
+        @test precision(μ_msg) ≈ -2η[2]
+
+        # zero-cavity limit: the determinant term freezes and the cavity rule
+        # agrees with the marginal-based ClosedForm rule
+        tiny = 1e-10
+        state = NGMPEdgeState(DampingMeta(alpha = 1.0, beta = 0.0))
+        cavity_msg = @call_rule MvNormalExpPrecision(:s, NaturalGradientMessage(proj)) (
+            m_μ = NormalMeanVariance(m̃, tiny), q_out = PointMass(y),
+            q_s = q_s, meta = state,
+        )
+        state = NGMPEdgeState(DampingMeta(alpha = 1.0, beta = 0.0))
+        marginal_msg = @call_rule MvNormalExpPrecision(:s, NaturalGradientMessage()) (
+            q_out = PointMass(y), q_μ = NormalMeanVariance(m̃, tiny),
+            q_s = q_s, meta = state,
+        )
+        @test weightedmean(cavity_msg) ≈ weightedmean(marginal_msg) rtol = 1e-3
+        @test precision(cavity_msg) ≈ precision(marginal_msg) rtol = 1e-3
+
+        # integration: scalar toy with the (location, logprec) cluster kept
+        # joint (no constraints) recovers mean and log-precision
+        rng = StableRNG(7)
+        location_true, precision_true = 0.8, 5.0
+        ys = location_true .+ randn(rng, 60) ./ sqrt(precision_true)
+        deps = NGMPDependencies(
+            s = nothing, μ = nothing,
+            projection = TangentProjection(type = Quadrature(32)),
+        )
+        result = infer(
+            model = mnep_cavity_toy(
+                deps = deps,
+                damping = DampingMeta(alpha = 0.5, beta = 0.0),
+            ),
+            data = (y = ys,),
+            initialization = mnep_cavity_init(),
+            iterations = 60,
+            free_energy = false,
+        )
+        @test length(deps.states) == 2 * length(ys)
+        q_location = last(result.posteriors[:location])
+        q_logprec = last(result.posteriors[:logprec])
+        @test abs(mean(q_location) - mean(ys)) < 0.2
+        @test abs(mean(q_logprec) - log(precision_true)) < 0.7
     end
 end

@@ -16,6 +16,8 @@ using StableRNGs
 using Statistics
 using SurrogateModelling
 
+import ExponentialFamilyProjection: BoundedNormUpdateRule
+
 # A removed Poisson leaf contributes an uninformative message. These two
 # propagation rules let that neutral message pass through the Gaussian chain.
 @rule NormalMeanVariance(:μ, Marginalisation) (
@@ -76,11 +78,21 @@ end
     end
 end
 
+# The default projection budget (100 iterations x stepsize 0.1 x gradient
+# norm bound 1.0 = at most ~10 natural-parameter units per call) silently
+# TRAPS marginals that drift far into the tail: the projection returns its
+# own input, the trap is a fixed point of the damped map as well, and rare
+# masks blow up catastrophically. Widening the norm bound to 100 frees the
+# trap and makes the projected-VMP baseline fair (and faster: the inner
+# optimizer converges instead of stalling).
 @constraints function poisson_vmp_constraints()
     q(z) = MeanField()
     q(z) :: ProjectedTo(
         NormalMeanVariance,
-        parameters = ProjectionParameters(strategy = ClosedFormStrategy()),
+        parameters = ProjectionParameters(
+            strategy = ClosedFormStrategy(),
+            direction = BoundedNormUpdateRule(100.0),
+        ),
     )
 end
 
@@ -362,6 +374,286 @@ function trajectory_figure(
         label = "held-out count",
     )
     return plot(panel; size = (1160, 540))
+end
+
+# One method per panel around the unluckiest held-out month: overlaying the
+# two chains hides the difference, and separate single-hue panels stay
+# readable for color-blind readers.
+function outlier_panel(
+    years,
+    counts,
+    held_out,
+    fit,
+    outlier_index,
+    half_width,
+    method_label,
+    color,
+    linestyle;
+    display_stride = 1,
+    mark_center = true,
+)
+    n = length(counts)
+    lo = max(1, outlier_index - half_width)
+    hi = min(n, outlier_index + half_width)
+    # the model stays monthly; the stride only thins the plotted line/band
+    # vertices (e.g. 3 = quarterly display). Held-out markers keep their
+    # exact months, and the outlier month is always included.
+    indices = sort!(unique!(vcat(collect(lo:display_stride:hi), [outlier_index])))
+    # The Sunspots year column is integer-valued (all twelve months of a year
+    # share one x value), which draws the chain as vertical stacks. Rebuild a
+    # fractional monthly axis when duplicates are present.
+    axis = length(years) > 1 && years[2] == years[1] ?
+        years .+ ((0:(n - 1)) .% 12) ./ 12 : years
+    month_label(index) = string(
+        floor(Int, years[index]), ".", ((index - 1) % 12) + 1,
+    )
+    tick_indices = collect(lo:6:hi)
+    sd = sqrt.(fit.variance[indices])
+    center = exp.(clamp.(
+        fit.mean[indices] .+ fit.variance[indices] ./ 2,
+        -20.0,
+        20.0,
+    ))
+    lower = exp.(clamp.(fit.mean[indices] .- 1.96 .* sd, -20.0, 20.0))
+    upper = exp.(clamp.(fit.mean[indices] .+ 1.96 .* sd, -20.0, 20.0))
+    transform_rate(values) = log10.(values .+ 1)
+    count_ticks = [0, 10, 30, 100, 300, 1000, 10000]
+    held_out_set = Set(held_out)
+    held_out_in_window = filter(index -> index in held_out_set, collect(lo:hi))
+    center_plot = transform_rate(center)
+    panel = plot(
+        axis[indices],
+        center_plot;
+        ribbon = (
+            center_plot .- transform_rate(lower),
+            transform_rate(upper) .- center_plot,
+        ),
+        color,
+        linestyle,
+        fillalpha = 0.18,
+        linewidth = 2.4,
+        label = "$(method_label) rate ± latent 95% CI",
+        xlabel = "time (year.month)",
+        ylabel = "sunspot count / predictive rate",
+        legend = :topleft,
+        legendfontsize = 8,
+        xticks = (axis[tick_indices], month_label.(tick_indices)),
+        xrotation = 25,
+        yticks = (transform_rate(count_ticks), string.(count_ticks)),
+        ylims = (-0.05, log10(3.0e4)),
+        left_margin = 5Plots.mm,
+        bottom_margin = 7Plots.mm,
+    )
+    scatter!(
+        panel,
+        axis[held_out_in_window],
+        transform_rate(counts[held_out_in_window]);
+        markersize = 6.0,
+        marker = :diamond,
+        markerstrokewidth = 1.4,
+        markerstrokecolor = :black,
+        color = :firebrick,
+        label = "held-out count",
+    )
+    if mark_center
+        # ring drawn as an explicit line loop: marker-stroke-only circles are
+        # dropped by the GR backend when the fill is fully transparent
+        angles = range(0, 2π; length = 61)
+        ring_center = transform_rate([Float64(counts[outlier_index])])[1]
+        plot!(
+            panel,
+            axis[outlier_index] .+ 0.16 .* cos.(angles),
+            ring_center .+ 0.16 .* sin.(angles);
+            color = :black,
+            linewidth = 2.2,
+            label = "unlucky month (see text)",
+        )
+    end
+    return panel
+end
+
+# depth of each index inside its contiguous held-out run (0 for observed):
+# distance to the nearest observed month.
+function _held_out_depth(held_out, n)
+    held = falses(n)
+    held[held_out] .= true
+    depth = zeros(Int, n)
+    run_start = 0
+    for i in 1:n
+        if held[i]
+            run_start == 0 && (run_start = i)
+        elseif run_start != 0
+            for j in run_start:(i - 1)
+                depth[j] = min(j - run_start + 1, i - j)
+            end
+            run_start = 0
+        end
+    end
+    if run_start != 0
+        for j in run_start:n
+            depth[j] = j - run_start + 1
+        end
+    end
+    return depth
+end
+
+# Two single-method panels around the deepest held-out stretch of the
+# representative 50% mask: this is where mean-field VMP's fixed-variance
+# tilted messages pin the held-out uncertainty while NGMP's preserved chain
+# spreads it like a smoother.
+function gap_figure_artifacts(years, counts, representative, config)
+    held_out = representative.held_out
+    depth = _held_out_depth(held_out, length(counts))
+    center = argmax(depth)
+    vmp_panel = outlier_panel(
+        years, counts, held_out, representative.vmp, center,
+        config.outlier_half_width, "Projected VMP", COLORS.vmp, :dash;
+        mark_center = false,
+    )
+    ngmp_panel = outlier_panel(
+        years, counts, held_out, representative.ngmp, center,
+        config.outlier_half_width, "NGMP", COLORS.ngmp, :solid;
+        mark_center = false,
+    )
+    save_pdf(vmp_panel, "poisson_gap50_vmp")
+    save_pdf(ngmp_panel, "poisson_gap50_ngmp")
+    save_figure(
+        plot(
+            plot(vmp_panel; title = "Projected VMP"),
+            plot(ngmp_panel; title = "NGMP");
+            layout = (1, 2),
+            size = (1220, 440),
+        ),
+        "poisson_gap50",
+    )
+end
+
+const _DEPTH_BUCKETS = (
+    (1, 1, "1"), (2, 2, "2"), (3, 4, "3–4"), (5, 8, "5–8"),
+)
+
+_depth_bucket(depth) = findfirst(
+    bucket -> bucket[1] <= depth <= bucket[2], _DEPTH_BUCKETS,
+)
+
+# Held-out NLL by gap depth (all masks) and posterior variance by gap depth
+# (repetition 1 chains) at the deepest holdout fraction.
+function depth_profile_artifacts(holdout_frame, posterior_frame)
+    fraction_pct = 50
+    labels = [bucket[3] for bucket in _DEPTH_BUCKETS]
+    n = maximum(posterior_frame.index)
+
+    nll_sums = Dict{Tuple{String, Int}, Vector{Float64}}()
+    held50 = filter(row -> row.holdout_pct == fraction_pct, holdout_frame)
+    isempty(held50) && return
+    for sub in groupby(held50, :repetition)
+        depth = _held_out_depth(sort(unique(sub.index)), n)
+        for row in eachrow(sub)
+            bucket = _depth_bucket(depth[row.index])
+            bucket === nothing && continue
+            push!(get!(nll_sums, (row.method, bucket), Float64[]), row.nll)
+        end
+    end
+
+    nll_panel = plot(;
+        xlabel = "months to nearest observation",
+        ylabel = "held-out NLL",
+        yscale = :log10,
+        xticks = (1:length(labels), labels),
+        legend = :topleft,
+        left_margin = 5Plots.mm,
+    )
+    variance_panel = plot(;
+        xlabel = "months to nearest observation",
+        ylabel = "posterior variance of held-out z",
+        xticks = (1:length(labels), labels),
+        legend = :topleft,
+        left_margin = 5Plots.mm,
+    )
+    rep1 = filter(
+        row -> row.holdout_pct == fraction_pct &&
+            row.repetition == 1 && row.held_out,
+        posterior_frame,
+    )
+    depth1 = _held_out_depth(sort(unique(rep1.index)), n)
+    for (method, label, color, linestyle) in (
+        ("Projected VMP (mean-field)", "Projected VMP", COLORS.vmp, :dash),
+        ("NGMP", "NGMP", COLORS.ngmp, :solid),
+    )
+        nll = [
+            mean(get(nll_sums, (method, bucket), [NaN]))
+            for bucket in eachindex(labels)
+        ]
+        plot!(
+            nll_panel, eachindex(labels), nll;
+            color, linestyle, linewidth = 2.4, marker = :circle,
+            markersize = 5, label,
+        )
+        rows = filter(row -> row.method == method, rep1)
+        variances = [
+            mean(
+                row.posterior_variance for row in eachrow(rows)
+                if _depth_bucket(depth1[row.index]) == bucket
+            )
+            for bucket in eachindex(labels)
+        ]
+        plot!(
+            variance_panel, eachindex(labels), variances;
+            color, linestyle, linewidth = 2.4, marker = :circle,
+            markersize = 5, label,
+        )
+    end
+    save_pdf(nll_panel, "poisson_depth_nll")
+    save_pdf(variance_panel, "poisson_depth_variance")
+    save_figure(
+        plot(
+            plot(nll_panel; title = "held-out NLL by gap depth"),
+            plot(variance_panel; title = "held-out marginal variance");
+            layout = (1, 2),
+            size = (1100, 420),
+        ),
+        "poisson_depth_profile",
+    )
+end
+
+# Refit both methods on the 5% mask whose worst held-out point dominates the
+# VMP mask average, and save the side-by-side single-method panels.
+function outlier_figure_artifacts(years, counts, holdout_frame, config)
+    fraction = config.outlier_fraction
+    vmp_rows = filter(
+        row -> row.holdout_fraction == fraction &&
+            row.method == "Projected VMP (mean-field)",
+        holdout_frame,
+    )
+    isempty(vmp_rows) && return
+    worst = vmp_rows[argmax(vmp_rows.nll), :]
+    held_out = holdout_indices(length(counts), fraction, worst.mask_seed)
+    observed = trues(length(counts))
+    observed[held_out] .= false
+    observed_indices = findall(observed)
+    vmp = fit_projected_vmp(counts, observed_indices, config; free_energy = false)
+    ngmp = fit_ngmp(counts, observed_indices, config; free_energy = false)
+    vmp_panel = outlier_panel(
+        years, counts, held_out, vmp, worst.index,
+        config.outlier_half_width, "Projected VMP", COLORS.vmp, :dash;
+        display_stride = config.outlier_display_stride,
+    )
+    ngmp_panel = outlier_panel(
+        years, counts, held_out, ngmp, worst.index,
+        config.outlier_half_width, "NGMP", COLORS.ngmp, :solid;
+        display_stride = config.outlier_display_stride,
+    )
+    save_pdf(vmp_panel, "poisson_outlier_vmp")
+    save_pdf(ngmp_panel, "poisson_outlier_ngmp")
+    save_figure(
+        plot(
+            plot(vmp_panel; title = "Projected VMP"),
+            plot(ngmp_panel; title = "NGMP");
+            layout = (1, 2),
+            size = (1220, 440),
+        ),
+        "poisson_outlier_5pct",
+    )
 end
 
 function free_energy_panel(frame, fraction)
@@ -671,6 +963,9 @@ function main()
         holdout_fractions = [0.05, 0.10, 0.20, 0.50],
         figure_holdout_fraction = 0.50,
         trajectory_window_length = smoke ? 144 : 300,
+        outlier_fraction = 0.05,
+        outlier_half_width = smoke ? 24 : 30,
+        outlier_display_stride = 1,
         holdout_seed = 42,
     )
     years, counts, data_source = load_counts(config)
@@ -734,6 +1029,9 @@ function main()
         ),
         "poisson_state_space",
     )
+    outlier_figure_artifacts(years, counts, holdout_frame, config)
+    gap_figure_artifacts(years, counts, representative, config)
+    depth_profile_artifacts(holdout_frame, posterior_frame)
     free_energy_panels = [
         free_energy_panel(free_energy_frame, fraction)
         for fraction in sort(unique(free_energy_frame.holdout_fraction))
