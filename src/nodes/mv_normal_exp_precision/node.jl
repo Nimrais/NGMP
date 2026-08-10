@@ -92,6 +92,11 @@ end
 
 (message::MvExpGammaSiteMessage)(s::AbstractVector) = exp(log(message, s))
 
+# BayesBase glue (mirroring PoissonExpression): lets the raw site ride RxInfer's
+# generic message product and the `ProjectedTo` marginal path (the VMP arm).
+BayesBase.insupport(::MvExpGammaSiteMessage, ::AbstractVector) = true
+BayesBase.logpdf(message::MvExpGammaSiteMessage, s::AbstractVector) = log(message, s)
+
 # --- shared numerics ---------------------------------------------------------
 
 # exp overflow guard for the lognormal moment ρⱼ = E[e^{sⱼ}] = e^{mⱼ + Vⱼⱼ/2};

@@ -40,6 +40,12 @@ function (message::ExpGammaSiteMessage)(input::Real)
     return exp(log(message, input))
 end
 
+# BayesBase glue (mirroring PoissonExpression): lets the raw site ride RxInfer's
+# generic message product and the `ProjectedTo` marginal path — the VMP arm's
+# only executable route toward a Gaussian log-precision edge.
+BayesBase.insupport(::ExpGammaSiteMessage, ::Real) = true
+BayesBase.logpdf(message::ExpGammaSiteMessage, input::Real) = log(message, input)
+
 # Exact Williams product under a Gaussian projection point. For
 # ℓ(x) = c*x - b*exp(x) and q = Normal(m, σ²),
 #
@@ -52,10 +58,27 @@ function ClosedFormExpectations.mean(
 )
     message = objective.dist
     exponential_term = message.rate * exp(mean(q) + abs2(std(q)) / 2)
-    return (
+    # a Vector (not a Tuple): the EF-projection path multiplies this by its
+    # mean/std → natural-parameter jacobian, the NGMP path destructures it
+    return [
         message.log_coefficient - exponential_term,
         -std(q) * exponential_term,
-    )
+    ]
+end
+
+# Exact expectation for ℓ(x) = c*x - b*exp(x) under q = Normal(m, σ²):
+#
+#   E[ℓ] = c*m - b*exp(m + σ²/2)   (lognormal moment).
+#
+# `ClosedFormStrategy` evaluates this for its projection cost/convergence check.
+function ClosedFormExpectations.mean(
+    ::ClosedFormExpectations.ClosedFormExpectation,
+    objective::Logpdf{<:ExpGammaSiteMessage},
+    q::GaussianDistributionsFamily,
+)
+    message = objective.dist
+    m, v = mean(q), var(q)
+    return message.log_coefficient * m - message.rate * exp(m + v / 2)
 end
 
 @rule Exp(:out, NaturalGradientMessage) (

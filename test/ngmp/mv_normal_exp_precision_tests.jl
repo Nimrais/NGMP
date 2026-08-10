@@ -3,6 +3,7 @@ import LinearAlgebra: Diagonal, Symmetric, diag, I
 import StableRNGs: StableRNG
 import ReactiveMP: @call_marginalrule
 import BayesBase: weightedmean_precision
+import ExponentialFamilyProjection: ProjectedTo, ProjectionParameters, ClosedFormStrategy, project_to
 
 # Heteroscedastic toy: one shared mean vector μ and one shared log-precision
 # vector s explain all observations; each output dimension owns its precision
@@ -358,5 +359,44 @@ end
         hetero_ll = sum(logpdf(MvNormalMeanPrecision(mean(qμ), Matrix(Diagonal(ρ̂))), y) for y in ys_test)
         scalar_ll = sum(logpdf(MvNormalMeanPrecision(mean(qμ_b), Matrix(τ̂ * I, dim, dim)), y) for y in ys_test)
         @test hetero_ll > scalar_ll
+    end
+
+    @testset "VMP ProjectedTo glue: site logpdf/insupport + closed-form expectation" begin
+        site = ExpGammaSiteMessage(0.5, 1.3)
+        @test BayesBase.insupport(site, -0.7)
+        @test BayesBase.logpdf(site, -0.7) ≈ 0.5 * (-0.7) - 1.3 * exp(-0.7)
+
+        mv_site = MvExpGammaSiteMessage([0.5, 0.5], [1.3, 0.4])
+        svec = [-0.7, 0.2]
+        @test BayesBase.insupport(mv_site, svec)
+        @test BayesBase.logpdf(mv_site, svec) ≈ sum(0.5 .* svec .- [1.3, 0.4] .* exp.(svec))
+
+        # E_q[c·s − b·e^s] = c·m − b·e^{m+v/2}
+        expectation = ClosedFormExpectations.mean(
+            ClosedFormExpectations.ClosedFormExpectation(),
+            Logpdf(site),
+            Normal(0.3, sqrt(0.8)),
+        )
+        @test expectation ≈ 0.5 * 0.3 - 1.3 * exp(0.3 + 0.8 / 2)
+
+        # end-to-end VMP marginal path: (Gaussian message × site) product
+        # projected onto NormalMeanVariance, checked against quadrature moments
+        left = NormalMeanVariance(0.0, 4.0)
+        product = BayesBase.prod(BayesBase.GenericProd(), left, site)
+        projected = project_to(
+            ProjectedTo(
+                NormalMeanVariance;
+                parameters = ProjectionParameters(strategy = ClosedFormStrategy()),
+            ),
+            product,
+        )
+        grid = range(-14.0, 6.0; length = 20001)
+        logw = [logpdf(left, s) + BayesBase.logpdf(site, s) for s in grid]
+        weights = exp.(logw .- maximum(logw))
+        weights ./= sum(weights)
+        m_ref = sum(weights .* grid)
+        v_ref = sum(weights .* abs2.(grid .- m_ref))
+        @test abs(mean(projected) - m_ref) < 0.2
+        @test abs(var(projected) - v_ref) / v_ref < 0.5
     end
 end
