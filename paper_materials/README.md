@@ -152,8 +152,8 @@ paper checkpoints, so its time depends on the network connection.
 
 ## Shared comparison protocol
 
-All four baseline families use the versioned `repeated-holdout-v1` split
-implementation:
+All four baseline families and the selected NGMP UCI configuration use the
+versioned `repeated-holdout-v1` split implementation:
 
 - six UCI regression datasets;
 - 20 deterministic 90/10 outer train/test splits, based at seed `20260726`;
@@ -166,10 +166,10 @@ implementation:
   splits.
 
 `split_manifest.jld2` stores the exact original-row indices. Thus BBB, dDVI,
-DVI, and BPC are paired on the same held-out examples. The method-specific
+DVI, BPC, and NGMP are paired on the same held-out examples. The method-specific
 architecture, posterior, optimizer, learning schedule, and numerical
 safeguards are documented in `baselines/bbb_uci/README.md`,
-`baselines/dvi/README.md`, and `baselines/bpc/README.md`.
+`baselines/dvi/README.md`, `baselines/bpc/README.md`, and `ngmp_uci/README.md`.
 
 ## Final comparison table
 
@@ -177,53 +177,61 @@ The suffix is part of the method name: `Homo` denotes a homoscedastic
 likelihood and `Hetero` a heteroscedastic likelihood. BPC appears only as
 `BPC-Homo` because the paper-faithful conjugate model implemented here is
 homoscedastic; no unreported heteroscedastic BPC result is inferred. Values
-are mean ± sample standard deviation across the 20 paired splits, in original
-target units. Higher LPD and lower RMSE are better.
+are mean ± approximate 95% confidence-interval half-width (`1.96 × standard
+error`) across the 20 paired splits, in original target units. Higher LPD and
+lower RMSE are better; boldface marks the best mean and any mean whose 95% CI
+contains the best point estimate for that dataset and metric.
 
-| Dataset | Method | Runs | LPD (original) | RMSE |
+| Dataset | Method | Runs | LPD (original, 95% CI) | RMSE (95% CI) |
 |---|---|---:|---:|---:|
-| Concrete | BBB-Homo | 20 | -3.8613 ± 0.0134 | 7.2822 ± 0.4727 |
-| Concrete | BBB-Hetero | 20 | -3.3328 ± 0.0491 | 6.7086 ± 0.7111 |
-| Concrete | dDVI-Homo | 20 | -3.8602 ± 0.0150 | 6.7179 ± 0.6307 |
-| Concrete | dDVI-Hetero | 20 | -3.0477 ± 0.0986 | 5.6591 ± 0.7648 |
-| Concrete | DVI-Homo | 20 | -3.8602 ± 0.0150 | 6.7179 ± 0.6311 |
-| Concrete | DVI-Hetero | 20 | -3.0406 ± 0.1000 | 5.6654 ± 0.7413 |
-| Concrete | BPC-Homo | 20 | -3.9874 ± 0.0460 | 12.9488 ± 0.6095 |
-| Energy | BBB-Homo | 20 | -3.2892 ± 0.0097 | 2.8175 ± 0.3329 |
-| Energy | BBB-Hetero | 20 | -2.4229 ± 0.0799 | 2.7537 ± 0.3533 |
-| Energy | dDVI-Homo | 20 | -3.2970 ± 0.0062 | 2.2486 ± 0.2645 |
-| Energy | dDVI-Hetero | 20 | -1.1920 ± 1.0553 | 2.1088 ± 0.7045 |
-| Energy | DVI-Homo | 20 | -3.2971 ± 0.0062 | 2.2493 ± 0.2649 |
-| Energy | DVI-Hetero | 20 | -1.0094 ± 0.6784 | 1.9434 ± 0.7650 |
-| Energy | BPC-Homo | 20 | -2.6357 ± 0.1201 | 3.3192 ± 0.4685 |
-| Boston | BBB-Homo | 20 | -3.2488 ± 0.0359 | 3.8392 ± 0.9681 |
-| Boston | BBB-Hetero | 20 | -2.6555 ± 0.0879 | 3.7959 ± 1.0011 |
-| Boston | dDVI-Homo | 20 | -3.2571 ± 0.0254 | 3.4801 ± 0.7698 |
-| Boston | dDVI-Hetero | 20 | -2.4646 ± 0.2100 | 3.4741 ± 0.9399 |
-| Boston | DVI-Homo | 20 | -3.2572 ± 0.0254 | 3.4802 ± 0.7700 |
-| Boston | DVI-Hetero | 20 | -2.4489 ± 0.2091 | 3.4291 ± 0.9157 |
-| Boston | BPC-Homo | 20 | -2.9819 ± 0.1967 | 4.7579 ± 1.1463 |
-| Power | BBB-Homo | 20 | -3.7960 ± 0.0043 | 4.2831 ± 0.1605 |
-| Power | BBB-Hetero | 20 | -2.7785 ± 0.0327 | 4.0251 ± 0.1683 |
-| Power | dDVI-Homo | 20 | -3.7918 ± 0.0025 | 4.3009 ± 0.1641 |
-| Power | dDVI-Hetero | 20 | -2.8238 ± 0.0418 | 4.1321 ± 0.1742 |
-| Power | DVI-Homo | 20 | -3.7918 ± 0.0025 | 4.3009 ± 0.1642 |
-| Power | DVI-Hetero | 20 | -2.8249 ± 0.0457 | 4.1428 ± 0.1827 |
-| Power | BPC-Homo | 20 | -3.5396 ± 0.0363 | 8.2997 ± 0.2652 |
-| Wine | BBB-Homo | 20 | -1.0336 ± 0.0396 | 0.6469 ± 0.0422 |
-| Wine | BBB-Hetero | 20 | -0.9438 ± 0.0530 | 0.6470 ± 0.0402 |
-| Wine | dDVI-Homo | 20 | -1.0360 ± 0.0373 | 0.6484 ± 0.0434 |
-| Wine | dDVI-Hetero | 20 | -0.9440 ± 0.0715 | 0.6463 ± 0.0452 |
-| Wine | DVI-Homo | 20 | -1.0360 ± 0.0373 | 0.6484 ± 0.0434 |
-| Wine | DVI-Hetero | 20 | -0.9448 ± 0.0701 | 0.6469 ± 0.0449 |
-| Wine | BPC-Homo | 20 | -1.0545 ± 0.0584 | 0.6971 ± 0.0415 |
-| Yacht | BBB-Homo | 20 | -3.6925 ± 0.0135 | 3.4875 ± 0.9270 |
-| Yacht | BBB-Hetero | 20 | -2.6565 ± 0.1029 | 3.0494 ± 0.9470 |
-| Yacht | dDVI-Homo | 20 | -3.7236 ± 0.0222 | 2.1779 ± 0.5251 |
-| Yacht | dDVI-Hetero | 20 | -0.4641 ± 0.2283 | 0.8491 ± 0.3164 |
-| Yacht | DVI-Homo | 20 | -3.7238 ± 0.0222 | 2.1787 ± 0.5251 |
-| Yacht | DVI-Hetero | 20 | -0.4543 ± 0.2501 | 0.8528 ± 0.3497 |
-| Yacht | BPC-Homo | 20 | -3.0251 ± 0.1625 | 4.8077 ± 1.0919 |
+| Concrete | BBB-Homo | 20 | -3.8613 ± 0.0059 | 7.2822 ± 0.2072 |
+| Concrete | BBB-Hetero | 20 | -3.3328 ± 0.0215 | 6.7086 ± 0.3117 |
+| Concrete | dDVI-Homo | 20 | -3.8602 ± 0.0066 | 6.7179 ± 0.2764 |
+| Concrete | dDVI-Hetero | 20 | -3.0477 ± 0.0432 | **5.6591 ± 0.3352** |
+| Concrete | DVI-Homo | 20 | -3.8602 ± 0.0066 | 6.7179 ± 0.2766 |
+| Concrete | DVI-Hetero | 20 | -3.0406 ± 0.0438 | **5.6654 ± 0.3249** |
+| Concrete | BPC-Homo | 20 | -3.9874 ± 0.0202 | 12.9488 ± 0.2671 |
+| Concrete | NGMP-Hetero | 20 | **-2.9845 ± 0.0433** | 6.1986 ± 0.3871 |
+| Energy | BBB-Homo | 20 | -3.2892 ± 0.0043 | 2.8175 ± 0.1459 |
+| Energy | BBB-Hetero | 20 | -2.4229 ± 0.0350 | 2.7537 ± 0.1548 |
+| Energy | dDVI-Homo | 20 | -3.2970 ± 0.0027 | 2.2486 ± 0.1159 |
+| Energy | dDVI-Hetero | 20 | **-1.1920 ± 0.4625** | 2.1088 ± 0.3088 |
+| Energy | DVI-Homo | 20 | -3.2971 ± 0.0027 | 2.2493 ± 0.1161 |
+| Energy | DVI-Hetero | 20 | **-1.0094 ± 0.2973** | 1.9434 ± 0.3353 |
+| Energy | BPC-Homo | 20 | -2.6357 ± 0.0526 | 3.3192 ± 0.2053 |
+| Energy | NGMP-Hetero | 20 | **-0.9783 ± 0.0655** | **0.7198 ± 0.0534** |
+| Boston | BBB-Homo | 20 | -3.2488 ± 0.0157 | **3.8392 ± 0.4243** |
+| Boston | BBB-Hetero | 20 | -2.6555 ± 0.0385 | **3.7959 ± 0.4387** |
+| Boston | dDVI-Homo | 20 | -3.2571 ± 0.0111 | **3.4801 ± 0.3374** |
+| Boston | dDVI-Hetero | 20 | **-2.4646 ± 0.0921** | **3.4741 ± 0.4119** |
+| Boston | DVI-Homo | 20 | -3.2572 ± 0.0111 | **3.4802 ± 0.3375** |
+| Boston | DVI-Hetero | 20 | **-2.4489 ± 0.0917** | **3.4291 ± 0.4013** |
+| Boston | BPC-Homo | 20 | -2.9819 ± 0.0862 | 4.7579 ± 0.5024 |
+| Boston | NGMP-Hetero | 20 | -2.6720 ± 0.0752 | **3.8201 ± 0.3952** |
+| Power | BBB-Homo | 20 | -3.7960 ± 0.0019 | 4.2831 ± 0.0703 |
+| Power | BBB-Hetero | 20 | -2.7785 ± 0.0143 | **4.0251 ± 0.0737** |
+| Power | dDVI-Homo | 20 | -3.7918 ± 0.0011 | 4.3009 ± 0.0719 |
+| Power | dDVI-Hetero | 20 | -2.8238 ± 0.0183 | 4.1321 ± 0.0763 |
+| Power | DVI-Homo | 20 | -3.7918 ± 0.0011 | 4.3009 ± 0.0720 |
+| Power | DVI-Hetero | 20 | -2.8249 ± 0.0200 | 4.1428 ± 0.0801 |
+| Power | BPC-Homo | 20 | -3.5396 ± 0.0159 | 8.2997 ± 0.1162 |
+| Power | NGMP-Hetero | 20 | **-2.7610 ± 0.0226** | **3.9541 ± 0.0729** |
+| Wine | BBB-Homo | 20 | -1.0336 ± 0.0173 | **0.6469 ± 0.0185** |
+| Wine | BBB-Hetero | 20 | **-0.9438 ± 0.0232** | **0.6470 ± 0.0176** |
+| Wine | dDVI-Homo | 20 | -1.0360 ± 0.0164 | **0.6484 ± 0.0190** |
+| Wine | dDVI-Hetero | 20 | **-0.9440 ± 0.0314** | **0.6463 ± 0.0198** |
+| Wine | DVI-Homo | 20 | -1.0360 ± 0.0164 | **0.6484 ± 0.0190** |
+| Wine | DVI-Hetero | 20 | **-0.9448 ± 0.0307** | **0.6469 ± 0.0197** |
+| Wine | BPC-Homo | 20 | -1.0545 ± 0.0256 | 0.6971 ± 0.0182 |
+| Wine | NGMP-Hetero | 20 | **-0.9571 ± 0.0293** | **0.6582 ± 0.0189** |
+| Yacht | BBB-Homo | 20 | -3.6925 ± 0.0059 | 3.4875 ± 0.4063 |
+| Yacht | BBB-Hetero | 20 | -2.6565 ± 0.0451 | 3.0494 ± 0.4150 |
+| Yacht | dDVI-Homo | 20 | -3.7236 ± 0.0097 | 2.1779 ± 0.2301 |
+| Yacht | dDVI-Hetero | 20 | -0.4641 ± 0.1000 | **0.8491 ± 0.1387** |
+| Yacht | DVI-Homo | 20 | -3.7238 ± 0.0097 | 2.1787 ± 0.2301 |
+| Yacht | DVI-Hetero | 20 | -0.4543 ± 0.1096 | **0.8528 ± 0.1533** |
+| Yacht | BPC-Homo | 20 | -3.0251 ± 0.0712 | 4.8077 ± 0.4786 |
+| Yacht | NGMP-Hetero | 20 | **-0.2782 ± 0.1437** | **0.9295 ± 0.1548** |
 
 Regenerate this table from the canonical `summary.csv` files with:
 
