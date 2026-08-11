@@ -5,7 +5,6 @@ const PROJECT_ROOT = dirname(STUDY_ROOT)
 const STUDIES = (
     "normal_mean_precision.jl",
     "poisson_state_space.jl",
-    "hetero_hierarchy.jl",
     "streaming_hetero.jl",
 )
 

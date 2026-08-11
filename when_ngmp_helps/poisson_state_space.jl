@@ -264,141 +264,24 @@ function append_posterior_rows!(
     return rows
 end
 
-function largest_prediction_improvement_window(
-    counts,
-    held_out,
-    vmp,
-    ngmp,
-    requested_length,
-)
-    n = length(counts)
-    window_length = min(requested_length, n)
-    window_length == n && return 1:n
-    vmp_rates = exp.(clamp.(vmp.mean .+ vmp.variance ./ 2, -20.0, 20.0))
-    ngmp_rates = exp.(clamp.(ngmp.mean .+ ngmp.variance ./ 2, -20.0, 20.0))
-    improvement = zeros(n)
-    improvement[held_out] .= (
-        abs2.(vmp_rates[held_out] .- counts[held_out]) .-
-        abs2.(ngmp_rates[held_out] .- counts[held_out])
-    )
-    cumulative = vcat(0.0, cumsum(improvement))
-    scores = [
-        cumulative[start + window_length] - cumulative[start]
-        for start in 1:(n - window_length + 1)
-    ]
-    start = argmax(scores)
-    return start:(start + window_length - 1)
-end
-
-function trajectory_figure(
-    years,
-    counts,
-    held_out,
-    vmp,
-    ngmp,
-    fraction,
-    window_length,
-)
-    indices = largest_prediction_improvement_window(
-        counts,
-        held_out,
-        vmp,
-        ngmp,
-        window_length,
-    )
-    held_out_set = Set(held_out)
-    held_out_in_window = filter(index -> index in held_out_set, indices)
-    ngmp_sd = sqrt.(ngmp.variance[indices])
-    ngmp_rate = exp.(clamp.(
-        ngmp.mean[indices] .+ ngmp.variance[indices] ./ 2,
-        -20.0,
-        20.0,
-    ))
-    ngmp_lower = exp.(clamp.(ngmp.mean[indices] .- 1.96ngmp_sd, -20.0, 20.0))
-    ngmp_upper = exp.(clamp.(ngmp.mean[indices] .+ 1.96ngmp_sd, -20.0, 20.0))
-    vmp_sd = sqrt.(vmp.variance[indices])
-    vmp_rate = exp.(clamp.(
-        vmp.mean[indices] .+ vmp.variance[indices] ./ 2,
-        -20.0,
-        20.0,
-    ))
-    vmp_lower = exp.(clamp.(vmp.mean[indices] .- 1.96vmp_sd, -20.0, 20.0))
-    vmp_upper = exp.(clamp.(vmp.mean[indices] .+ 1.96vmp_sd, -20.0, 20.0))
-    transform_rate(values) = log10.(values .+ 1)
-    count_ticks = [0, 1, 3, 10, 30, 100, 300]
-    ngmp_center_plot = transform_rate(ngmp_rate)
-    vmp_center_plot = transform_rate(vmp_rate)
-    panel = plot(
-        years[indices],
-        ngmp_center_plot;
-        ribbon = (
-            ngmp_center_plot .- transform_rate(ngmp_lower),
-            transform_rate(ngmp_upper) .- ngmp_center_plot,
-        ),
-        color = COLORS.ngmp,
-        fillalpha = 0.15,
-        linewidth = 2.4,
-        label = "NGMP predictive rate ± latent 95% CI",
-        xlabel = "time",
-        ylabel = "sunspot count / predictive rate",
-        legend = :topright,
-        legendfontsize = 8,
-        yticks = (transform_rate(count_ticks), string.(count_ticks)),
-        ylims = (-0.05, log10(401.0)),
-        left_margin = 5Plots.mm,
-        bottom_margin = 5Plots.mm,
-    )
-    plot!(
-        panel,
-        years[indices],
-        vmp_center_plot;
-        ribbon = (
-            vmp_center_plot .- transform_rate(vmp_lower),
-            transform_rate(vmp_upper) .- vmp_center_plot,
-        ),
-        color = COLORS.vmp,
-        fillalpha = 0.12,
-        linewidth = 2.4,
-        linestyle = :dash,
-        label = "Projected VMP rate ± latent 95% CI",
-    )
-    scatter!(
-        panel,
-        years[held_out_in_window],
-        transform_rate(counts[held_out_in_window]);
-        markersize = 6.0,
-        marker = :diamond,
-        markerstrokewidth = 1.2,
-        alpha = 0.95,
-        color = :firebrick,
-        label = "held-out count",
-    )
-    return plot(panel; size = (1160, 540))
-end
-
-# One method per panel around the unluckiest held-out month: overlaying the
-# two chains hides the difference, and separate single-hue panels stay
-# readable for color-blind readers.
-function outlier_panel(
+# One method per panel around a chosen held-out month: overlaying the two
+# chains hides the difference, and separate single-hue panels stay readable
+# for color-blind readers.
+function gap_window_panel(
     years,
     counts,
     held_out,
     fit,
-    outlier_index,
+    center_index,
     half_width,
-    method_label,
+    arm_label,
     color,
-    linestyle;
-    display_stride = 1,
-    mark_center = true,
+    linestyle,
 )
     n = length(counts)
-    lo = max(1, outlier_index - half_width)
-    hi = min(n, outlier_index + half_width)
-    # the model stays monthly; the stride only thins the plotted line/band
-    # vertices (e.g. 3 = quarterly display). Held-out markers keep their
-    # exact months, and the outlier month is always included.
-    indices = sort!(unique!(vcat(collect(lo:display_stride:hi), [outlier_index])))
+    lo = max(1, center_index - half_width)
+    hi = min(n, center_index + half_width)
+    indices = collect(lo:hi)
     # The Sunspots year column is integer-valued (all twelve months of a year
     # share one x value), which draws the chain as vertical stacks. Rebuild a
     # fractional monthly axis when duplicates are present.
@@ -432,7 +315,7 @@ function outlier_panel(
         linestyle,
         fillalpha = 0.18,
         linewidth = 2.4,
-        label = "$(method_label) rate ± latent 95% CI",
+        label = "$(arm_label) rate ± latent 95% CI",
         xlabel = "time (year.month)",
         ylabel = "sunspot count / predictive rate",
         legend = :topleft,
@@ -455,20 +338,6 @@ function outlier_panel(
         color = :firebrick,
         label = "held-out count",
     )
-    if mark_center
-        # ring drawn as an explicit line loop: marker-stroke-only circles are
-        # dropped by the GR backend when the fill is fully transparent
-        angles = range(0, 2π; length = 61)
-        ring_center = transform_rate([Float64(counts[outlier_index])])[1]
-        plot!(
-            panel,
-            axis[outlier_index] .+ 0.16 .* cos.(angles),
-            ring_center .+ 0.16 .* sin.(angles);
-            color = :black,
-            linewidth = 2.2,
-            label = "unlucky month (see text)",
-        )
-    end
     return panel
 end
 
@@ -498,29 +367,48 @@ function _held_out_depth(held_out, n)
 end
 
 # Two single-method panels around the deepest held-out stretch of the
-# representative 50% mask: this is where mean-field VMP's fixed-variance
-# tilted messages pin the held-out uncertainty while NGMP's preserved chain
-# spreads it like a smoother.
-function gap_figure_artifacts(years, counts, representative, config)
-    held_out = representative.held_out
-    depth = _held_out_depth(held_out, length(counts))
-    center = argmax(depth)
-    vmp_panel = outlier_panel(
-        years, counts, held_out, representative.vmp, center,
-        config.outlier_half_width, "Projected VMP", COLORS.vmp, :dash;
-        mark_center = false,
+# representative 50% mask (repetition 1): this is where mean-field VMP's
+# fixed-variance tilted messages pin the held-out uncertainty while NGMP's
+# preserved chain spreads it like a smoother. Redrawn entirely from the
+# persisted posterior chains in poisson_state_space_runs.csv.
+function _representative_chain(posterior_frame, key)
+    selected = sort(
+        filter(
+            row -> row.holdout_pct == 50 && row.repetition == 1 &&
+                row.method == key,
+            posterior_frame,
+        ),
+        :index,
     )
-    ngmp_panel = outlier_panel(
-        years, counts, held_out, representative.ngmp, center,
-        config.outlier_half_width, "NGMP", COLORS.ngmp, :solid;
-        mark_center = false,
+    return (;
+        mean = collect(selected.posterior_mean),
+        variance = collect(selected.posterior_variance),
+        years = collect(Float64.(selected.time)),
+        counts = collect(selected.count),
+        held_out = [row.index for row in eachrow(selected) if row.held_out],
+    )
+end
+
+function gap_figure_artifacts(posterior_frame, gap_half_width)
+    vmp = _representative_chain(posterior_frame, "vmp")
+    isempty(vmp.mean) && return
+    ngmp = _representative_chain(posterior_frame, "ngmp")
+    depth = _held_out_depth(vmp.held_out, length(vmp.counts))
+    center = argmax(depth)
+    vmp_panel = gap_window_panel(
+        vmp.years, vmp.counts, vmp.held_out, vmp, center,
+        gap_half_width, method_label(:vmp), COLORS.vmp, :dash,
+    )
+    ngmp_panel = gap_window_panel(
+        ngmp.years, ngmp.counts, ngmp.held_out, ngmp, center,
+        gap_half_width, method_label(:ngmp), COLORS.ngmp, :solid,
     )
     save_pdf(vmp_panel, "poisson_gap50_vmp")
     save_pdf(ngmp_panel, "poisson_gap50_ngmp")
     save_figure(
         plot(
-            plot(vmp_panel; title = "Projected VMP"),
-            plot(ngmp_panel; title = "NGMP");
+            plot(vmp_panel; title = method_label(:vmp)),
+            plot(ngmp_panel; title = method_label(:ngmp));
             layout = (1, 2),
             size = (1220, 440),
         ),
@@ -576,10 +464,11 @@ function depth_profile_artifacts(holdout_frame, posterior_frame)
         posterior_frame,
     )
     depth1 = _held_out_depth(sort(unique(rep1.index)), n)
-    for (method, label, color, linestyle) in (
-        ("Projected VMP (mean-field)", "Projected VMP", COLORS.vmp, :dash),
-        ("NGMP", "NGMP", COLORS.ngmp, :solid),
+    for (method, color, linestyle) in (
+        ("vmp", COLORS.vmp, :dash),
+        ("ngmp", COLORS.ngmp, :solid),
     )
+        label = method_label(method)
         nll = [
             mean(get(nll_sums, (method, bucket), [NaN]))
             for bucket in eachindex(labels)
@@ -619,46 +508,6 @@ function depth_profile_artifacts(holdout_frame, posterior_frame)
     )
 end
 
-# Refit both methods on the 5% mask whose worst held-out point dominates the
-# VMP mask average, and save the side-by-side single-method panels.
-function outlier_figure_artifacts(years, counts, holdout_frame, config)
-    fraction = config.outlier_fraction
-    vmp_rows = filter(
-        row -> row.holdout_fraction == fraction &&
-            row.method == "Projected VMP (mean-field)",
-        holdout_frame,
-    )
-    isempty(vmp_rows) && return
-    worst = vmp_rows[argmax(vmp_rows.nll), :]
-    held_out = holdout_indices(length(counts), fraction, worst.mask_seed)
-    observed = trues(length(counts))
-    observed[held_out] .= false
-    observed_indices = findall(observed)
-    vmp = fit_projected_vmp(counts, observed_indices, config; free_energy = false)
-    ngmp = fit_ngmp(counts, observed_indices, config; free_energy = false)
-    vmp_panel = outlier_panel(
-        years, counts, held_out, vmp, worst.index,
-        config.outlier_half_width, "Projected VMP", COLORS.vmp, :dash;
-        display_stride = config.outlier_display_stride,
-    )
-    ngmp_panel = outlier_panel(
-        years, counts, held_out, ngmp, worst.index,
-        config.outlier_half_width, "NGMP", COLORS.ngmp, :solid;
-        display_stride = config.outlier_display_stride,
-    )
-    save_pdf(vmp_panel, "poisson_outlier_vmp")
-    save_pdf(ngmp_panel, "poisson_outlier_ngmp")
-    save_figure(
-        plot(
-            plot(vmp_panel; title = "Projected VMP"),
-            plot(ngmp_panel; title = "NGMP");
-            layout = (1, 2),
-            size = (1220, 440),
-        ),
-        "poisson_outlier_5pct",
-    )
-end
-
 function free_energy_panel(frame, fraction)
     summarize = function (method)
         selected = filter(
@@ -671,8 +520,8 @@ function free_energy_panel(frame, fraction)
             :per_observed_count => ci95 => :ci95,
         ), :iteration)
     end
-    vmp = summarize("Projected VMP (mean-field)")
-    ngmp = summarize("NGMP surrogate")
+    vmp = summarize("vmp")
+    ngmp = summarize("ngmp")
     all(vmp.center .> 0) && all(ngmp.center .> 0) ||
         error("log-scale Bethe free-energy plot requires positive values")
     panel = plot(
@@ -685,7 +534,7 @@ function free_energy_panel(frame, fraction)
         linestyle = :dash,
         marker = :circle,
         markersize = 3,
-        label = "Projected VMP (mean-field)",
+        label = "$(method_label(:vmp)) (mean-field)",
         xlabel = "iteration",
         ylabel = "Bethe free energy / observed count",
         yscale = :log10,
@@ -700,7 +549,7 @@ function free_energy_panel(frame, fraction)
         linewidth = 2.2,
         marker = :circle,
         markersize = 3,
-        label = "NGMP surrogate",
+        label = "$(method_label(:ngmp)) surrogate",
     )
     return panel
 end
@@ -717,9 +566,7 @@ function summarize_seed_metrics(metrics)
     rows = NamedTuple[]
     for repetition in sort(unique(metrics.repetition))
         for fraction in sort(unique(metrics.holdout_fraction))
-            for method in (
-                "Projected VMP (mean-field)", "Projected VMP, 1 sweep", "NGMP",
-            )
+            for method in ("vmp", "vmp1", "ngmp")
                 selected = filter(
                     row -> row.repetition == repetition &&
                            row.holdout_fraction == fraction &&
@@ -744,9 +591,7 @@ end
 function summarize_metrics(seed_metrics)
     rows = NamedTuple[]
     for fraction in sort(unique(seed_metrics.holdout_fraction))
-        for method in (
-            "Projected VMP (mean-field)", "Projected VMP, 1 sweep", "NGMP",
-        )
+        for method in ("vmp", "vmp1", "ngmp")
             selected = filter(
                 row -> row.holdout_fraction == fraction && row.method == method,
                 seed_metrics,
@@ -771,17 +616,15 @@ function wide_metrics(summary)
     rows = NamedTuple[]
     for fraction in sort(unique(summary.holdout_fraction))
         vmp = filter(
-            row -> row.holdout_fraction == fraction &&
-                   row.method == "Projected VMP (mean-field)",
+            row -> row.holdout_fraction == fraction && row.method == "vmp",
             summary,
         )[1, :]
         vmp1 = filter(
-            row -> row.holdout_fraction == fraction &&
-                   row.method == "Projected VMP, 1 sweep",
+            row -> row.holdout_fraction == fraction && row.method == "vmp1",
             summary,
         )[1, :]
         ngmp = filter(
-            row -> row.holdout_fraction == fraction && row.method == "NGMP",
+            row -> row.holdout_fraction == fraction && row.method == "ngmp",
             summary,
         )[1, :]
         push!(rows, (;
@@ -810,7 +653,11 @@ function write_latex_metrics_table(table)
         println(io, raw"\toprule")
         println(io, " & \\multicolumn{3}{c}{NLL} & \\multicolumn{3}{c}{RMSE} \\\\")
         println(io, raw"\cmidrule(lr){2-4} \cmidrule(lr){5-7}")
-        println(io, "Held out & VMP & VMP, 1 sweep & NGMP & VMP & VMP, 1 sweep & NGMP \\\\")
+        arms = join(
+            (method_label(key; short = true) for key in ("vmp", "vmp1", "ngmp")),
+            " & ",
+        )
+        println(io, "Held out & $arms & $arms \\\\")
         println(io, raw"\midrule")
         for row in eachrow(table)
             println(io, @sprintf(
@@ -836,39 +683,24 @@ function write_latex_metrics_table(table)
     return path
 end
 
-function caption_lines(summary, table, data_source, figure_fraction)
+function caption_lines(summary, table, data_source)
     n_seeds = minimum(summary.n_seeds)
-    comparisons = String[]
-    for fraction in sort(unique(summary.holdout_fraction))
-        vmp = filter(
-            row -> row.holdout_fraction == fraction &&
-                   row.method == "Projected VMP (mean-field)",
-            summary,
-        )[1, :]
-        ngmp = filter(
-            row -> row.holdout_fraction == fraction && row.method == "NGMP",
-            summary,
-        )[1, :]
-        push!(comparisons, @sprintf(
-            "%d%%: NLL %.3f/%.3f and RMSE %.3f/%.3f",
-            round(Int, 100fraction),
-            vmp.mean_nll,
-            ngmp.mean_nll,
-            vmp.mean_rmse,
-            ngmp.mean_rmse,
-        ))
-    end
-    caption_metrics = join(comparisons, "; ")
+    arm_keys = ("vmp", "vmp1", "ngmp")
+    header = string(
+        "| Held out | ",
+        join(("$(method_label(key)) NLL" for key in arm_keys), " | "),
+        " | ",
+        join(("$(method_label(key)) RMSE" for key in arm_keys), " | "),
+        " |",
+    )
     lines = [
         "# Poisson state-space study",
         "",
         "Data source: $data_source",
-        "The trajectory figure shows $(round(Int, 100figure_fraction))% held out.",
-        "The trajectory is plotted in count space; bands transform the marginal 95% credible intervals for `zₖ | y_observed` through the exponential link.",
         "NLL uses the notebook plug-in predictive rate `exp(m + v/2)`; RMSE is computed from that rate and the held-out count within each mask.",
         "NLL and RMSE are shown as means ± 95% confidence intervals across $n_seeds mask seeds.",
         "",
-        "| Held out | Projected VMP NLL | VMP 1-sweep NLL | NGMP NLL | Projected VMP RMSE | VMP 1-sweep RMSE | NGMP RMSE |",
+        header,
         "|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for row in eachrow(table)
@@ -891,9 +723,7 @@ function caption_lines(summary, table, data_source, figure_fraction)
     end
     append!(lines, [
         "",
-        "**Suggested trajectory caption.** Held-out count prediction for projected mean-field VMP and NGMP after removing $(round(Int, 100figure_fraction))% of observations. The displayed window maximizes cumulative held-out squared-error improvement of NGMP over projected VMP for the illustrative first mask; the aggregate table uses all windows and all seeds. Lines are predictive rates `exp(E[zₖ] + Var(zₖ)/2)`, shading transforms pointwise marginal 95% credible intervals for `zₖ` through the exponential link, and red diamonds are held-out counts not used for inference. Across $n_seeds nested-mask seeds, projected VMP/NGMP respectively give $caption_metrics.",
-        "",
-        "**Bethe free-energy caption.** Mean per-observed-count Bethe free-energy diagnostics with 95% intervals across $n_seeds masks after removing nested 5%, 10%, 20%, and 50% subsets of likelihood factors. Each projected-VMP trace evaluates its holdout graph's variational objective; each NGMP trace is a surrogate Bethe diagnostic because its local Gaussian surrogates change between outer iterations.",
+        "**Bethe free-energy caption.** Mean per-observed-count Bethe free-energy diagnostics with 95% intervals across $n_seeds masks after removing nested 5%, 10%, 20%, and 50% subsets of likelihood factors. Each $(method_label(:vmp)) trace evaluates its holdout graph's variational objective; each $(method_label(:ngmp)) trace is a surrogate Bethe diagnostic because its local Gaussian surrogates change between outer iterations.",
     ])
     return lines
 end
@@ -902,7 +732,6 @@ function run_mask_repetition(counts, years, config, repetition)
     posterior_rows = NamedTuple[]
     holdout_rows = NamedTuple[]
     free_energy_rows = NamedTuple[]
-    representative = nothing
     mask_seed = config.holdout_seed + repetition - 1
 
     for fraction in config.holdout_fractions
@@ -922,15 +751,15 @@ function run_mask_repetition(counts, years, config, repetition)
 
         if repetition == 1
             append_posterior_rows!(posterior_rows, repetition, fraction,
-                "Projected VMP (mean-field)", vmp, years, counts, held_out)
+                "vmp", vmp, years, counts, held_out)
             append_posterior_rows!(posterior_rows, repetition, fraction,
-                "NGMP", ngmp, years, counts, held_out)
+                "ngmp", ngmp, years, counts, held_out)
         end
 
         for (method, fit) in (
-            ("Projected VMP (mean-field)", vmp),
-            ("Projected VMP, 1 sweep", vmp1),
-            ("NGMP", ngmp),
+            ("vmp", vmp),
+            ("vmp1", vmp1),
+            ("ngmp", ngmp),
         )
             scores = predictive_metrics(fit.mean, fit.variance, counts, held_out)
             for (position, index) in enumerate(held_out)
@@ -951,8 +780,8 @@ function run_mask_repetition(counts, years, config, repetition)
         end
 
         for (method, values) in (
-            ("Projected VMP (mean-field)", vmp.free_energy),
-            ("NGMP surrogate", ngmp.free_energy),
+            ("vmp", vmp.free_energy),
+            ("ngmp", ngmp.free_energy),
         )
             for (iteration, value) in enumerate(values)
                 push!(free_energy_rows, (;
@@ -969,15 +798,12 @@ function run_mask_repetition(counts, years, config, repetition)
             end
         end
 
-        if repetition == 1 && fraction == config.figure_holdout_fraction
-            representative = (; fraction, held_out, vmp, ngmp)
-        end
     end
     @printf("completed Poisson mask seed %d/%d\n", repetition, config.repetitions)
-    return (; posterior_rows, holdout_rows, free_energy_rows, representative)
+    return (; posterior_rows, holdout_rows, free_energy_rows)
 end
 
-function main()
+function compute()
     ensure_outputs()
     smoke = smoke_mode()
     config = (
@@ -995,11 +821,7 @@ function main()
             get(ENV, "WHEN_NGMP_POISSON_REPETITIONS", "20"),
         ),
         holdout_fractions = [0.05, 0.10, 0.20, 0.50],
-        figure_holdout_fraction = 0.50,
-        trajectory_window_length = smoke ? 144 : 300,
-        outlier_fraction = 0.05,
-        outlier_half_width = smoke ? 24 : 30,
-        outlier_display_stride = 1,
+        gap_half_width = smoke ? 24 : 30,
         holdout_seed = 42,
     )
     years, counts, data_source = load_counts(config)
@@ -1007,7 +829,6 @@ function main()
     posterior_rows = NamedTuple[]
     holdout_rows = NamedTuple[]
     free_energy_rows = NamedTuple[]
-    representative = nothing
     outputs = Vector{Any}(undef, config.repetitions)
     outputs[1] = run_mask_repetition(counts, years, config, 1)
     Threads.@threads for repetition in 2:config.repetitions
@@ -1022,49 +843,56 @@ function main()
         append!(posterior_rows, output.posterior_rows)
         append!(holdout_rows, output.holdout_rows)
         append!(free_energy_rows, output.free_energy_rows)
-        isnothing(output.representative) || (representative = output.representative)
     end
-    isnothing(representative) && error("figure holdout fraction was not evaluated")
 
-    posterior_frame = DataFrame(posterior_rows)
-    holdout_frame = DataFrame(holdout_rows)
-    seed_metrics = summarize_seed_metrics(holdout_frame)
-    metrics_summary = summarize_metrics(seed_metrics)
-    metrics_table = wide_metrics(metrics_summary)
-    free_energy_frame = DataFrame(free_energy_rows)
-
-    CSV.write(joinpath(RESULT_DIR, "poisson_state_space_runs.csv"), posterior_frame)
-    CSV.write(joinpath(RESULT_DIR, "poisson_state_space_holdout.csv"), holdout_frame)
-    CSV.write(joinpath(RESULT_DIR, "poisson_state_space_seed_metrics.csv"), seed_metrics)
-    CSV.write(joinpath(RESULT_DIR, "poisson_state_space_metrics.csv"), metrics_summary)
-    CSV.write(joinpath(RESULT_DIR, "poisson_state_space_metrics_table.csv"), metrics_table)
-    CSV.write(joinpath(RESULT_DIR, "poisson_state_space_free_energy.csv"), free_energy_frame)
-    write_latex_metrics_table(metrics_table)
+    CSV.write(
+        joinpath(RESULT_DIR, "poisson_state_space_runs.csv"),
+        DataFrame(posterior_rows),
+    )
+    CSV.write(
+        joinpath(RESULT_DIR, "poisson_state_space_holdout.csv"),
+        DataFrame(holdout_rows),
+    )
+    CSV.write(
+        joinpath(RESULT_DIR, "poisson_state_space_free_energy.csv"),
+        DataFrame(free_energy_rows),
+    )
     write_config("poisson_state_space", merge(config, (;
         data_source,
         n_observations = length(counts),
     )))
+end
+
+# Everything below reads only results/*.csv (+ the config TOML), so tables
+# and figures can be regenerated without re-running inference.
+function render()
+    ensure_outputs()
+    config = read_config("poisson_state_space")
+    posterior_frame = CSV.read(
+        joinpath(RESULT_DIR, "poisson_state_space_runs.csv"), DataFrame,
+    )
+    holdout_frame = CSV.read(
+        joinpath(RESULT_DIR, "poisson_state_space_holdout.csv"), DataFrame,
+    )
+    free_energy_frame = CSV.read(
+        joinpath(RESULT_DIR, "poisson_state_space_free_energy.csv"), DataFrame,
+    )
+
+    seed_metrics = summarize_seed_metrics(holdout_frame)
+    metrics_summary = summarize_metrics(seed_metrics)
+    metrics_table = wide_metrics(metrics_summary)
+    CSV.write(joinpath(RESULT_DIR, "poisson_state_space_seed_metrics.csv"), seed_metrics)
+    CSV.write(joinpath(RESULT_DIR, "poisson_state_space_metrics.csv"), metrics_summary)
+    CSV.write(joinpath(RESULT_DIR, "poisson_state_space_metrics_table.csv"), metrics_table)
+    write_latex_metrics_table(metrics_table)
     write_summary("poisson_state_space",
         caption_lines(
             metrics_summary,
             metrics_table,
-            data_source,
-            config.figure_holdout_fraction,
+            config["data_source"],
         ))
-    save_figure(
-        trajectory_figure(
-            years,
-            counts,
-            representative.held_out,
-            representative.vmp,
-            representative.ngmp,
-            representative.fraction,
-            config.trajectory_window_length,
-        ),
-        "poisson_state_space",
-    )
-    outlier_figure_artifacts(years, counts, holdout_frame, config)
-    gap_figure_artifacts(years, counts, representative, config)
+
+    gap_figure_artifacts(posterior_frame, config["gap_half_width"])
     depth_profile_artifacts(holdout_frame, posterior_frame)
     free_energy_panels = [
         free_energy_panel(free_energy_frame, fraction)
@@ -1080,6 +908,11 @@ function main()
         free_energy_figure(free_energy_panels),
         "poisson_state_space_free_energy",
     )
+end
+
+function main()
+    render_only() || compute()
+    render()
 end
 
 abspath(PROGRAM_FILE) == (@__FILE__) && main()

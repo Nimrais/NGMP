@@ -1,5 +1,3 @@
 /figures/*
 !/figures/.gitkeep
-/results/*
-!/results/.gitkeep
 .recall/*

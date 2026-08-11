@@ -259,11 +259,11 @@ function run_study(config)
                 ngmp.qτ;
                 x_grid_size = config.kl_grid_size,
             )
-            push!(rows, result_row(repetition, n, "Exact moments", exact_qx,
+            push!(rows, result_row(repetition, n, "exact", exact_qx,
                 exact_qτ, exact, 0.0, zero_kl, true_mean, true_precision))
-            push!(rows, result_row(repetition, n, "VMP", vmp.qx, vmp.qτ,
+            push!(rows, result_row(repetition, n, "vmp", vmp.qx, vmp.qτ,
                 exact, vmp.elapsed, vmp_kls, true_mean, true_precision))
-            push!(rows, result_row(repetition, n, "NGMP", ngmp.qx, ngmp.qτ,
+            push!(rows, result_row(repetition, n, "ngmp", ngmp.qx, ngmp.qτ,
                 exact, ngmp.elapsed, ngmp_kls, true_mean, true_precision))
 
         end
@@ -273,7 +273,7 @@ end
 
 function summarize_runs(runs)
     rows = NamedTuple[]
-    for n in sort(unique(runs.n)), method in ("VMP", "NGMP")
+    for n in sort(unique(runs.n)), method in ("vmp", "ngmp")
         selected = filter(row -> row.n == n && row.method == method, runs)
         push!(rows, (;
             n,
@@ -289,11 +289,13 @@ function summarize_runs(runs)
 end
 
 function summary_lines(config)
+    repetitions = config["repetitions"]
+    seed = config["seed"]
     return [
         "# Joint Normal mean–precision study",
         "",
-        "Each of the $(config.repetitions) seeds draws a new true mean and precision from the inference priors, then reuses prefixes of one observation stream across sample sizes.",
-        "The two figures report mean marginal KL ± 95% confidence intervals across seeds $(config.seed)–$(config.seed + config.repetitions - 1).",
+        "Each of the $(repetitions) seeds draws a new true mean and precision from the inference priors, then reuses prefixes of one observation stream across sample sizes.",
+        "The two figures report mean marginal KL ± 95% confidence intervals across seeds $(seed)–$(seed + repetitions - 1).",
         "KL is oriented as `KL(p_exact || q_method)` for the shared mean/state and precision marginals separately.",
         "The machine-readable method-wise values are stored in `normal_mean_precision_aggregate.csv`.",
     ]
@@ -309,11 +311,11 @@ function kl_performance_panel(summary, value_field, ci_field)
         legend = :best,
         left_margin = 5Plots.mm,
     )
-    for (method, color, linestyle) in (
-        ("VMP", COLORS.vmp, :dash),
-        ("NGMP", COLORS.ngmp, :solid),
+    for (key, color, linestyle) in (
+        ("vmp", COLORS.vmp, :dash),
+        ("ngmp", COLORS.ngmp, :solid),
     )
-        selected = sort(filter(row -> row.method == method, summary), :n)
+        selected = sort(filter(row -> row.method == key, summary), :n)
         center = selected[!, value_field]
         interval = selected[!, ci_field]
         lower_ribbon = min.(interval, 0.999 .* center)
@@ -328,13 +330,13 @@ function kl_performance_panel(summary, value_field, ci_field)
             marker = :circle,
             markersize = 4,
             fillalpha = 0.12,
-            label = "$method mean ± 95% CI",
+            label = "$(method_label(key)) mean ± 95% CI",
         )
     end
     return panel
 end
 
-function main()
+function compute()
     ensure_outputs()
     smoke = smoke_mode()
     config = (
@@ -353,10 +355,18 @@ function main()
         ngmp_projection = "Unscented",
     )
     runs = run_study(config)
-    summary = summarize_runs(runs)
     CSV.write(joinpath(RESULT_DIR, "normal_mean_precision_runs.csv"), runs)
-    CSV.write(joinpath(RESULT_DIR, "normal_mean_precision_aggregate.csv"), summary)
     write_config("normal_mean_precision", config)
+end
+
+# Everything below reads only results/*.csv (+ the config TOML), so figures
+# and summaries can be regenerated without re-running inference.
+function render()
+    ensure_outputs()
+    config = read_config("normal_mean_precision")
+    runs = CSV.read(joinpath(RESULT_DIR, "normal_mean_precision_runs.csv"), DataFrame)
+    summary = summarize_runs(runs)
+    CSV.write(joinpath(RESULT_DIR, "normal_mean_precision_aggregate.csv"), summary)
     write_summary("normal_mean_precision", summary_lines(config))
     save_figure(
         kl_performance_panel(summary, :mean_kl_x, :kl_x_ci95),
@@ -366,6 +376,11 @@ function main()
         kl_performance_panel(summary, :mean_kl_precision, :kl_precision_ci95),
         "normal_kl_precision",
     )
+end
+
+function main()
+    render_only() || compute()
+    render()
 end
 
 abspath(PROGRAM_FILE) == (@__FILE__) && main()

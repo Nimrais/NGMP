@@ -1,0 +1,13 @@
+prior_variance = 25.0
+ngmp_projection = "Unscented"
+ngmp_iterations = 50
+prior_shape = 2.0
+repetitions = 20
+vmp_iterations = 15
+sample_sizes = [4, 8, 16, 32, 64, 128, 256, 512]
+grid_size = 4000
+prior_mean = 0.0
+kl_grid_size = 800
+prior_rate = 1.0
+seed = 42
+smoke = false

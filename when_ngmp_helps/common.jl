@@ -9,8 +9,10 @@ using Printf
 using Statistics
 using TOML
 
-export COLORS, FIGURE_DIR, RESULT_DIR, ci95, empirical_band, ensure_outputs,
-       save_figure, save_pdf, smoke_mode, write_config, write_summary
+export COLORS, FIGURE_DIR, METHOD_LABELS, METHOD_LABELS_SHORT, RESULT_DIR,
+       ci95, empirical_band, ensure_outputs, method_label, read_config,
+       render_only, save_figure, save_pdf, smoke_mode, write_config,
+       write_summary
 
 const OUTPUT_ROOT = abspath(get(ENV, "WHEN_NGMP_OUTPUT_DIR", @__DIR__))
 const FIGURE_DIR = joinpath(OUTPUT_ROOT, "figures")
@@ -19,12 +21,43 @@ const RESULT_DIR = joinpath(OUTPUT_ROOT, "results")
 const COLORS = (
     exact = :black,
     vmp = :darkorange,
+    vmp1 = :peru,
     ngmp = :dodgerblue,
     truth = :gray35,
 )
 
+# Display names for the inference arms. CSVs and internal dispatch always
+# store the stable keys (vmp, vmp1, ngmp, exact); these labels are applied
+# only while rendering figures/tables, so renaming every plot and table is:
+# edit this NamedTuple, then `julia when_ngmp_helps/render_all.jl`.
+const METHOD_LABELS = (
+    vmp = "Projected VMP",
+    vmp1 = "Projected VMP, 1 sweep",
+    ngmp = "NGMP",
+    exact = "Exact moments",
+)
+
+# Compact variants for tight table headers; keys absent here fall back to the
+# full label.
+const METHOD_LABELS_SHORT = (
+    vmp = "VMP",
+    vmp1 = "VMP, 1 sweep",
+)
+
+function method_label(key; short = false)
+    symbol = Symbol(key)
+    short && haskey(METHOD_LABELS_SHORT, symbol) &&
+        return getfield(METHOD_LABELS_SHORT, symbol)
+    return getfield(METHOD_LABELS, symbol)
+end
+
 smoke_mode() = lowercase(get(ENV, "WHEN_NGMP_SMOKE", "false")) in
                ("1", "true", "yes", "on")
+
+# Render stage only: skip inference and redraw figures/tables from the CSVs
+# in results/.
+render_only() = lowercase(get(ENV, "WHEN_NGMP_RENDER_ONLY", "false")) in
+                ("1", "true", "yes", "on") || "--render-only" in ARGS
 
 function ensure_outputs()
     mkpath(FIGURE_DIR)
@@ -69,6 +102,8 @@ function write_config(stem, values)
     end
     return path
 end
+
+read_config(stem) = TOML.parsefile(joinpath(RESULT_DIR, "$(stem)_config.toml"))
 
 function write_summary(stem, lines)
     ensure_outputs()
