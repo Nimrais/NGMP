@@ -31,18 +31,16 @@ const COLORS = (
 # only while rendering figures/tables, so renaming every plot and table is:
 # edit this NamedTuple, then `julia when_ngmp_helps/render_all.jl`.
 const METHOD_LABELS = (
-    vmp = "Projected VMP",
-    vmp1 = "Projected VMP, 1 sweep",
+    vmp = "VMP",              # plain mean-field VMP (exhibit 1)
+    pvmp = "VMP",             # ProjectedTo arm (exhibits 2–3; paper calls both VMP)
+    pvmp1 = "VMP, 1 sweep",   # budget-matched ablation
     ngmp = "NGMP",
     exact = "Exact moments",
 )
 
 # Compact variants for tight table headers; keys absent here fall back to the
 # full label.
-const METHOD_LABELS_SHORT = (
-    vmp = "VMP",
-    vmp1 = "VMP, 1 sweep",
-)
+const METHOD_LABELS_SHORT = (;)
 
 function method_label(key; short = false)
     symbol = Symbol(key)

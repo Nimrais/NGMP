@@ -390,14 +390,14 @@ function _representative_chain(posterior_frame, key)
 end
 
 function gap_figure_artifacts(posterior_frame, gap_half_width)
-    vmp = _representative_chain(posterior_frame, "vmp")
+    vmp = _representative_chain(posterior_frame, "pvmp")
     isempty(vmp.mean) && return
     ngmp = _representative_chain(posterior_frame, "ngmp")
     depth = _held_out_depth(vmp.held_out, length(vmp.counts))
     center = argmax(depth)
     vmp_panel = gap_window_panel(
         vmp.years, vmp.counts, vmp.held_out, vmp, center,
-        gap_half_width, method_label(:vmp), COLORS.vmp, :dash,
+        gap_half_width, method_label(:pvmp), COLORS.vmp, :dash,
     )
     ngmp_panel = gap_window_panel(
         ngmp.years, ngmp.counts, ngmp.held_out, ngmp, center,
@@ -407,7 +407,7 @@ function gap_figure_artifacts(posterior_frame, gap_half_width)
     save_pdf(ngmp_panel, "poisson_gap50_ngmp")
     save_figure(
         plot(
-            plot(vmp_panel; title = method_label(:vmp)),
+            plot(vmp_panel; title = method_label(:pvmp)),
             plot(ngmp_panel; title = method_label(:ngmp));
             layout = (1, 2),
             size = (1220, 440),
@@ -465,7 +465,7 @@ function depth_profile_artifacts(holdout_frame, posterior_frame)
     )
     depth1 = _held_out_depth(sort(unique(rep1.index)), n)
     for (method, color, linestyle) in (
-        ("vmp", COLORS.vmp, :dash),
+        ("pvmp", COLORS.vmp, :dash),
         ("ngmp", COLORS.ngmp, :solid),
     )
         label = method_label(method)
@@ -520,7 +520,7 @@ function free_energy_panel(frame, fraction)
             :per_observed_count => ci95 => :ci95,
         ), :iteration)
     end
-    vmp = summarize("vmp")
+    vmp = summarize("pvmp")
     ngmp = summarize("ngmp")
     all(vmp.center .> 0) && all(ngmp.center .> 0) ||
         error("log-scale Bethe free-energy plot requires positive values")
@@ -534,7 +534,7 @@ function free_energy_panel(frame, fraction)
         linestyle = :dash,
         marker = :circle,
         markersize = 3,
-        label = "$(method_label(:vmp)) (mean-field)",
+        label = "$(method_label(:pvmp)) (mean-field)",
         xlabel = "iteration",
         ylabel = "Bethe free energy / observed count",
         yscale = :log10,
@@ -566,7 +566,7 @@ function summarize_seed_metrics(metrics)
     rows = NamedTuple[]
     for repetition in sort(unique(metrics.repetition))
         for fraction in sort(unique(metrics.holdout_fraction))
-            for method in ("vmp", "vmp1", "ngmp")
+            for method in ("pvmp", "pvmp1", "ngmp")
                 selected = filter(
                     row -> row.repetition == repetition &&
                            row.holdout_fraction == fraction &&
@@ -591,7 +591,7 @@ end
 function summarize_metrics(seed_metrics)
     rows = NamedTuple[]
     for fraction in sort(unique(seed_metrics.holdout_fraction))
-        for method in ("vmp", "vmp1", "ngmp")
+        for method in ("pvmp", "pvmp1", "ngmp")
             selected = filter(
                 row -> row.holdout_fraction == fraction && row.method == method,
                 seed_metrics,
@@ -616,11 +616,11 @@ function wide_metrics(summary)
     rows = NamedTuple[]
     for fraction in sort(unique(summary.holdout_fraction))
         vmp = filter(
-            row -> row.holdout_fraction == fraction && row.method == "vmp",
+            row -> row.holdout_fraction == fraction && row.method == "pvmp",
             summary,
         )[1, :]
         vmp1 = filter(
-            row -> row.holdout_fraction == fraction && row.method == "vmp1",
+            row -> row.holdout_fraction == fraction && row.method == "pvmp1",
             summary,
         )[1, :]
         ngmp = filter(
@@ -654,7 +654,7 @@ function write_latex_metrics_table(table)
         println(io, " & \\multicolumn{3}{c}{NLL} & \\multicolumn{3}{c}{RMSE} \\\\")
         println(io, raw"\cmidrule(lr){2-4} \cmidrule(lr){5-7}")
         arms = join(
-            (method_label(key; short = true) for key in ("vmp", "vmp1", "ngmp")),
+            (method_label(key; short = true) for key in ("pvmp", "pvmp1", "ngmp")),
             " & ",
         )
         println(io, "Held out & $arms & $arms \\\\")
@@ -685,7 +685,7 @@ end
 
 function caption_lines(summary, table, data_source)
     n_seeds = minimum(summary.n_seeds)
-    arm_keys = ("vmp", "vmp1", "ngmp")
+    arm_keys = ("pvmp", "pvmp1", "ngmp")
     header = string(
         "| Held out | ",
         join(("$(method_label(key)) NLL" for key in arm_keys), " | "),
@@ -723,7 +723,7 @@ function caption_lines(summary, table, data_source)
     end
     append!(lines, [
         "",
-        "**Bethe free-energy caption.** Mean per-observed-count Bethe free-energy diagnostics with 95% intervals across $n_seeds masks after removing nested 5%, 10%, 20%, and 50% subsets of likelihood factors. Each $(method_label(:vmp)) trace evaluates its holdout graph's variational objective; each $(method_label(:ngmp)) trace is a surrogate Bethe diagnostic because its local Gaussian surrogates change between outer iterations.",
+        "**Bethe free-energy caption.** Mean per-observed-count Bethe free-energy diagnostics with 95% intervals across $n_seeds masks after removing nested 5%, 10%, 20%, and 50% subsets of likelihood factors. Each $(method_label(:pvmp)) trace evaluates its holdout graph's variational objective; each $(method_label(:ngmp)) trace is a surrogate Bethe diagnostic because its local Gaussian surrogates change between outer iterations.",
     ])
     return lines
 end
@@ -751,14 +751,14 @@ function run_mask_repetition(counts, years, config, repetition)
 
         if repetition == 1
             append_posterior_rows!(posterior_rows, repetition, fraction,
-                "vmp", vmp, years, counts, held_out)
+                "pvmp", vmp, years, counts, held_out)
             append_posterior_rows!(posterior_rows, repetition, fraction,
                 "ngmp", ngmp, years, counts, held_out)
         end
 
         for (method, fit) in (
-            ("vmp", vmp),
-            ("vmp1", vmp1),
+            ("pvmp", vmp),
+            ("pvmp1", vmp1),
             ("ngmp", ngmp),
         )
             scores = predictive_metrics(fit.mean, fit.variance, counts, held_out)
@@ -780,7 +780,7 @@ function run_mask_repetition(counts, years, config, repetition)
         end
 
         for (method, values) in (
-            ("vmp", vmp.free_energy),
+            ("pvmp", vmp.free_energy),
             ("ngmp", ngmp.free_energy),
         )
             for (iteration, value) in enumerate(values)

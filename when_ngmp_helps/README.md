@@ -44,7 +44,9 @@ regenerates every paper figure and table without running any inference.
    seeds, three arms (projected VMP, its one-sweep budget-matched ablation,
    and cavity/true NGMP). Produces the four prediction panels
    (`streaming_{vmp,cavity}_{full,sequential}`), the `q(w)` collapse figure
-   (`streaming_collapse`), and the summary table.
+   (`streaming_collapse`), the projected-VMP Bethe free-energy convergence
+   panels (`streaming_bethe_{full,sequential}` — evidence the comparison
+   probes fixed points, not truncation), and the summary table.
 
 `hetero_model.jl` is a library (graph, `fit_arm` with the three inference
 arms, priors, prediction, aleatoric benchmark data); it has no entry point.

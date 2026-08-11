@@ -1,5 +1,5 @@
 level_sd = 1.6
-methods = ["vmp", "vmp1", "ngmp"]
+methods = ["pvmp", "pvmp1", "ngmp"]
 iterations = 240
 cavity_quadrature = 32
 holdout_fraction = 0.3333333333333333

@@ -12,6 +12,7 @@ const PREVIEW_STEMS = (
     "poisson_depth_profile",
     "streaming_hetero_predictions",
     "streaming_hetero_collapse",
+    "streaming_hetero_free_energy",
 )
 
 # save_pdf stems: paper panels, pdf only
@@ -29,6 +30,8 @@ const PDF_STEMS = (
     "streaming_cavity_full",
     "streaming_cavity_sequential",
     "streaming_collapse",
+    "streaming_bethe_full",
+    "streaming_bethe_sequential",
 )
 
 const RESULT_FILES = (
@@ -45,6 +48,7 @@ const RESULT_FILES = (
     "streaming_hetero_track.csv",
     "streaming_hetero_panels.csv",
     "streaming_hetero_train.csv",
+    "streaming_hetero_free_energy.csv",
 )
 
 function assert_artifacts(output)
