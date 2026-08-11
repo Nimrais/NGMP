@@ -64,14 +64,17 @@ end
 
 # Norm bound 100: the default projection budget can trap marginals far from
 # their optimum (see poisson_state_space.jl) — widen it so the VMP arm is a
-# fair baseline.
-@constraints function hetero_vmp_constraints()
+# fair baseline. `projection_niterations` bounds the INNER Manopt loop of
+# each ProjectedTo call (default 100); 1 gives the budget-matched ablation
+# arm: a single natural-gradient-like inner step per projection.
+@constraints function hetero_vmp_constraints(projection_niterations)
     q(f, w, s) = q(f)q(w)q(s)
     q(s) :: ProjectedTo(
         NormalMeanVariance,
         parameters = ProjectionParameters(
             strategy = ClosedFormStrategy(),
             direction = BoundedNormUpdateRule(100.0),
+            niterations = projection_niterations,
         ),
     )
 end
@@ -238,7 +241,9 @@ function fit_arm(method, observations, rows, priors, config; free_energy = false
                 top_carrier = config.top_carrier,
             ),
             data = (y = observations,),
-            constraints = hetero_vmp_constraints(),
+            constraints = hetero_vmp_constraints(
+                get(config, :projection_iterations, 100),
+            ),
             initialization = initialization,
             returnvars = (v = KeepLast(), w = KeepLast()),
             iterations = config.iterations,

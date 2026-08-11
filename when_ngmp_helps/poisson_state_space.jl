@@ -84,14 +84,17 @@ end
 # own input, the trap is a fixed point of the damped map as well, and rare
 # masks blow up catastrophically. Widening the norm bound to 100 frees the
 # trap and makes the projected-VMP baseline fair (and faster: the inner
-# optimizer converges instead of stalling).
-@constraints function poisson_vmp_constraints()
+# optimizer converges instead of stalling). `projection_niterations` bounds
+# the INNER Manopt loop per ProjectedTo call (default 100); 1 gives the
+# budget-matched ablation arm.
+@constraints function poisson_vmp_constraints(projection_niterations)
     q(z) = MeanField()
     q(z) :: ProjectedTo(
         NormalMeanVariance,
         parameters = ProjectionParameters(
             strategy = ClosedFormStrategy(),
             direction = BoundedNormUpdateRule(100.0),
+            niterations = projection_niterations,
         ),
     )
 end
@@ -144,7 +147,9 @@ function fit_projected_vmp(counts, observed_indices, config; free_energy = true)
             initial_mean = config.initial_mean,
             initial_variance = config.initial_variance,
         ),
-        constraints = poisson_vmp_constraints(),
+        constraints = poisson_vmp_constraints(
+            get(config, :projection_iterations, 100),
+        ),
         data = (y = observed_counts,),
         initialization = poisson_vmp_initialization(),
         iterations = config.iterations,
@@ -740,11 +745,13 @@ function run_mask_repetition(counts, years, config, repetition)
         observed[held_out] .= false
         observed_indices = findall(observed)
         vmp = fit_projected_vmp(counts, observed_indices, config)
-        # budget-matched ablation: a single sweep roughly matches NGMP's
-        # wall-clock (the standard arm spends its time on 20 sweeps of
-        # per-edge manifold projections); metrics table only, no figures
+        # budget-matched ablation: the full 20-sweep schedule, but each
+        # ProjectedTo call gets a SINGLE inner optimizer step (the standard
+        # arm's cost is dominated by the ~100-step inner projections);
+        # metrics table only, no figures
         vmp1 = fit_projected_vmp(
-            counts, observed_indices, merge(config, (iterations = 1,));
+            counts, observed_indices,
+            merge(config, (projection_iterations = 1,));
             free_energy = false,
         )
         ngmp = fit_ngmp(counts, observed_indices, config)

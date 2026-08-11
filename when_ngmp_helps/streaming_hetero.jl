@@ -28,13 +28,14 @@ using Printf
 
 import LinearAlgebra: logdet, Symmetric
 
-# (arm key, ReactiveMP method, sweeps per fit). The one-sweep projected-VMP
-# arm roughly matches NGMP's wall-clock budget: the standard VMP arm spends
-# ~10x NGMP's time on its per-edge manifold projections.
+# (arm key, ReactiveMP method, sweeps per fit, inner projection iterations).
+# The pvmp1 arm keeps the full 240-sweep schedule but gives each ProjectedTo
+# call a SINGLE inner Manopt step (instead of the default 100) — the
+# budget-matched control: VMP's cost is dominated by the inner projections.
 const STREAMING_ARMS = (
-    (key = "pvmp", method = "VMP", iterations = 240),
-    (key = "pvmp1", method = "VMP", iterations = 1),
-    (key = "ngmp", method = "NGMP-cavity", iterations = 240),
+    (key = "pvmp", method = "VMP", iterations = 240, projection_iterations = 100),
+    (key = "pvmp1", method = "VMP", iterations = 240, projection_iterations = 1),
+    (key = "ngmp", method = "NGMP-cavity", iterations = 240, projection_iterations = 100),
 )
 
 const ARM_STYLES = Dict(
@@ -54,7 +55,10 @@ const PANEL_STEMS = Dict(
 
 _logdet_cov(q) = logdet(Symmetric(Matrix(mean_cov(q)[2])))
 
-_arm_config(arm, config) = merge(config, (iterations = arm.iterations,))
+_arm_config(arm, config) = merge(config, (
+    iterations = arm.iterations,
+    projection_iterations = arm.projection_iterations,
+))
 
 function streaming_config(smoke)
     return (
@@ -240,19 +244,32 @@ function streaming_prediction_panel(panel_frame, train, label, style)
     return panel
 end
 
-# One-off Bethe pass for the cavity arm alone: reruns ONLY the NGMP fits with
-# free_energy = true (the VMP arms are ~10× slower and their traces are
-# already recorded) and merges the rows into streaming_hetero_free_energy.csv.
-# Newer full compute() runs record all arms directly, making this obsolete.
-function compute_ngmp_free_energy()
+_merge_arm_rows(filename, key, rows) = begin
+    path = joinpath(RESULT_DIR, filename)
+    existing = isfile(path) ?
+        filter(row -> row.arm != key, CSV.read(path, DataFrame)) :
+        DataFrame()
+    CSV.write(path, vcat(existing, DataFrame(rows)))
+end
+
+# One-off refresh of a SINGLE arm (`--refresh-arm <key>`): reruns only that
+# arm's fits and merges its rows into the runs/track/free-energy CSVs,
+# leaving the other (possibly much slower) arms' recorded results untouched.
+# Prediction-panel rows are refreshed too when the arm has panels.
+function refresh_arm(key)
     ensure_outputs()
     config = streaming_config(smoke_mode())
     feature_map = make_feature_map(
         config.n_basis, config.aleatoric_lengthscale;
         feature_seed = config.feature_seed,
     )
-    arm = STREAMING_ARMS[findfirst(arm -> arm.key == "ngmp", STREAMING_ARMS)]
-    rows = NamedTuple[]
+    grid = collect(range(-3.0, 3.0; length = 241))
+    grid_rows = design(feature_map, grid)
+    arm = STREAMING_ARMS[findfirst(arm -> arm.key == key, STREAMING_ARMS)]
+    runs_rows = NamedTuple[]
+    track_rows = NamedTuple[]
+    fe_rows = NamedTuple[]
+    panel_rows = NamedTuple[]
     for repetition in 1:config.repetitions
         data = aleatoric_data(config, StableRNG(config.seed + repetition - 1))
         order = randperm(StableRNG(1000 + repetition), length(data.y_train))
@@ -260,29 +277,61 @@ function compute_ngmp_free_energy()
         sequential = streaming_sequential(
             arm, data, order, feature_map, config; free_energy = true,
         )
+        test_rows = design(feature_map, data.x_test)
+        seq_prediction = predict(sequential.fit, test_rows, config.top_carrier)
+        seq_rmse = sqrt(mean(abs2.(seq_prediction.mean .- data.y_test)))
+        push!(runs_rows, (;
+            repetition, arm = arm.key,
+            full_logpdf = full.logpdf,
+            full_rmse = full.rmse,
+            full_logdet_w = full.logdet_w,
+            sequential_logpdf = last(sequential.logpdfs),
+            sequential_rmse = seq_rmse,
+            streaming_penalty = last(sequential.logpdfs) - full.logpdf,
+        ))
+        for batch in 1:config.n_batches
+            push!(track_rows, (;
+                repetition, arm = arm.key, batch,
+                logpdf = sequential.logpdfs[batch],
+                logdet_w = sequential.logdets_w[batch],
+            ))
+        end
         for (iteration, value) in enumerate(full.free_energy)
-            push!(rows, (;
+            push!(fe_rows, (;
                 repetition, arm = arm.key, mode = "full", batch = 0,
                 iteration, free_energy = value, n_obs = full.n_obs,
             ))
         end
         for batch in 1:config.n_batches
             for (iteration, value) in enumerate(sequential.free_energies[batch])
-                push!(rows, (;
+                push!(fe_rows, (;
                     repetition, arm = arm.key, mode = "sequential", batch,
                     iteration, free_energy = value,
                     n_obs = sequential.batch_sizes[batch],
                 ))
             end
         end
-        @printf("completed NGMP FE seed %d/%d\n", repetition, config.repetitions)
+        if repetition == 1 && haskey(PANEL_STEMS, (arm.key, "full"))
+            for (mode, fit) in (("full", full.fit), ("sequential", sequential.fit))
+                prediction = predict(fit, grid_rows, config.top_carrier)
+                append!(panel_rows, [
+                    (;
+                        arm = arm.key, mode, x = grid[i],
+                        pred_mean = prediction.mean[i],
+                        pred_total_variance = prediction.total_variance[i],
+                    )
+                    for i in eachindex(grid)
+                ])
+            end
+        end
+        @printf("refreshed %s seed %d/%d\n", key, repetition, config.repetitions)
         flush(stdout)
     end
-    path = joinpath(RESULT_DIR, "streaming_hetero_free_energy.csv")
-    existing = isfile(path) ?
-        filter(row -> row.arm != arm.key, CSV.read(path, DataFrame)) :
-        DataFrame()
-    CSV.write(path, vcat(existing, DataFrame(rows)))
+    _merge_arm_rows("streaming_hetero_runs.csv", key, runs_rows)
+    _merge_arm_rows("streaming_hetero_track.csv", key, track_rows)
+    _merge_arm_rows("streaming_hetero_free_energy.csv", key, fe_rows)
+    isempty(panel_rows) ||
+        _merge_arm_rows("streaming_hetero_panels.csv", key, panel_rows)
 end
 
 # Bethe free-energy convergence: shows the streaming comparison probes fixed
@@ -431,7 +480,7 @@ function render()
     # collapse trajectory: log det Σ_w over batches + full-batch references
     collapse = plot(;
         xlabel = "batch",
-        ylabel = "log det Σ_w",
+        ylabel = "\$\\log \\det \\Sigma_w\$",
         legend = :topright,
         left_margin = 5Plots.mm,
     )
@@ -462,10 +511,11 @@ function render()
 end
 
 function streaming_main()
-    if "--ngmp-fe" in ARGS
-        compute_ngmp_free_energy()
+    position = findfirst(==("--refresh-arm"), ARGS)
+    if position !== nothing
+        refresh_arm(ARGS[position + 1])
         # re-render only when the study's other artifacts are present
-        isfile(joinpath(RESULT_DIR, "streaming_hetero_runs.csv")) && render()
+        isfile(joinpath(RESULT_DIR, "streaming_hetero_train.csv")) && render()
         return
     end
     render_only() || compute()

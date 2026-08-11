@@ -33,7 +33,7 @@ const COLORS = (
 const METHOD_LABELS = (
     vmp = "VMP",              # plain mean-field VMP (exhibit 1)
     pvmp = "VMP",             # ProjectedTo arm (exhibits 2–3; paper calls both VMP)
-    pvmp1 = "VMP, 1 sweep",   # budget-matched ablation
+    pvmp1 = "VMP, 1-step projection",   # budget-matched ablation (1 inner Manopt step)
     ngmp = "NGMP",
     exact = "Exact moments",
 )
