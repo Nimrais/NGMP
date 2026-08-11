@@ -293,8 +293,9 @@ function summary_table(runs::DataFrame)
     )
 end
 
-format_pm(mean_value, std_value) =
-    @sprintf("%.4f ± %.4f", mean_value, std_value)
+"""Format a mean with its normal-approximation 95% CI half-width."""
+format_ci95(mean_value, standard_error) =
+    @sprintf("%.4f ± %.4f", mean_value, 1.96 * standard_error)
 
 function write_tables(summary::DataFrame, config::DVIConfig)
     isempty(summary) && return nothing
@@ -303,7 +304,7 @@ function write_tables(summary::DataFrame, config::DVIConfig)
     open(markdown_path, "w") do io
         println(
             io,
-            "| Dataset | Method | Likelihood | Runs | LPD (original) | RMSE | LPD (standardized) |",
+            "| Dataset | Method | Likelihood | Runs | LPD (original, 95% CI) | RMSE (95% CI) | LPD (standardized, 95% CI) |",
         )
         println(io, "|---|---:|---:|---:|---:|---:|---:|")
         for row in eachrow(summary)
@@ -311,9 +312,9 @@ function write_tables(summary::DataFrame, config::DVIConfig)
                 io,
                 "| $(row.dataset_name) | $(row.propagation) | " *
                 "$(row.likelihood) | $(row.n) | " *
-                "$(format_pm(row.lpd_original_mean, row.lpd_original_std)) | " *
-                "$(format_pm(row.rmse_original_mean, row.rmse_original_std)) | " *
-                "$(format_pm(row.lpd_standardized_mean, row.lpd_standardized_std)) |",
+                "$(format_ci95(row.lpd_original_mean, row.lpd_original_se)) | " *
+                "$(format_ci95(row.rmse_original_mean, row.rmse_original_se)) | " *
+                "$(format_ci95(row.lpd_standardized_mean, row.lpd_standardized_se)) |",
             )
         end
     end
@@ -324,7 +325,7 @@ function write_tables(summary::DataFrame, config::DVIConfig)
         println(io, "\\toprule")
         println(
             io,
-            "Dataset & Method & Likelihood & Runs & LPD (original) & RMSE \\\\",
+            "Dataset & Method & Likelihood & Runs & LPD (original, 95\\% CI) & RMSE (95\\% CI) \\\\",
         )
         println(io, "\\midrule")
         for row in eachrow(summary)
@@ -336,9 +337,9 @@ function write_tables(summary::DataFrame, config::DVIConfig)
                 @sprintf(
                     "%.4f \$\\pm\$ %.4f & %.4f \$\\pm\$ %.4f \\\\",
                     row.lpd_original_mean,
-                    row.lpd_original_std,
+                    1.96 * row.lpd_original_se,
                     row.rmse_original_mean,
-                    row.rmse_original_std,
+                    1.96 * row.rmse_original_se,
                 ),
             )
         end

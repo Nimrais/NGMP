@@ -332,15 +332,15 @@ function refresh_artifacts(runs::DataFrame, config::BPCConfig)
     atomic_csv_write(joinpath(config.output_dir, "summary.csv"), summary)
     path = joinpath(config.output_dir, "table.md")
     open(path, "w") do io
-        println(io, "| Dataset | Likelihood | Runs | LPD (original) | RMSE |")
+        println(io, "| Dataset | Likelihood | Runs | LPD (original, 95% CI) | RMSE (95% CI) |")
         println(io, "|---|---:|---:|---:|---:|")
         for row in eachrow(summary)
             @printf(
                 io,
                 "| %s | %s | %d | %.4f ± %.4f | %.4f ± %.4f |\n",
                 row.dataset_name, row.likelihood, row.n,
-                row.lpd_original_mean, row.lpd_original_std,
-                row.rmse_original_mean, row.rmse_original_std,
+                row.lpd_original_mean, 1.96 * row.lpd_original_se,
+                row.rmse_original_mean, 1.96 * row.rmse_original_se,
             )
         end
     end

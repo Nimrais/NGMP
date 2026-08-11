@@ -184,8 +184,9 @@ function summary_table(runs::DataFrame)
     return sort!(DataFrame(rows), [:dataset, :likelihood])
 end
 
-format_pm(mean_value, std_value) =
-    @sprintf("%.4f ± %.4f", mean_value, std_value)
+"""Format a mean with its normal-approximation 95% CI half-width."""
+format_ci95(mean_value, standard_error) =
+    @sprintf("%.4f ± %.4f", mean_value, 1.96 * standard_error)
 
 function write_tables(summary::DataFrame, config::BBBConfig)
     isempty(summary) && return nothing
@@ -193,15 +194,15 @@ function write_tables(summary::DataFrame, config::BBBConfig)
 
     markdown_path = joinpath(config.output_dir, "table.md")
     open(markdown_path, "w") do io
-        println(io, "| Dataset | Likelihood | Runs | LPD (original) | RMSE | LPD (standardized) |")
+        println(io, "| Dataset | Likelihood | Runs | LPD (original, 95% CI) | RMSE (95% CI) | LPD (standardized, 95% CI) |")
         println(io, "|---|---:|---:|---:|---:|---:|")
         for row in eachrow(summary)
             println(
                 io,
                 "| $(row.dataset_name) | $(row.likelihood) | $(row.n) | " *
-                "$(format_pm(row.lpd_original_mean, row.lpd_original_std)) | " *
-                "$(format_pm(row.rmse_original_mean, row.rmse_original_std)) | " *
-                "$(format_pm(row.lpd_standardized_mean, row.lpd_standardized_std)) |",
+                "$(format_ci95(row.lpd_original_mean, row.lpd_original_se)) | " *
+                "$(format_ci95(row.rmse_original_mean, row.rmse_original_se)) | " *
+                "$(format_ci95(row.lpd_standardized_mean, row.lpd_standardized_se)) |",
             )
         end
     end
@@ -210,7 +211,7 @@ function write_tables(summary::DataFrame, config::BBBConfig)
     open(latex_path, "w") do io
         println(io, "\\begin{tabular}{llrrr}")
         println(io, "\\toprule")
-        println(io, "Dataset & Likelihood & Runs & LPD (original) & RMSE \\\\")
+        println(io, "Dataset & Likelihood & Runs & LPD (original, 95\\% CI) & RMSE (95\\% CI) \\\\")
         println(io, "\\midrule")
         for row in eachrow(summary)
             dataset_name = replace(string(row.dataset_name), "_" => "\\_")
@@ -219,9 +220,9 @@ function write_tables(summary::DataFrame, config::BBBConfig)
                 "$dataset_name & $(row.likelihood) & $(row.n) & " *
                 @sprintf("%.4f \$\\pm\$ %.4f & %.4f \$\\pm\$ %.4f \\\\",
                     row.lpd_original_mean,
-                    row.lpd_original_std,
+                    1.96 * row.lpd_original_se,
                     row.rmse_original_mean,
-                    row.rmse_original_std,
+                    1.96 * row.rmse_original_se,
                 ),
             )
         end
