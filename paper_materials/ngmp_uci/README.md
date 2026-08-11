@@ -8,9 +8,8 @@ two heteroscedastic precision levels above the mean layer.
 - `runs.csv`: one row per dataset and split (120 successful runs).
 - `summary.csv`: mean, split standard deviation, and standard error.
 - `table.md` and `table.tex`: paper tables reporting mean ± approximate 95%
-  confidence-interval half-width (`1.96 × standard error`). This intentionally
-  corrects the BBB artifact table's use of standard deviation; the other author
-  will update that baseline separately.
+  confidence-interval half-width (`1.96 × standard error`), consistent with
+  the baseline tables.
 - `split_manifest.jld2`: exact shared split specifications.
 - `config.toml`: selected model and inference configuration.
 

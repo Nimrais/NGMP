@@ -10,7 +10,11 @@ struct ResultSource
     likelihood::String
     propagation::Union{Nothing,String}
     directory::String
+    success_status::String
 end
+
+ResultSource(method, likelihood, propagation, directory) =
+    ResultSource(method, likelihood, propagation, directory, "success")
 
 const PAPER_ROOT = @__DIR__
 const SOURCES = [
@@ -88,6 +92,13 @@ const SOURCES = [
             "tschantz2025_repeated_holdout_v1_20splits_homoscedastic_20260805",
         ),
     ),
+    ResultSource(
+        "NGMP-Hetero",
+        "heteroscedastic",
+        nothing,
+        joinpath(PAPER_ROOT, "ngmp_uci"),
+        "ok",
+    ),
 ]
 
 const DATASET_ORDER = [
@@ -143,10 +154,11 @@ function load_results(sources)
         isfile(summary_path) || error("missing summary: $summary_path")
         runs = CSV.read(runs_path, DataFrame)
         summary = CSV.read(summary_path, DataFrame)
-        selected_runs = filter(
-            row -> string(row.likelihood) == source.likelihood,
-            runs,
-        )
+        selected_runs = if hasproperty(runs, :likelihood)
+            filter(row -> string(row.likelihood) == source.likelihood, runs)
+        else
+            runs
+        end
         selected = filter(
             row -> string(row.likelihood) == source.likelihood,
             summary,
@@ -161,7 +173,7 @@ function load_results(sources)
         nrow(selected_runs) == length(DATASET_ORDER) * 20 || error(
             "$(source.method) must contain exactly 120 run rows",
         )
-        all(string.(selected_runs.status) .== "success") || error(
+        all(string.(selected_runs.status) .== source.success_status) || error(
             "$(source.method) contains a non-success run row",
         )
         for dataset in expected_datasets
@@ -198,9 +210,9 @@ function load_results(sources)
             results[key] = (
                 n = Int(row.n),
                 lpd_mean = Float64(row.lpd_original_mean),
-                lpd_std = Float64(row.lpd_original_std),
+                lpd_ci95 = 1.96 * Float64(row.lpd_original_se),
                 rmse_mean = Float64(row.rmse_original_mean),
-                rmse_std = Float64(row.rmse_original_std),
+                rmse_ci95 = 1.96 * Float64(row.rmse_original_se),
             )
         end
     end
@@ -212,13 +224,18 @@ function load_results(sources)
 end
 
 function render_markdown(io, sources, results)
-    println(io, "| Dataset | Method | Runs | LPD (original) | RMSE |")
+    println(io, "| Dataset | Method | Runs | LPD (original, 95% CI) | RMSE (95% CI) |")
     println(io, "|---|---|---:|---:|---:|")
     for (dataset, dataset_name) in DATASET_ORDER
+        rows = [results[(dataset, source.method)] for source in sources]
+        best_lpd = maximum(row.lpd_mean for row in rows)
+        best_rmse = minimum(row.rmse_mean for row in rows)
         for source in sources
             row = results[(dataset, source.method)]
-            lpd = @sprintf("%.4f ± %.4f", row.lpd_mean, row.lpd_std)
-            rmse = @sprintf("%.4f ± %.4f", row.rmse_mean, row.rmse_std)
+            lpd = @sprintf("%.4f ± %.4f", row.lpd_mean, row.lpd_ci95)
+            rmse = @sprintf("%.4f ± %.4f", row.rmse_mean, row.rmse_ci95)
+            row.lpd_mean + row.lpd_ci95 >= best_lpd && (lpd = "**$lpd**")
+            row.rmse_mean - row.rmse_ci95 <= best_rmse && (rmse = "**$rmse**")
             println(
                 io,
                 "| $dataset_name | $(source.method) | $(row.n) | $lpd | $rmse |",
