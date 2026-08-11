@@ -261,24 +261,36 @@ function streaming_free_energy_figures(fe_frame)
         linewidth = 2.2, fillalpha = 0.15,
         label = "$(method_label(:pvmp)), full batch")
 
-    sequential = filter(row -> row.mode == "sequential", per_observation)
-    n_batches = maximum(sequential.batch)
-    shades = cgrad(:Oranges_9)
+    # per batch: the CONVERGED (final-sweep) free energy of each sequential
+    # fit, mean ± CI over seeds
+    final_iteration = combine(
+        groupby(filter(row -> row.mode == "sequential", vmp), [:batch]),
+        :iteration => maximum => :iteration,
+    )
+    finals = combine(
+        groupby(
+            innerjoin(
+                filter(row -> row.mode == "sequential", vmp),
+                final_iteration;
+                on = [:batch, :iteration],
+            ),
+            :batch,
+        ),
+        [:free_energy, :n_obs] => ((f, n) -> mean(f ./ n)) => :center,
+        [:free_energy, :n_obs] => ((f, n) -> ci95(f ./ n)) => :ci95,
+    )
+    finals = sort(finals, :batch)
     sequential_panel = plot(;
-        xlabel = "iteration",
+        xlabel = "batch",
         ylabel = "Bethe free energy / observation",
         legend = :topright,
+        xticks = finals.batch,
         left_margin = 5Plots.mm,
     )
-    for batch in 1:n_batches
-        by_iteration = sort(
-            filter(row -> row.batch == batch, sequential), :iteration,
-        )
-        shade = get(shades, 0.35 + 0.65 * (batch - 1) / max(n_batches - 1, 1))
-        plot!(sequential_panel, by_iteration.iteration, by_iteration.center;
-            color = shade, linewidth = 1.8,
-            label = batch in (1, n_batches) ? "batch $batch" : "")
-    end
+    plot!(sequential_panel, finals.batch, finals.center;
+        ribbon = finals.ci95, color = COLORS.vmp, linestyle = :dash,
+        linewidth = 2.2, marker = :circle, markersize = 4, fillalpha = 0.15,
+        label = "$(method_label(:pvmp)), converged per batch")
     save_pdf(full_panel, "streaming_bethe_full")
     save_pdf(sequential_panel, "streaming_bethe_sequential")
     save_figure(
