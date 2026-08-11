@@ -591,10 +591,13 @@ function depth_profile_artifacts(holdout_frame, posterior_frame)
         )
         rows = filter(row -> row.method == method, rep1)
         variances = [
-            mean(
-                row.posterior_variance for row in eachrow(rows)
-                if _depth_bucket(depth1[row.index]) == bucket
-            )
+            begin
+                bucket_values = [
+                    row.posterior_variance for row in eachrow(rows)
+                    if _depth_bucket(depth1[row.index]) == bucket
+                ]
+                isempty(bucket_values) ? NaN : mean(bucket_values)
+            end
             for bucket in eachindex(labels)
         ]
         plot!(
@@ -714,7 +717,9 @@ function summarize_seed_metrics(metrics)
     rows = NamedTuple[]
     for repetition in sort(unique(metrics.repetition))
         for fraction in sort(unique(metrics.holdout_fraction))
-            for method in ("Projected VMP (mean-field)", "NGMP")
+            for method in (
+                "Projected VMP (mean-field)", "Projected VMP, 1 sweep", "NGMP",
+            )
                 selected = filter(
                     row -> row.repetition == repetition &&
                            row.holdout_fraction == fraction &&
@@ -739,7 +744,9 @@ end
 function summarize_metrics(seed_metrics)
     rows = NamedTuple[]
     for fraction in sort(unique(seed_metrics.holdout_fraction))
-        for method in ("Projected VMP (mean-field)", "NGMP")
+        for method in (
+            "Projected VMP (mean-field)", "Projected VMP, 1 sweep", "NGMP",
+        )
             selected = filter(
                 row -> row.holdout_fraction == fraction && row.method == method,
                 seed_metrics,
@@ -768,6 +775,11 @@ function wide_metrics(summary)
                    row.method == "Projected VMP (mean-field)",
             summary,
         )[1, :]
+        vmp1 = filter(
+            row -> row.holdout_fraction == fraction &&
+                   row.method == "Projected VMP, 1 sweep",
+            summary,
+        )[1, :]
         ngmp = filter(
             row -> row.holdout_fraction == fraction && row.method == "NGMP",
             summary,
@@ -776,10 +788,14 @@ function wide_metrics(summary)
             holdout_pct = round(Int, 100fraction),
             vmp_nll = vmp.mean_nll,
             vmp_nll_ci95 = vmp.nll_ci95,
+            vmp1_nll = vmp1.mean_nll,
+            vmp1_nll_ci95 = vmp1.nll_ci95,
             ngmp_nll = ngmp.mean_nll,
             ngmp_nll_ci95 = ngmp.nll_ci95,
             vmp_rmse = vmp.mean_rmse,
             vmp_rmse_ci95 = vmp.rmse_ci95,
+            vmp1_rmse = vmp1.mean_rmse,
+            vmp1_rmse_ci95 = vmp1.rmse_ci95,
             ngmp_rmse = ngmp.mean_rmse,
             ngmp_rmse_ci95 = ngmp.rmse_ci95,
         ))
@@ -790,20 +806,26 @@ end
 function write_latex_metrics_table(table)
     path = joinpath(RESULT_DIR, "poisson_state_space_metrics_table.tex")
     open(path, "w") do io
-        println(io, raw"\begin{tabular}{rcccc}")
+        println(io, raw"\begin{tabular}{rcccccc}")
         println(io, raw"\toprule")
-        println(io, "Held out & VMP NLL & NGMP NLL & VMP RMSE & NGMP RMSE \\\\")
+        println(io, " & \\multicolumn{3}{c}{NLL} & \\multicolumn{3}{c}{RMSE} \\\\")
+        println(io, raw"\cmidrule(lr){2-4} \cmidrule(lr){5-7}")
+        println(io, "Held out & VMP & VMP, 1 sweep & NGMP & VMP & VMP, 1 sweep & NGMP \\\\")
         println(io, raw"\midrule")
         for row in eachrow(table)
             println(io, @sprintf(
-                "%d\\%% & %.3f \$\\pm\$ %.3f & %.3f \$\\pm\$ %.3f & %.3f \$\\pm\$ %.3f & %.3f \$\\pm\$ %.3f \\\\",
+                "%d\\%% & %.3f \$\\pm\$ %.3f & %.3f \$\\pm\$ %.3f & %.3f \$\\pm\$ %.3f & %.3f \$\\pm\$ %.3f & %.3f \$\\pm\$ %.3f & %.3f \$\\pm\$ %.3f \\\\",
                 row.holdout_pct,
                 row.vmp_nll,
                 row.vmp_nll_ci95,
+                row.vmp1_nll,
+                row.vmp1_nll_ci95,
                 row.ngmp_nll,
                 row.ngmp_nll_ci95,
                 row.vmp_rmse,
                 row.vmp_rmse_ci95,
+                row.vmp1_rmse,
+                row.vmp1_rmse_ci95,
                 row.ngmp_rmse,
                 row.ngmp_rmse_ci95,
             ))
@@ -846,19 +868,23 @@ function caption_lines(summary, table, data_source, figure_fraction)
         "NLL uses the notebook plug-in predictive rate `exp(m + v/2)`; RMSE is computed from that rate and the held-out count within each mask.",
         "NLL and RMSE are shown as means ± 95% confidence intervals across $n_seeds mask seeds.",
         "",
-        "| Held out | Projected VMP NLL | NGMP NLL | Projected VMP RMSE | NGMP RMSE |",
-        "|---:|---:|---:|---:|---:|",
+        "| Held out | Projected VMP NLL | VMP 1-sweep NLL | NGMP NLL | Projected VMP RMSE | VMP 1-sweep RMSE | NGMP RMSE |",
+        "|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for row in eachrow(table)
         push!(lines, @sprintf(
-            "| %d%% | %.3f ± %.3f | %.3f ± %.3f | %.3f ± %.3f | %.3f ± %.3f |",
+            "| %d%% | %.3f ± %.3f | %.3f ± %.3f | %.3f ± %.3f | %.3f ± %.3f | %.3f ± %.3f | %.3f ± %.3f |",
             row.holdout_pct,
             row.vmp_nll,
             row.vmp_nll_ci95,
+            row.vmp1_nll,
+            row.vmp1_nll_ci95,
             row.ngmp_nll,
             row.ngmp_nll_ci95,
             row.vmp_rmse,
             row.vmp_rmse_ci95,
+            row.vmp1_rmse,
+            row.vmp1_rmse_ci95,
             row.ngmp_rmse,
             row.ngmp_rmse_ci95,
         ))
@@ -885,6 +911,13 @@ function run_mask_repetition(counts, years, config, repetition)
         observed[held_out] .= false
         observed_indices = findall(observed)
         vmp = fit_projected_vmp(counts, observed_indices, config)
+        # budget-matched ablation: a single sweep roughly matches NGMP's
+        # wall-clock (the standard arm spends its time on 20 sweeps of
+        # per-edge manifold projections); metrics table only, no figures
+        vmp1 = fit_projected_vmp(
+            counts, observed_indices, merge(config, (iterations = 1,));
+            free_energy = false,
+        )
         ngmp = fit_ngmp(counts, observed_indices, config)
 
         if repetition == 1
@@ -896,6 +929,7 @@ function run_mask_repetition(counts, years, config, repetition)
 
         for (method, fit) in (
             ("Projected VMP (mean-field)", vmp),
+            ("Projected VMP, 1 sweep", vmp1),
             ("NGMP", ngmp),
         )
             scores = predictive_metrics(fit.mean, fit.variance, counts, held_out)
