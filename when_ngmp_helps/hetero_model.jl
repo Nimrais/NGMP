@@ -139,7 +139,7 @@ end
 # fitting
 # ---------------------------------------------------------------------------
 
-function fit_arm(method, observations, rows, priors, config)
+function fit_arm(method, observations, rows, priors, config; free_energy = false)
     states = initial_marginals(priors, rows, config.top_carrier)
     initialization = @initialization begin
         q(v) = deepcopy(priors.v)
@@ -185,14 +185,17 @@ function fit_arm(method, observations, rows, priors, config)
             initialization = cavity_initialization,
             returnvars = (v = KeepLast(), w = KeepLast()),
             iterations = config.iterations,
-            free_energy = false,
+            # free_energy = true evaluates the surrogate Bethe diagnostic via
+            # the moment-matched joint (μ, s) cluster marginal (cavity.jl)
+            free_energy = free_energy,
             showprogress = false,
             options = (limit_stack_depth = 100,),
         )
         return (;
             qv = result.posteriors[:v],
             qw = result.posteriors[:w],
-            free_energy = Float64[],
+            free_energy = free_energy ? collect(Float64.(result.free_energy)) :
+                Float64[],
             elapsed,
         )
     elseif method == "NGMP"

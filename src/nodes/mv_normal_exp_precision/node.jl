@@ -44,8 +44,10 @@ import LinearAlgebra: Diagonal, diag, dot
 # naming both in `NGMPDependencies(s = nothing, μ = nothing)` activates the
 # CAVITY-based rules in rules/cavity.jl — the true NGMP messages that project
 # the exact BP log-messages (with the determinant correction) instead of the
-# expected-log-factor sites; those need a quadrature/unscented projection and
-# run with `free_energy = false` (no joint (μ, s) marginal rule is provided).
+# expected-log-factor sites; those need a quadrature/unscented projection.
+# `free_energy = true` works on the cavity graph via the moment-matched joint
+# (μ, s) cluster marginal + average energy in rules/cavity.jl (a surrogate
+# Bethe diagnostic, scalar edges only).
 # ============================================================================
 """
 MvNormalExpPrecision — multivariate Gaussian with per-dimension log-precision.

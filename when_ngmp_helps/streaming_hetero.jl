@@ -56,51 +56,8 @@ _logdet_cov(q) = logdet(Symmetric(Matrix(mean_cov(q)[2])))
 
 _arm_config(arm, config) = merge(config, (iterations = arm.iterations,))
 
-function streaming_sequential(arm, data, order, feature_map, config)
-    arm_config = _arm_config(arm, config)
-    n_train = length(data.y_train)
-    bounds = round.(Int, range(0, n_train; length = config.n_batches + 1))
-    test_rows = design(feature_map, data.x_test)
-    priors = make_priors(config, data.x_train, data.y_train)
-    logpdfs = Float64[]
-    logdets_w = Float64[]
-    free_energies = Vector{Float64}[]
-    batch_sizes = Int[]
-    local fit
-    for batch in 1:config.n_batches
-        indices = order[(bounds[batch] + 1):bounds[batch + 1]]
-        rows = design(feature_map, data.x_train[indices])
-        fit = fit_arm(arm.method, data.y_train[indices], rows, priors, arm_config)
-        priors = (; v = fit.qv, w = fit.qw)
-        prediction = predict(fit, test_rows, config.top_carrier)
-        push!(logpdfs, mean_predictive_logpdf(prediction, data.y_test))
-        push!(logdets_w, _logdet_cov(fit.qw))
-        push!(free_energies, fit.free_energy)
-        push!(batch_sizes, length(indices))
-    end
-    return (; logpdfs, logdets_w, free_energies, batch_sizes, fit)
-end
-
-function streaming_full(arm, data, feature_map, config)
-    rows = design(feature_map, data.x_train)
-    test_rows = design(feature_map, data.x_test)
-    priors = make_priors(config, data.x_train, data.y_train)
-    fit = fit_arm(arm.method, data.y_train, rows, priors, _arm_config(arm, config))
-    prediction = predict(fit, test_rows, config.top_carrier)
-    return (;
-        logpdf = mean_predictive_logpdf(prediction, data.y_test),
-        rmse = sqrt(mean(abs2.(prediction.mean .- data.y_test))),
-        logdet_w = _logdet_cov(fit.qw),
-        free_energy = fit.free_energy,
-        n_obs = length(data.y_train),
-        fit,
-    )
-end
-
-function compute()
-    ensure_outputs()
-    smoke = smoke_mode()
-    config = (
+function streaming_config(smoke)
+    return (
         smoke,
         seed = 42,
         repetitions = smoke ? 2 : 20,
@@ -119,6 +76,58 @@ function compute()
         cavity_quadrature = 32,
         n_batches = 10,
     )
+end
+
+function streaming_sequential(arm, data, order, feature_map, config; free_energy = false)
+    arm_config = _arm_config(arm, config)
+    n_train = length(data.y_train)
+    bounds = round.(Int, range(0, n_train; length = config.n_batches + 1))
+    test_rows = design(feature_map, data.x_test)
+    priors = make_priors(config, data.x_train, data.y_train)
+    logpdfs = Float64[]
+    logdets_w = Float64[]
+    free_energies = Vector{Float64}[]
+    batch_sizes = Int[]
+    local fit
+    for batch in 1:config.n_batches
+        indices = order[(bounds[batch] + 1):bounds[batch + 1]]
+        rows = design(feature_map, data.x_train[indices])
+        fit = fit_arm(
+            arm.method, data.y_train[indices], rows, priors, arm_config;
+            free_energy,
+        )
+        priors = (; v = fit.qv, w = fit.qw)
+        prediction = predict(fit, test_rows, config.top_carrier)
+        push!(logpdfs, mean_predictive_logpdf(prediction, data.y_test))
+        push!(logdets_w, _logdet_cov(fit.qw))
+        push!(free_energies, fit.free_energy)
+        push!(batch_sizes, length(indices))
+    end
+    return (; logpdfs, logdets_w, free_energies, batch_sizes, fit)
+end
+
+function streaming_full(arm, data, feature_map, config; free_energy = false)
+    rows = design(feature_map, data.x_train)
+    test_rows = design(feature_map, data.x_test)
+    priors = make_priors(config, data.x_train, data.y_train)
+    fit = fit_arm(
+        arm.method, data.y_train, rows, priors, _arm_config(arm, config);
+        free_energy,
+    )
+    prediction = predict(fit, test_rows, config.top_carrier)
+    return (;
+        logpdf = mean_predictive_logpdf(prediction, data.y_test),
+        rmse = sqrt(mean(abs2.(prediction.mean .- data.y_test))),
+        logdet_w = _logdet_cov(fit.qw),
+        free_energy = fit.free_energy,
+        n_obs = length(data.y_train),
+        fit,
+    )
+end
+
+function compute()
+    ensure_outputs()
+    config = streaming_config(smoke_mode())
     feature_map = make_feature_map(
         config.n_basis, config.aleatoric_lengthscale;
         feature_seed = config.feature_seed,
@@ -141,8 +150,10 @@ function compute()
             ])
         end
         for arm in STREAMING_ARMS
-            full = streaming_full(arm, data, feature_map, config)
-            sequential = streaming_sequential(arm, data, order, feature_map, config)
+            full = streaming_full(arm, data, feature_map, config; free_energy = true)
+            sequential = streaming_sequential(
+                arm, data, order, feature_map, config; free_energy = true,
+            )
             test_rows = design(feature_map, data.x_test)
             seq_prediction = predict(sequential.fit, test_rows, config.top_carrier)
             seq_rmse = sqrt(mean(abs2.(seq_prediction.mean .- data.y_test)))
@@ -229,68 +240,121 @@ function streaming_prediction_panel(panel_frame, train, label, style)
     return panel
 end
 
-# Bethe free-energy convergence of the projected-VMP arm: shows the streaming
-# comparison probes fixed points, not truncation artifacts — the one
-# full-batch fit and each of the ten sequential fits all flatten well within
-# the sweep budget, so no further variational iteration could improve the
-# mean-field arm. (The cavity-NGMP arm has no tractable Bethe evaluation.)
-function streaming_free_energy_figures(fe_frame)
-    vmp = filter(row -> row.arm == "pvmp", fe_frame)
-    isempty(vmp) && return
-    # the first sweeps start orders of magnitude higher and would flatten the
-    # plateau view
-    start = min(3, maximum(vmp.iteration))
-    per_observation = combine(
-        groupby(
-            filter(row -> row.iteration >= start, vmp),
-            [:mode, :batch, :iteration],
-        ),
-        [:free_energy, :n_obs] => ((f, n) -> mean(f ./ n)) => :center,
-        [:free_energy, :n_obs] => ((f, n) -> ci95(f ./ n)) => :ci95,
+# One-off Bethe pass for the cavity arm alone: reruns ONLY the NGMP fits with
+# free_energy = true (the VMP arms are ~10× slower and their traces are
+# already recorded) and merges the rows into streaming_hetero_free_energy.csv.
+# Newer full compute() runs record all arms directly, making this obsolete.
+function compute_ngmp_free_energy()
+    ensure_outputs()
+    config = streaming_config(smoke_mode())
+    feature_map = make_feature_map(
+        config.n_basis, config.aleatoric_lengthscale;
+        feature_seed = config.feature_seed,
     )
+    arm = STREAMING_ARMS[findfirst(arm -> arm.key == "ngmp", STREAMING_ARMS)]
+    rows = NamedTuple[]
+    for repetition in 1:config.repetitions
+        data = aleatoric_data(config, StableRNG(config.seed + repetition - 1))
+        order = randperm(StableRNG(1000 + repetition), length(data.y_train))
+        full = streaming_full(arm, data, feature_map, config; free_energy = true)
+        sequential = streaming_sequential(
+            arm, data, order, feature_map, config; free_energy = true,
+        )
+        for (iteration, value) in enumerate(full.free_energy)
+            push!(rows, (;
+                repetition, arm = arm.key, mode = "full", batch = 0,
+                iteration, free_energy = value, n_obs = full.n_obs,
+            ))
+        end
+        for batch in 1:config.n_batches
+            for (iteration, value) in enumerate(sequential.free_energies[batch])
+                push!(rows, (;
+                    repetition, arm = arm.key, mode = "sequential", batch,
+                    iteration, free_energy = value,
+                    n_obs = sequential.batch_sizes[batch],
+                ))
+            end
+        end
+        @printf("completed NGMP FE seed %d/%d\n", repetition, config.repetitions)
+        flush(stdout)
+    end
+    path = joinpath(RESULT_DIR, "streaming_hetero_free_energy.csv")
+    existing = isfile(path) ?
+        filter(row -> row.arm != arm.key, CSV.read(path, DataFrame)) :
+        DataFrame()
+    CSV.write(path, vcat(existing, DataFrame(rows)))
+end
 
-    full = sort(filter(row -> row.mode == "full", per_observation), :iteration)
+# Bethe free-energy convergence: shows the streaming comparison probes fixed
+# points, not truncation artifacts. The VMP trace is that arm's variational
+# objective; the NGMP trace is the surrogate Bethe diagnostic evaluated
+# through the moment-matched joint (μ, s) cluster marginals (cavity.jl).
+function streaming_free_energy_figures(fe_frame)
     full_panel = plot(;
         xlabel = "iteration",
         ylabel = "Bethe free energy / observation",
         legend = :topright,
         left_margin = 5Plots.mm,
     )
-    plot!(full_panel, full.iteration, full.center;
-        ribbon = full.ci95, color = COLORS.vmp, linestyle = :dash,
-        linewidth = 2.2, fillalpha = 0.15,
-        label = "$(method_label(:pvmp)), full batch")
-
-    # per batch: the CONVERGED (final-sweep) free energy of each sequential
-    # fit, mean ± CI over seeds
-    final_iteration = combine(
-        groupby(filter(row -> row.mode == "sequential", vmp), [:batch]),
-        :iteration => maximum => :iteration,
-    )
-    finals = combine(
-        groupby(
-            innerjoin(
-                filter(row -> row.mode == "sequential", vmp),
-                final_iteration;
-                on = [:batch, :iteration],
-            ),
-            :batch,
-        ),
-        [:free_energy, :n_obs] => ((f, n) -> mean(f ./ n)) => :center,
-        [:free_energy, :n_obs] => ((f, n) -> ci95(f ./ n)) => :ci95,
-    )
-    finals = sort(finals, :batch)
     sequential_panel = plot(;
         xlabel = "batch",
         ylabel = "Bethe free energy / observation",
         legend = :topright,
-        xticks = finals.batch,
         left_margin = 5Plots.mm,
     )
-    plot!(sequential_panel, finals.batch, finals.center;
-        ribbon = finals.ci95, color = COLORS.vmp, linestyle = :dash,
-        linewidth = 2.2, marker = :circle, markersize = 4, fillalpha = 0.15,
-        label = "$(method_label(:pvmp)), converged per batch")
+    drew = false
+    for key in ("pvmp", "ngmp")
+        arm_rows = filter(row -> row.arm == key, fe_frame)
+        isempty(arm_rows) && continue
+        drew = true
+        style = ARM_STYLES[key]
+        # the first sweeps start orders of magnitude higher and would flatten
+        # the plateau view
+        start = min(3, maximum(arm_rows.iteration))
+        full = sort(
+            combine(
+                groupby(
+                    filter(
+                        row -> row.mode == "full" && row.iteration >= start,
+                        arm_rows,
+                    ),
+                    :iteration,
+                ),
+                [:free_energy, :n_obs] => ((f, n) -> mean(f ./ n)) => :center,
+                [:free_energy, :n_obs] => ((f, n) -> ci95(f ./ n)) => :ci95,
+            ),
+            :iteration,
+        )
+        plot!(full_panel, full.iteration, full.center;
+            ribbon = full.ci95, color = style.color,
+            linestyle = style.linestyle, linewidth = 2.2, fillalpha = 0.15,
+            label = "$(method_label(key)), full batch")
+
+        # per batch: the CONVERGED (final-sweep) free energy of each
+        # sequential fit, mean ± CI over seeds
+        sequential = filter(row -> row.mode == "sequential", arm_rows)
+        final_iteration = combine(
+            groupby(sequential, [:batch]),
+            :iteration => maximum => :iteration,
+        )
+        finals = sort(
+            combine(
+                groupby(
+                    innerjoin(sequential, final_iteration; on = [:batch, :iteration]),
+                    :batch,
+                ),
+                [:free_energy, :n_obs] => ((f, n) -> mean(f ./ n)) => :center,
+                [:free_energy, :n_obs] => ((f, n) -> ci95(f ./ n)) => :ci95,
+            ),
+            :batch,
+        )
+        plot!(sequential_panel, finals.batch, finals.center;
+            ribbon = finals.ci95, color = style.color,
+            linestyle = style.linestyle, linewidth = 2.2, marker = :circle,
+            markersize = 4, fillalpha = 0.15, xticks = finals.batch,
+            label = "$(method_label(key)), converged per batch")
+    end
+    drew || return
     save_pdf(full_panel, "streaming_bethe_full")
     save_pdf(sequential_panel, "streaming_bethe_sequential")
     save_figure(
@@ -398,6 +462,12 @@ function render()
 end
 
 function streaming_main()
+    if "--ngmp-fe" in ARGS
+        compute_ngmp_free_energy()
+        # re-render only when the study's other artifacts are present
+        isfile(joinpath(RESULT_DIR, "streaming_hetero_runs.csv")) && render()
+        return
+    end
     render_only() || compute()
     render()
 end

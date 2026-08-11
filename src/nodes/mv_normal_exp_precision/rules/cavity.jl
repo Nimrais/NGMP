@@ -57,3 +57,74 @@ end
     site = project(resolve_projection(getprojection(vconstraint)), q_μ, exact)
     return NaturalGradientMP.apply_damping!(meta, site)
 end
+
+# --- Bethe diagnostics for the cavity configuration --------------------------
+#
+# The joint cluster marginal q(μ, s) ∝ m_μ(μ) m_s(s) 𝒩(y | μ, e^{-s}) is a
+# continuous Gaussian mixture over s (conditional on s the μ-factor is
+# conjugate). Moment-match it to a 2-D Gaussian on a dense s-grid; together
+# with the closed-form average energy below this makes `free_energy = true`
+# usable on the cavity graph. Like the Poisson NGMP trace, the result is a
+# surrogate Bethe diagnostic — the local objects change between sweeps, so
+# it certifies stability, not descent of VMP's objective.
+
+@marginalrule MvNormalExpPrecision(:μ_s) (
+    m_μ::UnivariateNormalDistributionsFamily,
+    m_s::UnivariateNormalDistributionsFamily,
+    q_out::PointMass,
+    meta::Any,
+) = begin
+    y = mean(q_out)
+    mμ, vμ = mean_var(m_μ)
+    ms, vs = mean_var(m_s)
+    # diagnostic-only regularization: transiently improper incoming messages
+    # must not crash the free-energy observer
+    vμ = (isfinite(vμ) && vμ > 0) ? vμ : 1e-8
+    vs = (isfinite(vs) && vs > 0) ? vs : 1e-8
+    sd = sqrt(vs)
+    points = collect(range(ms - 8sd, ms + 8sd; length = 129))
+    precisions = exp.(_mnep_clamp_exponent.(points))
+    variances = exp.(_mnep_clamp_exponent.(.-points))
+    log_weights = [
+        -abs2(s - ms) / (2vs) -
+        (log(vμ + variances[i]) + abs2(y - mμ) / (vμ + variances[i])) / 2
+        for (i, s) in enumerate(points)
+    ]
+    log_weights .-= maximum(log_weights)
+    weights = exp.(log_weights)
+    weights ./= sum(weights)
+    conditional_precision = inv(vμ) .+ precisions
+    conditional_mean = (mμ / vμ .+ precisions .* y) ./ conditional_precision
+    conditional_variance = inv.(conditional_precision)
+    Eμ = sum(weights .* conditional_mean)
+    Es = sum(weights .* points)
+    Vμ = max(
+        sum(weights .* (conditional_variance .+ conditional_mean .^ 2)) - Eμ^2,
+        1e-12,
+    )
+    Vs = max(sum(weights .* points .^ 2) - Es^2, 1e-12)
+    C = sum(weights .* points .* conditional_mean) - Es * Eμ
+    # keep the matched covariance strictly PSD
+    limit = 0.999 * sqrt(Vμ * Vs)
+    C = clamp(C, -limit, limit)
+    return MvNormalMeanCovariance([Eμ, Es], [Vμ C; C Vs])
+end
+
+# U = E_q[−log f] under the joint cluster Gaussian, closed form via the
+# lognormal tilt: with a = y − μ, E[e^s a²] = e^{E[s]+V[s]/2}·((y−E[μ]−c)² + V[μ])
+# where c = Cov(μ, s) (tilting by e^s shifts a by Cov(a, s) = −c).
+@average_energy MvNormalExpPrecision (
+    q_out::PointMass,
+    q_μ_s::MultivariateNormalDistributionsFamily,
+    meta::Any,
+) = begin
+    y = mean(q_out)
+    m, V = mean_cov(q_μ_s)
+    length(m) == 2 || error(
+        "the joint (μ, s) average energy of MvNormalExpPrecision is scalar-edge only",
+    )
+    mμ, ms = m
+    vμ, vs, c = V[1, 1], V[2, 2], V[1, 2]
+    ρ = exp(_mnep_clamp_exponent(ms + vs / 2))
+    return log(2π) / 2 - ms / 2 + ρ * (abs2(y - mμ - c) + vμ) / 2
+end
