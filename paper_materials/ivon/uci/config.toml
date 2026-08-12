@@ -1,0 +1,39 @@
+activation = "relu"
+batch_size = 100
+benchmark = "IVON on the BBB homoscedastic UCI protocol"
+config_fingerprint = "39062e26841050384dd52f98fa4d8d10246dec7729084007e687a4ba764c610b"
+datasets = ["yacht", "concrete", "energy", "housing", "power", "wine"]
+ess_multipliers = [1, 100]
+eval_posterior_samples = 20
+hidden_layers = 2
+hidden_units = 50
+julia_version = "1.11.9"
+learning_rates = [0.001, 0.01, 0.1]
+likelihood = "homoscedastic Gaussian"
+max_epochs = 500
+min_epochs = 25
+model_base_seed = 20260727
+n_splits = 20
+output_root = "paper_materials/ivon/uci"
+patience = 20
+schema_version = "ivon-uci-v1"
+split_base_seed = 20260726
+split_protocol = "repeated-holdout-v1"
+standardized_observation_variance = 1.0
+train_posterior_samples = 1
+validation_every = 5
+
+[ivon]
+beta1 = 0.9
+beta2 = 0.9999
+debias = true
+hess_approx = "price"
+hess_init = 0.1
+mc_samples = 1
+rescale_lr = true
+weight_decay = 0.0001
+
+[selected_ivon]
+ess_multiplier = 100
+learning_rate = 0.1
+selection_fingerprint = "449c9806926bc7670bb5b917232c40a21fd74a21d421d42df6f40b7485e62b7c"

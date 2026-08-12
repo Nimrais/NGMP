@@ -1,0 +1,39 @@
+activation = "relu"
+batch_size = 100
+benchmark = "IVON on the BBB homoscedastic UCI protocol"
+config_fingerprint = "0222fb001cd00e622286a9cd38e36aaf3a6bc1bfc5e1475c31e8ee60e35692e5"
+datasets = ["yacht"]
+ess_multipliers = [1, 100]
+eval_posterior_samples = 3
+hidden_layers = 2
+hidden_units = 50
+julia_version = "1.11.9"
+learning_rates = [0.001, 0.01, 0.1]
+likelihood = "homoscedastic Gaussian"
+max_epochs = 2
+min_epochs = 1
+model_base_seed = 20260727
+n_splits = 1
+output_root = "paper_materials/ivon/uci/smoke"
+patience = 2
+schema_version = "ivon-uci-v1"
+split_base_seed = 20260726
+split_protocol = "repeated-holdout-v1"
+standardized_observation_variance = 1.0
+train_posterior_samples = 1
+validation_every = 1
+
+[ivon]
+beta1 = 0.9
+beta2 = 0.9999
+debias = true
+hess_approx = "price"
+hess_init = 0.1
+mc_samples = 1
+rescale_lr = true
+weight_decay = 0.0001
+
+[selected_ivon]
+ess_multiplier = 1
+learning_rate = 0.01
+selection_fingerprint = "26bdac884a42c91e7eb6a120beb741809ee5e01b2891f9ee459daa9bca99b164"
