@@ -44,14 +44,30 @@ regenerates every paper figure and table without running any inference.
    once on all data (smoothing) versus on ten sequential batches with
    posterior-as-prior chaining (batching), 20 paired seeds, three arms
    (projected VMP, its one-sweep budget-matched ablation, and cavity/true
-   NGMP). Produces the four prediction panels
-   (`streaming_{vmp,cavity}_{full,sequential}`), the `q(w)` collapse figure
+   NGMP). Produces four prediction panels
+   (`streaming_{vmp,cavity}_{full,sequential}`), four posterior predictive
+   variance panels with pointwise credible intervals, mean-weight uncertainty,
+   and the true aleatoric variance
+   (`streaming_{vmp,cavity}_variance_{full,sequential}`), each exported as a
+   compact 480-by-320-point vector PDF (so axes and titles remain readable
+   when embedded at half-column width) and a 1200-by-800 PNG, in addition to
+   the combined 2-by-2 inspection figure. Curve semantics are stated in the
+   paper caption instead of repeated legends that obscure the panels,
+   the `q(w)` collapse figure
    (`streaming_collapse`), the projected-VMP Bethe free-energy convergence
    panels (`streaming_bethe_{full,sequential}` — evidence the comparison
    probes fixed points, not truncation), and the summary table.
 
 `hetero_model.jl` is a library (graph, `fit_arm` with the three inference
 arms, priors, prediction, aleatoric benchmark data); it has no entry point.
+
+The fitted variance-panel quantities are persisted in
+`results/streaming_hetero_panels.csv`. Regenerate the four standalone variance
+plots and the combined preview without rerunning inference using:
+
+```sh
+julia --project=. when_ngmp_helps/streaming_hetero.jl --render-only
+```
 
 ### NGMP-only latent-mean capacity diagnostic
 
@@ -69,8 +85,7 @@ julia --project=. when_ngmp_helps/ngmp_mean_capacity.jl
 Use `--repetitions N` or `--iterations N` for a different diagnostic budget;
 add `--vary-mean-feature-seed` to hold the data fixed and assess RFF-draw
 robustness. This script writes only `ngmp_mean_capacity_*` artifacts and is
-intentionally not part of `run_all.jl`, whose three paper exhibits retain
-their historical shared feature map.
+intentionally not part of `run_all.jl`.
 
 ## Method display names
 

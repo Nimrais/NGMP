@@ -24,6 +24,7 @@ const COLORS = (
     vmp1 = :peru,
     ngmp = :dodgerblue,
     truth = :gray35,
+    mean_uncertainty = :purple,
 )
 
 # Display names for the inference arms. CSVs and internal dispatch always
