@@ -3,7 +3,7 @@ using Test
 const STUDY_ROOT = normpath(joinpath(@__DIR__, ".."))
 const PROJECT_ROOT = dirname(STUDY_ROOT)
 
-# save_figure stems: pdf + png preview
+# save_figure stems: pdf + png artifacts
 const PREVIEW_STEMS = (
     "normal_kl_state",
     "normal_kl_precision",
@@ -11,6 +11,11 @@ const PREVIEW_STEMS = (
     "poisson_gap50",
     "poisson_depth_profile",
     "streaming_hetero_predictions",
+    "streaming_hetero_variances",
+    "streaming_vmp_variance_full",
+    "streaming_vmp_variance_sequential",
+    "streaming_cavity_variance_full",
+    "streaming_cavity_variance_sequential",
     "streaming_hetero_collapse",
     "streaming_hetero_free_energy",
 )
@@ -43,6 +48,7 @@ const RESULT_FILES = (
     "poisson_state_space_metrics.csv",
     "poisson_state_space_metrics_table.csv",
     "poisson_state_space_metrics_table.tex",
+    "poisson_state_space_metrics_table_full.tex",
     "poisson_state_space_free_energy.csv",
     "streaming_hetero_runs.csv",
     "streaming_hetero_track.csv",

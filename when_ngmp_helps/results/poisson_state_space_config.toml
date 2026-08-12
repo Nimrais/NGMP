@@ -1,4 +1,5 @@
 damping_beta = 0.2
+gap_half_width = 30
 holdout_seed = 42
 smoke_length = 144
 initial_variance = 10.0
@@ -12,4 +13,3 @@ process_variance = 0.1
 seed = 42
 holdout_fractions = [0.05, 0.1, 0.2, 0.5]
 smoke = false
-gap_half_width = 30

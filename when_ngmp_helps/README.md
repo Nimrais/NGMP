@@ -39,17 +39,53 @@ regenerates every paper figure and table without running any inference.
    Bethe free-energy panels (`poisson_bethe_heldout_*`). Overridable:
    `WHEN_NGMP_POISSON_REPETITIONS`.
 3. `streaming_hetero.jl`: the heteroscedastic hierarchy (model code in
-   `hetero_model.jl`) fitted once on all data (smoothing) versus on ten
-   sequential batches with posterior-as-prior chaining (batching), 20 paired
-   seeds, three arms (projected VMP, its one-sweep budget-matched ablation,
-   and cavity/true NGMP). Produces the four prediction panels
-   (`streaming_{vmp,cavity}_{full,sequential}`), the `q(w)` collapse figure
+   `hetero_model.jl`) with a Matérn-3/2 RFF-128 mean path (`signal_sd = 2`)
+   and a separately frozen RBF-32 log-precision path (`level_sd = 1.6`), fitted
+   once on all data (smoothing) versus on ten sequential batches with
+   posterior-as-prior chaining (batching), 20 paired seeds, three arms
+   (projected VMP, its one-sweep budget-matched ablation, and cavity/true
+   NGMP). Produces four prediction panels
+   (`streaming_{vmp,cavity}_{full,sequential}`), four posterior predictive
+   variance panels with pointwise credible intervals, mean-weight uncertainty,
+   and the true aleatoric variance
+   (`streaming_{vmp,cavity}_variance_{full,sequential}`), each exported as a
+   compact 480-by-320-point vector PDF (so axes and titles remain readable
+   when embedded at half-column width) and a 1200-by-800 PNG, in addition to
+   the combined 2-by-2 inspection figure. Curve semantics are stated in the
+   paper caption instead of repeated legends that obscure the panels,
+   the `q(w)` collapse figure
    (`streaming_collapse`), the projected-VMP Bethe free-energy convergence
    panels (`streaming_bethe_{full,sequential}` — evidence the comparison
    probes fixed points, not truncation), and the summary table.
 
 `hetero_model.jl` is a library (graph, `fit_arm` with the three inference
 arms, priors, prediction, aleatoric benchmark data); it has no entry point.
+
+The fitted variance-panel quantities are persisted in
+`results/streaming_hetero_panels.csv`. Regenerate the four standalone variance
+plots and the combined preview without rerunning inference using:
+
+```sh
+julia --project=. when_ngmp_helps/streaming_hetero.jl --render-only
+```
+
+### NGMP-only latent-mean capacity diagnostic
+
+`ngmp_mean_capacity.jl` isolates the heteroscedastic model's mean pathway
+without fitting either VMP arm. It tests a wider mean prior alone, 128 RBFs,
+and 128 Matérn-3/2 RFFs against the historical 32-feature RBF mean map. In
+every preset the exponentiated log-precision pathway remains fixed at its
+original 32 RBF features and prior scale. It reports RMSE against the
+benchmark's known latent mean in addition to noisy-observation RMSE/NLL:
+
+```sh
+julia --project=. when_ngmp_helps/ngmp_mean_capacity.jl
+```
+
+Use `--repetitions N` or `--iterations N` for a different diagnostic budget;
+add `--vary-mean-feature-seed` to hold the data fixed and assess RFF-draw
+robustness. This script writes only `ngmp_mean_capacity_*` artifacts and is
+intentionally not part of `run_all.jl`.
 
 ## Method display names
 
