@@ -1,0 +1,12 @@
+level_sd = 1.6
+level_n_basis = 32
+repetitions = 1
+aleatoric_samples = 600
+n_batches = 10
+presets = ["baseline", "wide32", "rbf128", "matern128"]
+mean_lengthscale = 0.25
+sweep_axis = "data_seed"
+iterations = 240
+level_kernel = "rbf"
+seed = 42
+smoke = false

@@ -51,6 +51,25 @@ regenerates every paper figure and table without running any inference.
 `hetero_model.jl` is a library (graph, `fit_arm` with the three inference
 arms, priors, prediction, aleatoric benchmark data); it has no entry point.
 
+### NGMP-only latent-mean capacity diagnostic
+
+`ngmp_mean_capacity.jl` isolates the heteroscedastic model's mean pathway
+without fitting either VMP arm. It tests a wider mean prior alone, 128 RBFs,
+and 128 Matérn-3/2 RFFs against the historical 32-feature RBF mean map. In
+every preset the exponentiated log-precision pathway remains fixed at its
+original 32 RBF features and prior scale. It reports RMSE against the
+benchmark's known latent mean in addition to noisy-observation RMSE/NLL:
+
+```sh
+julia --project=. when_ngmp_helps/ngmp_mean_capacity.jl
+```
+
+Use `--repetitions N` or `--iterations N` for a different diagnostic budget;
+add `--vary-mean-feature-seed` to hold the data fixed and assess RFF-draw
+robustness. This script writes only `ngmp_mean_capacity_*` artifacts and is
+intentionally not part of `run_all.jl`, whose three paper exhibits retain
+their historical shared feature map.
+
 ## Method display names
 
 Legends, table headers, and summaries never hardcode method names. The CSVs

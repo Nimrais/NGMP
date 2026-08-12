@@ -61,15 +61,27 @@ _arm_config(arm, config) = merge(config, (
 ))
 
 function streaming_config(smoke)
+    n_basis = smoke ? 6 : 32
     return (
         smoke,
         seed = 42,
         repetitions = smoke ? 2 : 20,
         holdout_fraction = 1 / 3,
         aleatoric_samples = smoke ? 90 : 600,
-        n_basis = smoke ? 6 : 32,
+        # Retain `n_basis` as the legacy shared-map setting. The explicit
+        # pathway settings let NGMP mean-capacity experiments leave the
+        # exponentiated variance path unchanged.
+        n_basis,
+        mean_n_basis = n_basis,
+        level_n_basis = n_basis,
         aleatoric_lengthscale = 0.25,
         feature_seed = 20260726,
+        mean_kernel = "rbf",
+        level_kernel = "rbf",
+        mean_lengthscale = 0.25,
+        level_lengthscale = 0.25,
+        mean_feature_seed = 20260726,
+        level_feature_seed = 20260726,
         signal_sd = 1.0,
         level_sd = 1.6,
         anchor_sd = 1.0,
@@ -82,11 +94,33 @@ function streaming_config(smoke)
     )
 end
 
-function streaming_sequential(arm, data, order, feature_map, config; free_energy = false)
+function make_streaming_feature_maps(config)
+    return (;
+        mean = make_feature_map(
+            get(config, :mean_n_basis, config.n_basis),
+            get(config, :mean_lengthscale, config.aleatoric_lengthscale);
+            feature_seed = get(config, :mean_feature_seed, config.feature_seed),
+            kernel = get(config, :mean_kernel, "rbf"),
+        ),
+        level = make_feature_map(
+            get(config, :level_n_basis, config.n_basis),
+            get(config, :level_lengthscale, config.aleatoric_lengthscale);
+            feature_seed = get(config, :level_feature_seed, config.feature_seed),
+            kernel = get(config, :level_kernel, "rbf"),
+        ),
+    )
+end
+
+design(feature_maps::NamedTuple, xs) = (;
+    mean = design(feature_maps.mean, xs),
+    level = design(feature_maps.level, xs),
+)
+
+function streaming_sequential(arm, data, order, feature_maps, config; free_energy = false)
     arm_config = _arm_config(arm, config)
     n_train = length(data.y_train)
     bounds = round.(Int, range(0, n_train; length = config.n_batches + 1))
-    test_rows = design(feature_map, data.x_test)
+    test_rows = design(feature_maps, data.x_test)
     priors = make_priors(config, data.x_train, data.y_train)
     logpdfs = Float64[]
     logdets_w = Float64[]
@@ -95,13 +129,23 @@ function streaming_sequential(arm, data, order, feature_map, config; free_energy
     local fit
     for batch in 1:config.n_batches
         indices = order[(bounds[batch] + 1):bounds[batch + 1]]
-        rows = design(feature_map, data.x_train[indices])
+        rows = design(feature_maps, data.x_train[indices])
         fit = fit_arm(
-            arm.method, data.y_train[indices], rows, priors, arm_config;
+            arm.method,
+            data.y_train[indices],
+            rows.mean,
+            rows.level,
+            priors,
+            arm_config;
             free_energy,
         )
         priors = (; v = fit.qv, w = fit.qw)
-        prediction = predict(fit, test_rows, config.top_carrier)
+        prediction = predict(
+            fit,
+            test_rows.mean,
+            test_rows.level,
+            config.top_carrier,
+        )
         push!(logpdfs, mean_predictive_logpdf(prediction, data.y_test))
         push!(logdets_w, _logdet_cov(fit.qw))
         push!(free_energies, fit.free_energy)
@@ -110,15 +154,25 @@ function streaming_sequential(arm, data, order, feature_map, config; free_energy
     return (; logpdfs, logdets_w, free_energies, batch_sizes, fit)
 end
 
-function streaming_full(arm, data, feature_map, config; free_energy = false)
-    rows = design(feature_map, data.x_train)
-    test_rows = design(feature_map, data.x_test)
+function streaming_full(arm, data, feature_maps, config; free_energy = false)
+    rows = design(feature_maps, data.x_train)
+    test_rows = design(feature_maps, data.x_test)
     priors = make_priors(config, data.x_train, data.y_train)
     fit = fit_arm(
-        arm.method, data.y_train, rows, priors, _arm_config(arm, config);
+        arm.method,
+        data.y_train,
+        rows.mean,
+        rows.level,
+        priors,
+        _arm_config(arm, config);
         free_energy,
     )
-    prediction = predict(fit, test_rows, config.top_carrier)
+    prediction = predict(
+        fit,
+        test_rows.mean,
+        test_rows.level,
+        config.top_carrier,
+    )
     return (;
         logpdf = mean_predictive_logpdf(prediction, data.y_test),
         rmse = sqrt(mean(abs2.(prediction.mean .- data.y_test))),
@@ -132,12 +186,9 @@ end
 function compute()
     ensure_outputs()
     config = streaming_config(smoke_mode())
-    feature_map = make_feature_map(
-        config.n_basis, config.aleatoric_lengthscale;
-        feature_seed = config.feature_seed,
-    )
+    feature_maps = make_streaming_feature_maps(config)
     grid = collect(range(-3.0, 3.0; length = 241))
-    grid_rows = design(feature_map, grid)
+    grid_rows = design(feature_maps, grid)
 
     rows_out = NamedTuple[]
     track_out = NamedTuple[]
@@ -154,12 +205,17 @@ function compute()
             ])
         end
         for arm in STREAMING_ARMS
-            full = streaming_full(arm, data, feature_map, config; free_energy = true)
+            full = streaming_full(arm, data, feature_maps, config; free_energy = true)
             sequential = streaming_sequential(
-                arm, data, order, feature_map, config; free_energy = true,
+                arm, data, order, feature_maps, config; free_energy = true,
             )
-            test_rows = design(feature_map, data.x_test)
-            seq_prediction = predict(sequential.fit, test_rows, config.top_carrier)
+            test_rows = design(feature_maps, data.x_test)
+            seq_prediction = predict(
+                sequential.fit,
+                test_rows.mean,
+                test_rows.level,
+                config.top_carrier,
+            )
             seq_rmse = sqrt(mean(abs2.(seq_prediction.mean .- data.y_test)))
             push!(rows_out, (;
                 repetition, arm = arm.key,
@@ -197,7 +253,12 @@ function compute()
             end
             if repetition == 1 && haskey(PANEL_STEMS, (arm.key, "full"))
                 for (mode, fit) in (("full", full.fit), ("sequential", sequential.fit))
-                    prediction = predict(fit, grid_rows, config.top_carrier)
+                    prediction = predict(
+                        fit,
+                        grid_rows.mean,
+                        grid_rows.level,
+                        config.top_carrier,
+                    )
                     append!(panel_rows, [
                         (;
                             arm = arm.key, mode, x = grid[i],
@@ -259,12 +320,9 @@ end
 function refresh_arm(key)
     ensure_outputs()
     config = streaming_config(smoke_mode())
-    feature_map = make_feature_map(
-        config.n_basis, config.aleatoric_lengthscale;
-        feature_seed = config.feature_seed,
-    )
+    feature_maps = make_streaming_feature_maps(config)
     grid = collect(range(-3.0, 3.0; length = 241))
-    grid_rows = design(feature_map, grid)
+    grid_rows = design(feature_maps, grid)
     arm = STREAMING_ARMS[findfirst(arm -> arm.key == key, STREAMING_ARMS)]
     runs_rows = NamedTuple[]
     track_rows = NamedTuple[]
@@ -273,12 +331,17 @@ function refresh_arm(key)
     for repetition in 1:config.repetitions
         data = aleatoric_data(config, StableRNG(config.seed + repetition - 1))
         order = randperm(StableRNG(1000 + repetition), length(data.y_train))
-        full = streaming_full(arm, data, feature_map, config; free_energy = true)
+        full = streaming_full(arm, data, feature_maps, config; free_energy = true)
         sequential = streaming_sequential(
-            arm, data, order, feature_map, config; free_energy = true,
+            arm, data, order, feature_maps, config; free_energy = true,
         )
-        test_rows = design(feature_map, data.x_test)
-        seq_prediction = predict(sequential.fit, test_rows, config.top_carrier)
+        test_rows = design(feature_maps, data.x_test)
+        seq_prediction = predict(
+            sequential.fit,
+            test_rows.mean,
+            test_rows.level,
+            config.top_carrier,
+        )
         seq_rmse = sqrt(mean(abs2.(seq_prediction.mean .- data.y_test)))
         push!(runs_rows, (;
             repetition, arm = arm.key,
@@ -313,7 +376,12 @@ function refresh_arm(key)
         end
         if repetition == 1 && haskey(PANEL_STEMS, (arm.key, "full"))
             for (mode, fit) in (("full", full.fit), ("sequential", sequential.fit))
-                prediction = predict(fit, grid_rows, config.top_carrier)
+                prediction = predict(
+                    fit,
+                    grid_rows.mean,
+                    grid_rows.level,
+                    config.top_carrier,
+                )
                 append!(panel_rows, [
                     (;
                         arm = arm.key, mode, x = grid[i],

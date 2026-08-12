@@ -91,9 +91,30 @@ end
 # features, priors, initialization (why_hierarchy_deep_kernel.jl choices)
 # ---------------------------------------------------------------------------
 
-function make_feature_map(n_basis, lengthscale; feature_seed)
+"""
+    make_feature_map(n_basis, lengthscale; feature_seed, kernel = "rbf")
+
+Create a one-dimensional random Fourier feature map with an appended
+intercept. `kernel = "matern32"` draws frequencies from the Matérn-3/2
+spectral density (a Student-t distribution with three degrees of freedom),
+while `"rbf"` uses the Gaussian spectral density.
+"""
+function make_feature_map(n_basis, lengthscale; feature_seed, kernel = "rbf")
+    n_basis > 0 || throw(ArgumentError("n_basis must be positive"))
+    lengthscale > 0 || throw(ArgumentError("lengthscale must be positive"))
     rng = StableRNG(feature_seed)
-    frequencies = randn(rng, n_basis) ./ lengthscale
+    kernel_name = lowercase(String(kernel))
+    frequencies = if kernel_name == "rbf"
+        randn(rng, n_basis) ./ lengthscale
+    elseif kernel_name in ("matern32", "matern-3/2")
+        # In one dimension this is t_3 / lengthscale. Its heavier spectral
+        # tails give the mean pathway access to shorter-scale variation
+        # without changing the exponentiated log-precision pathway.
+        randn(rng, n_basis) .* sqrt.(3 ./ rand(rng, Chisq(3), n_basis)) ./
+            lengthscale
+    else
+        throw(ArgumentError("unknown feature-map kernel: $kernel"))
+    end
     phases = 2pi .* rand(rng, n_basis)
     scale = sqrt(2 / n_basis)
     return x -> vcat(scale .* cos.(frequencies .* x .+ phases), [1.0])
@@ -109,29 +130,38 @@ gaussian(means, variances) =
     MvNormalMeanCovariance(collect(means), Matrix(Diagonal(collect(variances))))
 
 function make_priors(config, xs, ys)
-    n_basis = config.n_basis
+    # Keep the two pathway dimensions independent. In particular, mean
+    # capacity/prior-variance sweeps must not widen the exponentiated
+    # log-precision layer, whose large excursions can be unstable.
+    mean_n_basis = get(config, :mean_n_basis, config.n_basis)
+    level_n_basis = get(config, :level_n_basis, config.n_basis)
     anchor = noise_anchor(xs, ys)
     return (;
         v = gaussian(
-            zeros(n_basis + 1),
-            fill(abs2(config.signal_sd), n_basis + 1),
+            zeros(mean_n_basis + 1),
+            fill(abs2(config.signal_sd), mean_n_basis + 1),
         ),
         w = gaussian(
-            vcat(zeros(n_basis), [anchor]),
-            vcat(fill(abs2(config.level_sd), n_basis), [abs2(config.anchor_sd)]),
+            vcat(zeros(level_n_basis), [anchor]),
+            vcat(
+                fill(abs2(config.level_sd), level_n_basis),
+                [abs2(config.anchor_sd)],
+            ),
         ),
     )
 end
 
 # Push the priors forward so the first damped step is well scaled.
-function initial_marginals(priors, rows, top_carrier)
-    Φ = reduce(hcat, rows)'
+function initial_marginals(priors, mean_rows, level_rows, top_carrier)
+    Φ_mean = reduce(hcat, mean_rows)'
+    Φ_level = reduce(hcat, level_rows)'
     mv, Vv = mean_cov(priors.v)
     mw, Vw = mean_cov(priors.w)
-    f_means = Φ * mv
-    f_variances = vec(sum((Φ * Vv) .* Φ; dims = 2))
-    s_means = Φ * mw
-    s_variances = vec(sum((Φ * Vw) .* Φ; dims = 2)) .+ inv(top_carrier)
+    f_means = Φ_mean * mv
+    f_variances = vec(sum((Φ_mean * Vv) .* Φ_mean; dims = 2))
+    s_means = Φ_level * mw
+    s_variances = vec(sum((Φ_level * Vw) .* Φ_level; dims = 2)) .+
+        inv(top_carrier)
     return (;
         f = NormalMeanVariance.(f_means, f_variances),
         s = NormalMeanVariance.(s_means, s_variances),
@@ -142,8 +172,21 @@ end
 # fitting
 # ---------------------------------------------------------------------------
 
-function fit_arm(method, observations, rows, priors, config; free_energy = false)
-    states = initial_marginals(priors, rows, config.top_carrier)
+function fit_arm(
+    method,
+    observations,
+    mean_rows,
+    level_rows,
+    priors,
+    config;
+    free_energy = false,
+)
+    states = initial_marginals(
+        priors,
+        mean_rows,
+        level_rows,
+        config.top_carrier,
+    )
     initialization = @initialization begin
         q(v) = deepcopy(priors.v)
         q(w) = deepcopy(priors.w)
@@ -176,8 +219,8 @@ function fit_arm(method, observations, rows, priors, config; free_energy = false
         end
         elapsed = @elapsed result = infer(
             model = hetero_ngmp_model(
-                mean_features = rows,
-                level_features = rows,
+                mean_features = mean_rows,
+                level_features = level_rows,
                 v_prior = priors.v,
                 w_prior = priors.w,
                 top_carrier = config.top_carrier,
@@ -214,8 +257,8 @@ function fit_arm(method, observations, rows, priors, config; free_energy = false
         )
         elapsed = @elapsed result = infer(
             model = hetero_ngmp_model(
-                mean_features = rows,
-                level_features = rows,
+                mean_features = mean_rows,
+                level_features = level_rows,
                 v_prior = priors.v,
                 w_prior = priors.w,
                 top_carrier = config.top_carrier,
@@ -234,8 +277,8 @@ function fit_arm(method, observations, rows, priors, config; free_energy = false
     else
         elapsed = @elapsed result = infer(
             model = hetero_vmp_model(
-                mean_features = rows,
-                level_features = rows,
+                mean_features = mean_rows,
+                level_features = level_rows,
                 v_prior = priors.v,
                 w_prior = priors.w,
                 top_carrier = config.top_carrier,
@@ -260,18 +303,32 @@ function fit_arm(method, observations, rows, priors, config; free_energy = false
     )
 end
 
+# Backward-compatible shared-map entry point used by older exploratory code.
+fit_arm(method, observations, rows, priors, config; free_energy = false) =
+    fit_arm(
+        method,
+        observations,
+        rows,
+        rows,
+        priors,
+        config;
+        free_energy,
+    )
+
 # ---------------------------------------------------------------------------
 # closed-form prediction: everything follows from q(v), q(w)
 # ---------------------------------------------------------------------------
 
-function predict(fit, rows, top_carrier)
-    Φ = reduce(hcat, rows)'
+function predict(fit, mean_rows, level_rows, top_carrier)
+    Φ_mean = reduce(hcat, mean_rows)'
+    Φ_level = reduce(hcat, level_rows)'
     mv, Vv = mean_cov(fit.qv)
     mw, Vw = mean_cov(fit.qw)
-    f_mean = Φ * mv
-    f_variance = vec(sum((Φ * Vv) .* Φ; dims = 2))
-    s_mean = Φ * mw
-    s_variance = vec(sum((Φ * Vw) .* Φ; dims = 2)) .+ inv(top_carrier)
+    f_mean = Φ_mean * mv
+    f_variance = vec(sum((Φ_mean * Vv) .* Φ_mean; dims = 2))
+    s_mean = Φ_level * mw
+    s_variance = vec(sum((Φ_level * Vw) .* Φ_level; dims = 2)) .+
+        inv(top_carrier)
     # lognormal moments of the noise variance e^{-s}
     noise_mean = exp.(-s_mean .+ s_variance ./ 2)
     noise_lower = exp.(-(s_mean .+ 1.96 .* sqrt.(s_variance)))
@@ -287,6 +344,9 @@ function predict(fit, rows, top_carrier)
         s_variance,
     )
 end
+
+# Backward-compatible shared-map entry point used by older exploratory code.
+predict(fit, rows, top_carrier) = predict(fit, rows, rows, top_carrier)
 
 # p(y*) = ∫ N(y*; f_mean, f_var + e^{-s}) N(s; m, v) ds, by quadrature over s.
 function predictive_logpdf(f_mean, f_variance, s_mean, s_variance, y)
