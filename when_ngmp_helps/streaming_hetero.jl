@@ -352,7 +352,7 @@ function streaming_free_energy_figures(fe_frame)
         left_margin = 5Plots.mm,
     )
     drew = false
-    for key in ("pvmp", "ngmp")
+    for key in ("pvmp", "pvmp1", "ngmp")
         arm_rows = filter(row -> row.arm == key, fe_frame)
         isempty(arm_rows) && continue
         drew = true

@@ -526,6 +526,7 @@ function free_energy_panel(frame, fraction)
         ), :iteration)
     end
     vmp = summarize("pvmp")
+    vmp1 = summarize("pvmp1")
     ngmp = summarize("ngmp")
     all(vmp.center .> 0) && all(ngmp.center .> 0) ||
         error("log-scale Bethe free-energy plot requires positive values")
@@ -544,6 +545,21 @@ function free_energy_panel(frame, fraction)
         ylabel = "Bethe free energy / observed count",
         yscale = :log10,
     )
+    if !isempty(vmp1) && all(vmp1.center .> 0)
+        plot!(
+            panel,
+            vmp1.iteration,
+            vmp1.center;
+            ribbon = min.(vmp1.ci95, vmp1.center .* 0.999),
+            color = COLORS.vmp1,
+            fillalpha = 0.12,
+            linewidth = 2.0,
+            linestyle = :dot,
+            marker = :circle,
+            markersize = 3,
+            label = method_label(:pvmp1),
+        )
+    end
     plot!(
         panel,
         ngmp.iteration,
@@ -651,9 +667,41 @@ function wide_metrics(summary)
     return DataFrame(rows)
 end
 
+# Two booktabs artifacts: the MAIN two-arm table (VMP vs NGMP) and the FULL
+# three-arm table including the budget-matched single-step-projection control
+# (shown in the appendix).
 function write_latex_metrics_table(table)
-    path = joinpath(RESULT_DIR, "poisson_state_space_metrics_table.tex")
-    open(path, "w") do io
+    main_path = joinpath(RESULT_DIR, "poisson_state_space_metrics_table.tex")
+    open(main_path, "w") do io
+        println(io, raw"\begin{tabular}{rcccc}")
+        println(io, raw"\toprule")
+        println(io, " & \\multicolumn{2}{c}{NLL} & \\multicolumn{2}{c}{RMSE} \\\\")
+        println(io, raw"\cmidrule(lr){2-3} \cmidrule(lr){4-5}")
+        arms = join(
+            (method_label(key; short = true) for key in ("pvmp", "ngmp")),
+            " & ",
+        )
+        println(io, "Held out & $arms & $arms \\\\")
+        println(io, raw"\midrule")
+        for row in eachrow(table)
+            println(io, @sprintf(
+                "%d\\%% & %.3f \$\\pm\$ %.3f & %.3f \$\\pm\$ %.3f & %.3f \$\\pm\$ %.3f & %.3f \$\\pm\$ %.3f \\\\",
+                row.holdout_pct,
+                row.vmp_nll,
+                row.vmp_nll_ci95,
+                row.ngmp_nll,
+                row.ngmp_nll_ci95,
+                row.vmp_rmse,
+                row.vmp_rmse_ci95,
+                row.ngmp_rmse,
+                row.ngmp_rmse_ci95,
+            ))
+        end
+        println(io, raw"\bottomrule")
+        println(io, raw"\end{tabular}")
+    end
+    full_path = joinpath(RESULT_DIR, "poisson_state_space_metrics_table_full.tex")
+    open(full_path, "w") do io
         println(io, raw"\begin{tabular}{rcccccc}")
         println(io, raw"\toprule")
         println(io, " & \\multicolumn{3}{c}{NLL} & \\multicolumn{3}{c}{RMSE} \\\\")
@@ -685,7 +733,7 @@ function write_latex_metrics_table(table)
         println(io, raw"\bottomrule")
         println(io, raw"\end{tabular}")
     end
-    return path
+    return (main_path, full_path)
 end
 
 function caption_lines(summary, table, data_source)
@@ -751,8 +799,7 @@ function run_mask_repetition(counts, years, config, repetition)
         # metrics table only, no figures
         vmp1 = fit_projected_vmp(
             counts, observed_indices,
-            merge(config, (projection_iterations = 1,));
-            free_energy = false,
+            merge(config, (projection_iterations = 1,)),
         )
         ngmp = fit_ngmp(counts, observed_indices, config)
 
@@ -788,6 +835,7 @@ function run_mask_repetition(counts, years, config, repetition)
 
         for (method, values) in (
             ("pvmp", vmp.free_energy),
+            ("pvmp1", vmp1.free_energy),
             ("ngmp", ngmp.free_energy),
         )
             for (iteration, value) in enumerate(values)

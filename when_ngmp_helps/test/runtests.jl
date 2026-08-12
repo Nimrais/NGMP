@@ -43,6 +43,7 @@ const RESULT_FILES = (
     "poisson_state_space_metrics.csv",
     "poisson_state_space_metrics_table.csv",
     "poisson_state_space_metrics_table.tex",
+    "poisson_state_space_metrics_table_full.tex",
     "poisson_state_space_free_energy.csv",
     "streaming_hetero_runs.csv",
     "streaming_hetero_track.csv",
