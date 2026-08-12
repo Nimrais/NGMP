@@ -127,3 +127,51 @@ metrics at every requested sample count. Checkpoint loading recomputes digests
 over posterior component means, variances, and subset indices, which makes saved
 predictions replay-verifiable without rerunning the expensive frozen expert
 pipeline.
+
+## Standalone UCI regression benchmark
+
+[`run_uci.jl`](run_uci.jl) is a separate CPU-only IVON benchmark. It does not
+use or modify the PGE gate runner above. It imports the repository's checksummed
+UCI loaders and versioned `repeated-holdout-v1` split implementation, and uses
+the exact homoscedastic BBB evaluation protocol on Yacht, Concrete, Energy,
+Boston Housing, Power Plant, and Wine:
+
+- two 50-unit ReLU hidden layers and standardized observation variance `1`;
+- batch size 100 and one posterior draw per training minibatch;
+- 20 posterior draws for validation and test metrics;
+- at most 500 epochs, at least 25 epochs, validation every 5 epochs, and
+  patience 20 validation checks;
+- inner-validation epoch selection followed by seeded reinitialization and
+  refitting on all outer-training rows.
+
+The pilot performs 36 fits: all six datasets on split 1 for learning rates
+`{0.001, 0.01, 0.1}` and ESS multipliers `{1, 100}`. One global configuration
+is selected by mean standardized validation LPD, with standardized RMSE,
+learning rate, and ESS multiplier as deterministic tie-breakers. `full` then
+runs that configuration on six datasets × 20 outer splits. Pilot fitting and
+per-split epoch selection never materialize outer-holdout values.
+
+From the repository root:
+
+```bash
+julia --project=benchmarks/ivon -e 'using Pkg; Pkg.instantiate()'
+julia --project=benchmarks/ivon benchmarks/ivon/run_uci.jl smoke
+julia --project=benchmarks/ivon benchmarks/ivon/run_uci.jl pilot
+julia --project=benchmarks/ivon benchmarks/ivon/run_uci.jl full
+julia --project=benchmarks/ivon benchmarks/ivon/run_uci.jl all
+julia --project=benchmarks/ivon benchmarks/ivon/run_uci.jl summarize
+```
+
+`all` runs or resumes the pilot and full phases. `full` refuses to run without
+a complete, audit-checked pilot selection. Add `--force` to `smoke`, `pilot`,
+`full`, or `all` to replace matching checkpoints; otherwise complete matching
+fits are replay-checked and resumed. If UCI data are not already installed,
+set `DATADEPS_ALWAYS_ACCEPT=true` to allow the checksummed loaders to download
+them.
+
+Canonical outputs are under `../../paper_materials/ivon/uci/`: `config.toml`,
+`split_manifest.jld2`, pilot rows/ranking/selection, per-fit histories and
+JLD2 checkpoints, `runs.csv`, `summary.csv`, and `table.md`. Checkpoints contain
+the posterior mean, IVON Hessian state, seeds, scaler, exact split indices,
+fixed posterior components, metrics, and a digest. `summarize` regenerates the
+tables only from complete checkpoints.
