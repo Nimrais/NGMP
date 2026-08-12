@@ -21,20 +21,36 @@ function full_training_partitions(data; max_observations = nothing)
 end
 
 function evaluate_training(training, test_data, scaler, col_idx, config)
+    sample_indices = posterior_subset_indices(config.posterior_samples;
+        sample_counts = config.posterior_sample_counts,
+        seed = config.posterior_subset_seed)
     components = posterior_components(training, test_data;
-        nsamples = config.posterior_samples, seed = config.prediction_seed)
-    standardized = mixture_metrics(components, test_data.targets;
+        nsamples = config.posterior_samples, seed = config.prediction_seed,
+        sample_indices)
+    standardized_by_count = mixture_metrics_by_sample_count(
+        components, test_data.targets, sample_indices;
         interval_seed = config.interval_seed)
     scale = Float64(scaler.σ[col_idx])
-    original = original_unit_metrics(standardized.metrics, scale)
+    sample_evaluations = Dict{Int,Any}()
+    for count in config.posterior_sample_counts
+        standardized_at_count = standardized_by_count[count]
+        sample_evaluations[count] = (
+            standardized = standardized_at_count,
+            original_unit_metrics = original_unit_metrics(
+                standardized_at_count.metrics, scale),
+        )
+    end
+    primary = sample_evaluations[config.posterior_samples]
 
     mean_components = posterior_components(training, test_data;
         nsamples = 1, seed = config.prediction_seed, sample_posterior = false)
     mean_standardized = mixture_metrics(mean_components, test_data.targets;
         interval_seed = config.interval_seed)
     mean_original = original_unit_metrics(mean_standardized.metrics, scale)
-    return (; components, standardized, original, mean_components,
-        mean_standardized, mean_original)
+    return (; components, sample_indices, sample_evaluations,
+        standardized = primary.standardized,
+        original = primary.original_unit_metrics,
+        mean_components, mean_standardized, mean_original)
 end
 
 function fit_cell(dataset::String, horizon::Int, architecture::Symbol;
@@ -84,6 +100,8 @@ function fit_cell(dataset::String, horizon::Int, architecture::Symbol;
         mean_standardized = evaluated.mean_standardized,
         mean_original_units = evaluated.mean_original,
         posterior_components = evaluated.components,
+        posterior_sample_indices = evaluated.sample_indices,
+        posterior_sample_evaluations = evaluated.sample_evaluations,
         mean_components = evaluated.mean_components,
         prediction_digest = digest,
     )
@@ -104,7 +122,7 @@ end
 function run_pilot(; n_epochs::Integer = 100, posterior_samples::Integer = 1000,
     max_train_observations = nothing, max_eval_observations = nothing,
     force::Bool = false)
-    mkpath(PILOT_ROOT)
+    initialize_results_root()
     all_rows = NamedTuple[]
     data, fit_all, selection_all, metadata = pilot_fit_data()
     frozen_before = verify_frozen_hashes("ETTh1", 96)
@@ -208,6 +226,7 @@ function run_pilot(; n_epochs::Integer = 100, posterior_samples::Integer = 1000,
         complete = true, selected = selected, rows = all_rows, grouped = grouped,
         selection_rule = "min mean posterior-predictive NLL over both heads; MSE tie-break",
         test_targets_read = false)
+    write_protocol_config(; selected)
     return selected
 end
 
@@ -222,6 +241,7 @@ end
 
 function run_full(; force::Bool = false)
     selected = selected_config()
+    initialize_results_root(; selected)
     paths = String[]
     for dataset in DATASETS, horizon in HORIZONS
         cell_configs = [effective_config(; phase = :full, dataset, horizon,
@@ -252,10 +272,11 @@ function run_full(; force::Bool = false)
 end
 
 function run_smoke(; force::Bool = false)
+    initialize_results_root()
     paths = String[]
     configs = [effective_config(; phase = :smoke, dataset = "ETTh1", horizon = 96,
         architecture, learning_rate = 0.01, ess_multiplier = 1, n_epochs = 1,
-        posterior_samples = 8, max_train_observations = 4,
+        posterior_samples = 1000, max_train_observations = 4,
         max_eval_observations = 4) for architecture in ARCHITECTURES]
     prior_paths = [checkpoint_path(SMOKE_ROOT, config) for config in configs]
     if !force && all(checkpoint_complete(path, config) for
@@ -270,7 +291,7 @@ function run_smoke(; force::Bool = false)
         push!(paths, fit_cell("ETTh1", 96, architecture;
             learning_rate = 0.01, ess_multiplier = 1,
             output_root = SMOKE_ROOT, phase = :smoke, n_epochs = 1,
-            posterior_samples = 8, max_train_observations = 4,
+            posterior_samples = 1000, max_train_observations = 4,
             max_eval_observations = 4, prepared_data = data, force))
     end
     return paths
@@ -281,21 +302,33 @@ function summarize()
         isdir(CHECKPOINT_ROOT) ? readdir(CHECKPOINT_ROOT; join = true) : String[]))
     isempty(paths) && error("No final checkpoints to summarize")
     main_rows = NamedTuple[]
+    sensitivity_rows = NamedTuple[]
     mean_rows = NamedTuple[]
     for path in paths
         saved = load_checkpoint(path)
         push!(main_rows, flatten_metrics_row(saved, path))
+        for count in sort!(Int.(collect(keys(saved["posterior_sample_indices"]))))
+            push!(sensitivity_rows,
+                flatten_metrics_row(saved, path; posterior_samples = count))
+        end
         push!(mean_rows, flatten_metrics_row(saved, path; posterior_mean = true))
     end
     sort!(main_rows; by = r -> (r.dataset, r.horizon, r.architecture))
+    sort!(sensitivity_rows;
+        by = r -> (r.dataset, r.horizon, r.architecture, r.posterior_samples))
     sort!(mean_rows; by = r -> (r.dataset, r.horizon, r.architecture))
     write_csv(joinpath(RESULTS_ROOT, "summary.csv"), main_rows, RESULT_COLUMNS)
     write_csv(joinpath(RESULTS_ROOT, "main_ensemble_table.csv"), main_rows, RESULT_COLUMNS)
+    write_csv(joinpath(RESULTS_ROOT, "posterior_sample_sensitivity_table.csv"),
+        sensitivity_rows, RESULT_COLUMNS)
     write_csv(joinpath(RESULTS_ROOT, "appendix_mean_head_table.csv"), mean_rows,
         RESULT_COLUMNS)
     write_markdown_table(joinpath(RESULTS_ROOT, "main_ensemble_table.md"), main_rows;
         title = "IVON posterior-gate ensemble")
+    write_markdown_table(
+        joinpath(RESULTS_ROOT, "posterior_sample_sensitivity_table.md"),
+        sensitivity_rows; title = "IVON posterior-sample sensitivity")
     write_markdown_table(joinpath(RESULTS_ROOT, "appendix_mean_head_table.md"), mean_rows;
         title = "Appendix: IVON posterior-mean gate")
-    return (; main_rows, mean_rows)
+    return (; main_rows, sensitivity_rows, mean_rows)
 end

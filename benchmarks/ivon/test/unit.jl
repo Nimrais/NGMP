@@ -18,6 +18,8 @@ end
     @test IVONPGE.verify_dependency_pins()
     hashes = verify_frozen_hashes("ETTh1", 96)
     @test Set(keys(hashes)) == Set(["CNN", "NLinear", "LSTM", "DLinear", "NConv", "VAE"])
+    @test IVONPGE.RESULTS_ROOT ==
+        joinpath(IVONPGE.REPOSITORY_ROOT, "paper_materials", "ivon", "moe")
 end
 
 @testset "gate architectures" begin
@@ -52,12 +54,46 @@ end
     @test posterior_variances_valid(
         IVONPGE.posterior_variance(first_run.optimizer, first_run.optimizer_state))
 
+    sample_indices = IVONPGE.posterior_subset_indices(8;
+        sample_counts = (2, 4, 8), seed = 45)
+    @test Set(sample_indices[2]) ⊆ Set(sample_indices[4]) ⊆ Set(sample_indices[8])
+    @test sample_indices == IVONPGE.posterior_subset_indices(8;
+        sample_counts = (2, 4, 8), seed = 45)
+    @test IVONPGE.validate_posterior_subset_indices(sample_indices, 8)
     first_components = IVONPGE.posterior_components(first_run, data;
-        nsamples = 8, seed = 44)
+        nsamples = 8, seed = 44, sample_indices)
     second_components = IVONPGE.posterior_components(first_run, data;
-        nsamples = 8, seed = 44)
+        nsamples = 8, seed = 44, sample_indices)
     @test first_components.means == second_components.means
     @test first_components.variances == second_components.variances
+    @test Set(keys(first_components.gate_diagnostics_by_sample_count)) == Set((2, 4, 8))
+    subset = IVONPGE.posterior_component_subset(first_components, sample_indices[4])
+    @test Matrix(subset.means) == first_components.means[sample_indices[4], :]
+    @test Matrix(subset.variances) == first_components.variances[sample_indices[4], :]
+
+    # Batched Lux evaluation must agree with the original observation-wise calculation.
+    rng = StableRNG(44)
+    scalar_means = similar(first_components.means)
+    scalar_variances = similar(first_components.variances)
+    test_states = Lux.testmode(first_run.states)
+    for sample = 1:8
+        parameters = rand(rng, first_run.optimizer, first_run.optimizer_state,
+            first_run.parameters)
+        for observation in eachindex(data.features)
+            logits_raw, _ = first_run.gate(data.features[observation], parameters,
+                test_states)
+            logits = Float64.(vec(logits_raw))
+            maximum_logit = maximum(logits)
+            exponentials = exp.(logits .- maximum_logit)
+            probabilities = exponentials ./ sum(exponentials)
+            forecasts = Float64[data.predictions[i, observation][1] for i = 1:7]
+            scalar_means[sample, observation] = sum(probabilities .* forecasts)
+            scalar_variances[sample, observation] =
+                exp(-(maximum_logit + log(sum(exponentials))))
+        end
+    end
+    @test first_components.means ≈ scalar_means rtol = 1.0e-6 atol = 1.0e-8
+    @test first_components.variances ≈ scalar_variances rtol = 1.0e-6 atol = 1.0e-8
 end
 
 @testset "stable mixture metrics and uncertainty decomposition" begin
@@ -83,6 +119,15 @@ end
     @test result.metrics.total_variance ≈ 2.5
     @test isfinite(result.metrics.nll)
     @test isfinite(result.metrics.crps)
+
+    sample_indices = Dict(1 => [2], 2 => [1, 2])
+    sensitivity = IVONPGE.mixture_metrics_by_sample_count(
+        components, [[1.0], [2.0]], sample_indices; interval_seed = 9)
+    @test sensitivity[2].metrics.nll ≈ result.metrics.nll
+    @test sensitivity[2].metrics.mse ≈ result.metrics.mse
+    @test isfinite(sensitivity[1].metrics.nll)
+    @test_throws ErrorException IVONPGE.validate_posterior_subset_indices(
+        Dict(1 => [3], 2 => [2, 1], 3 => [1, 2, 3]), 3)
 
     extreme = IVONPGE.stable_mixture_logpdf([1.0e5, -1.0e5], [1.0e-4, 1.0e4], 0.0)
     @test isfinite(extreme)
@@ -114,6 +159,12 @@ end
         n_epochs = 1, patience = 2, min_delta = 0.0)
     components = IVONPGE.posterior_components(training, data; nsamples = 2, seed = 13)
     standardized = mixture_metrics(components, data.targets; interval_seed = 14)
+    sample_indices = Dict(2 => [1, 2])
+    original_units = IVONPGE.original_unit_metrics(standardized.metrics, 2.0)
+    sample_evaluations = Dict(2 => (
+        standardized = standardized,
+        original_unit_metrics = original_units,
+    ))
     mean_components = IVONPGE.posterior_components(training, data;
         nsamples = 1, seed = 13, sample_posterior = false)
     mean_standardized = mixture_metrics(mean_components, data.targets; interval_seed = 14)
@@ -131,11 +182,13 @@ end
             split_metadata = (test_targets_read_during_training = false,),
             scaler = nothing,
             standardized,
-            original_units = IVONPGE.original_unit_metrics(standardized.metrics, 2.0),
+            original_units,
             mean_standardized,
             mean_original_units = IVONPGE.original_unit_metrics(
                 mean_standardized.metrics, 2.0),
             posterior_components = components,
+            posterior_sample_indices = sample_indices,
+            posterior_sample_evaluations = sample_evaluations,
             mean_components,
             prediction_digest = IVONPGE.component_digest(components),
         )
@@ -143,5 +196,8 @@ end
         @test loaded["gate_parameters_mean"] == training.parameters
         @test loaded["optimizer_state"] == training.optimizer_state
         @test loaded["prediction_digest"] == IVONPGE.component_digest(components)
+        @test loaded["posterior_sample_indices"] == sample_indices
+        @test loaded["posterior_subset_digest"] ==
+            IVONPGE.posterior_subset_digest(sample_indices)
     end
 end

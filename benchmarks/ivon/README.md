@@ -7,8 +7,10 @@ neural experts, q10/q90 constant experts, train-only scaler, preprocessing, and
 updated. No Adam or AdamW baseline is rerun.
 
 The primary estimator is an ensemble of 1,000 gate networks sampled from the
-learned diagonal IVON posterior. The single gate at the posterior-mean
-parameters is reported only in the appendix output.
+learned diagonal IVON posterior. Final checkpoints also report seeded, nested
+K=10 and K=100 subsets of that same 1,000-draw bank as a Monte Carlo sensitivity
+analysis. The single gate at the posterior-mean parameters is reported only in
+the appendix output.
 
 ## Reproducibility contract
 
@@ -28,7 +30,9 @@ parameters is reported only in the appendix output.
   budget, and `train_set=false` direction: update on validation observations,
   monitor the training observations with patience 1 and `min_delta=1e-3`.
 - Base seed is 12345. Stable cell-specific seeds are derived from the complete
-  effective configuration, so resuming cells cannot change other cells.
+  effective configuration, so resuming cells cannot change other cells. A
+  separate cell-specific seed permutes the posterior-bank indices; its first
+  10 indices are nested in its first 100, while K=1,000 uses the complete bank.
 
 `frozen_hashes.toml` records SHA-256 digests for every CNN, NLinear (called
 `MLP` in the upstream filename), LSTM, DLinear, NConv, and VAE checkpoint. The
@@ -62,8 +66,9 @@ checkpoint. Without it, a completed checkpoint is resumed only after checking
 its configuration fingerprint and prediction digest.
 
 - `smoke` runs one epoch on four ETTh1/H96 observations for both heads and
-  evaluates eight posterior samples on four observations. It exercises the real
-  frozen PGE pipeline without claiming benchmark-quality numbers.
+  evaluates nested K=10/100/1,000 posterior samples on four observations. It
+  exercises the real frozen PGE pipeline without claiming benchmark-quality
+  numbers.
 - `pilot` is restricted to ETTh1/H96. It truncates the raw time series at the
   final upstream validation target before constructing data, then splits that
   gate-training partition chronologically 80/20. It evaluates learning rates
@@ -86,6 +91,9 @@ ways, matching upstream PGE:
    prediction. Its variance is `1 / sum(exp(logits))`.
 
 The 1,000 Gaussian predictions form an equally weighted predictive mixture.
+K=10 and K=100 select stored component indices from this bank; parameters are
+not sampled again. The seeded observation-noise bank used for empirical CRPS
+and intervals is subset by the same indices.
 Mixture log density uses log-sum-exp. The reported point prediction is the mean
 of component means. Epistemic variance is the variance of component means,
 aleatoric variance is the mean component variance, and total variance is their
@@ -101,7 +109,7 @@ top-expert shares, and sample/consensus switching rates.
 
 ## Outputs
 
-Outputs live under `results/`:
+Canonical outputs live under `../../paper_materials/ivon/moe/`:
 
 - `checkpoints/*.jld2`: posterior mean parameters, Lux state, the complete IVON
   optimizer/Hessian tree at the selected epoch, seeds, dependency commits,
@@ -109,11 +117,13 @@ Outputs live under `results/`:
   and replay digest;
 - `runs.csv`: chronological run/resume ledger;
 - `summary.csv` and `main_ensemble_table.{csv,md}`: primary posterior ensemble;
+- `posterior_sample_sensitivity_table.{csv,md}`: nested K=10/100/1,000 results;
 - `appendix_mean_head_table.{csv,md}`: posterior-mean head;
 - `pilot/pilot_heads.csv`, `pilot_grid.csv`, and `selection.jld2`: selection
   audit trail.
 
 Acceptance of the full benchmark requires 16 complete checkpoints with finite
-metrics. Checkpoint loading recomputes a digest over posterior component means
-and variances, which makes saved predictions replay-verifiable without rerunning
-the expensive frozen expert pipeline.
+metrics at every requested sample count. Checkpoint loading recomputes digests
+over posterior component means, variances, and subset indices, which makes saved
+predictions replay-verifiable without rerunning the expensive frozen expert
+pipeline.

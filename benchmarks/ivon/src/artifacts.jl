@@ -1,3 +1,56 @@
+function write_protocol_config(; selected = nothing)
+    mkpath(RESULTS_ROOT)
+    path = joinpath(RESULTS_ROOT, "config.toml")
+    if selected === nothing && isfile(path) && filesize(path) > 0
+        try
+            TOML.parsefile(path)
+            return path
+        catch
+            # Replace a partial protocol file left by an interrupted write.
+        end
+    end
+    protocol = Dict{String,Any}(
+        "benchmark" => "IVON posterior-gate ensemble for PGE MoE",
+        "benchmark_version" => 2,
+        "created_at_utc" => string(now(UTC)),
+        "output_root" => relpath(RESULTS_ROOT, REPOSITORY_ROOT),
+        "datasets" => collect(DATASETS),
+        "horizons" => collect(HORIZONS),
+        "architectures" => collect(string.(ARCHITECTURES)),
+        "posterior_sample_counts" => collect(POSTERIOR_SAMPLE_COUNTS),
+        "posterior_subsampling" =>
+            "cell-seeded permutation; K=10 nested in K=100; K=1000 is the full bank",
+        "base_seed" => DEFAULT_SEED,
+        "pge_commit" => PGE_COMMIT,
+        "ivonrepro_commit" => IVON_COMMIT,
+        "julia_version" => string(VERSION),
+        "benchmark_project_sha256" => file_sha256(joinpath(BENCHMARK_ROOT, "Project.toml")),
+        "benchmark_manifest_sha256" => file_sha256(joinpath(BENCHMARK_ROOT, "Manifest.toml")),
+    )
+    if selected !== nothing
+        protocol["selected_ivon"] = Dict(
+            "learning_rate" => Float64(selected.learning_rate),
+            "ess_multiplier" => Int(selected.ess_multiplier),
+            "selection_mean_nll" => Float64(selected.mean_nll),
+            "selection_mean_mse" => Float64(selected.mean_mse),
+        )
+    end
+    open(path, "w") do io
+        TOML.print(io, protocol; sorted = true)
+    end
+    return path
+end
+
+function initialize_results_root(; selected = nothing)
+    for path in (RESULTS_ROOT, CHECKPOINT_ROOT, PILOT_ROOT, SMOKE_ROOT)
+        mkpath(path)
+    end
+    cp(joinpath(BENCHMARK_ROOT, "frozen_hashes.toml"),
+        joinpath(RESULTS_ROOT, "frozen_hashes.toml"); force = true)
+    write_protocol_config(; selected)
+    return RESULTS_ROOT
+end
+
 function checkpoint_path(root::String, config)
     name = "$(config.dataset)_h$(config.horizon)_$(config.architecture)_ivon.jld2"
     return joinpath(root, name)
@@ -7,9 +60,19 @@ function checkpoint_complete(path::String, config)
     isfile(path) || return false
     try
         saved = JLD2.load(path)
-        return get(saved, "complete", false) === true &&
+        basic = get(saved, "complete", false) === true &&
             saved["config_fingerprint"] == config_fingerprint(config) &&
             saved["prediction_digest"] == component_digest(saved["posterior_components"])
+        basic || return false
+        indices = saved["posterior_sample_indices"]
+        validate_posterior_subset_indices(indices, config.posterior_samples)
+        sort!(Int.(collect(keys(indices)))) == sort!(collect(config.posterior_sample_counts)) ||
+            return false
+        saved["posterior_subset_digest"] == posterior_subset_digest(indices) || return false
+        evaluations = saved["posterior_sample_evaluations"]
+        sort!(Int.(collect(keys(evaluations)))) == sort!(collect(config.posterior_sample_counts)) ||
+            return false
+        return true
     catch error_value
         @warn "Ignoring invalid checkpoint" path exception =
             (error_value, catch_backtrace())
@@ -20,7 +83,8 @@ end
 function save_checkpoint(path::String; config, training, frozen_hashes,
     quantile_hashes_before, quantile_hashes_after, split_metadata, scaler,
     standardized, original_units, mean_standardized, mean_original_units,
-    posterior_components, mean_components, prediction_digest)
+    posterior_components, mean_components, prediction_digest,
+    posterior_sample_indices, posterior_sample_evaluations)
     mkpath(dirname(path))
     JLD2.jldsave(
         path;
@@ -50,7 +114,12 @@ function save_checkpoint(path::String; config, training, frozen_hashes,
         posterior_mean_standardized_traces = mean_standardized.traces,
         posterior_mean_original_unit_metrics = mean_original_units,
         gate_diagnostics = posterior_components.gate_diagnostics,
+        gate_diagnostics_by_sample_count =
+            posterior_components.gate_diagnostics_by_sample_count,
         posterior_components = posterior_components,
+        posterior_sample_indices = posterior_sample_indices,
+        posterior_subset_digest = posterior_subset_digest(posterior_sample_indices),
+        posterior_sample_evaluations = posterior_sample_evaluations,
         posterior_mean_components = mean_components,
         prediction_digest = prediction_digest,
     )
@@ -63,6 +132,11 @@ function load_checkpoint(path::String)
     get(saved, "complete", false) === true || error("Incomplete checkpoint: $path")
     saved["prediction_digest"] == component_digest(saved["posterior_components"]) ||
         error("Prediction replay digest mismatch: $path")
+    config = saved["effective_config"]
+    indices = saved["posterior_sample_indices"]
+    validate_posterior_subset_indices(indices, config.posterior_samples)
+    saved["posterior_subset_digest"] == posterior_subset_digest(indices) ||
+        error("Posterior subset replay digest mismatch: $path")
     return saved
 end
 
@@ -83,20 +157,31 @@ function write_csv(path::String, rows, columns)
     return path
 end
 
-function flatten_metrics_row(saved, path; posterior_mean::Bool = false)
+function flatten_metrics_row(saved, path; posterior_mean::Bool = false,
+    posterior_samples = nothing)
     config = saved["effective_config"]
-    standardized = saved[posterior_mean ?
-        "posterior_mean_standardized_metrics" : "standardized_metrics"]
-    original = saved[posterior_mean ?
-        "posterior_mean_original_unit_metrics" : "original_unit_metrics"]
-    diagnostics = posterior_mean ?
-        saved["posterior_mean_components"].gate_diagnostics : saved["gate_diagnostics"]
+    sample_count = posterior_mean ? 1 :
+        posterior_samples === nothing ? config.posterior_samples : Int(posterior_samples)
+    if posterior_mean
+        standardized = saved["posterior_mean_standardized_metrics"]
+        original = saved["posterior_mean_original_unit_metrics"]
+        diagnostics = saved["posterior_mean_components"].gate_diagnostics
+    elseif haskey(saved, "posterior_sample_evaluations")
+        evaluation = saved["posterior_sample_evaluations"][sample_count]
+        standardized = evaluation.standardized.metrics
+        original = evaluation.original_unit_metrics
+        diagnostics = saved["gate_diagnostics_by_sample_count"][sample_count]
+    else
+        standardized = saved["standardized_metrics"]
+        original = saved["original_unit_metrics"]
+        diagnostics = saved["gate_diagnostics"]
+    end
     return (
         dataset = config.dataset,
         horizon = config.horizon,
         architecture = config.architecture,
         estimator = posterior_mean ? "posterior_mean_head" : "posterior_ensemble",
-        posterior_samples = posterior_mean ? 1 : config.posterior_samples,
+        posterior_samples = sample_count,
         learning_rate = config.learning_rate,
         ess_multiplier = config.ess_multiplier,
         best_epoch = saved["best_epoch"],

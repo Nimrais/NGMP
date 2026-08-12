@@ -1,6 +1,6 @@
 const BENCHMARK_ROOT = normpath(joinpath(@__DIR__, ".."))
 const REPOSITORY_ROOT = normpath(joinpath(BENCHMARK_ROOT, "..", ".."))
-const RESULTS_ROOT = joinpath(BENCHMARK_ROOT, "results")
+const RESULTS_ROOT = joinpath(REPOSITORY_ROOT, "paper_materials", "ivon", "moe")
 const CHECKPOINT_ROOT = joinpath(RESULTS_ROOT, "checkpoints")
 const PILOT_ROOT = joinpath(RESULTS_ROOT, "pilot")
 const SMOKE_ROOT = joinpath(RESULTS_ROOT, "smoke")
@@ -14,6 +14,7 @@ const ARCHITECTURES = (:moe, :moe_big)
 const EXPERT_NAMES = ("CNN", "NLinear", "LSTM", "DLinear", "NConv", "q10", "q90")
 const LEARNING_RATES = (0.001, 0.01, 0.1)
 const ESS_MULTIPLIERS = (1, 100)
+const POSTERIOR_SAMPLE_COUNTS = (10, 100, 1000)
 
 const FIXED_IVON = (
     hess_init = 0.1,
@@ -41,8 +42,10 @@ function effective_config(; phase, dataset, horizon, architecture, learning_rate
     max_train_observations = nothing, max_eval_observations = nothing)
     seed = deterministic_seed(phase, dataset, horizon, architecture, learning_rate,
         ess_multiplier)
+    sample_counts = phase in (:full, :smoke) && posterior_samples == 1000 ?
+        POSTERIOR_SAMPLE_COUNTS : (Int(posterior_samples),)
     return (
-        benchmark_version = 1,
+        benchmark_version = 2,
         phase = String(phase),
         dataset = String(dataset),
         horizon = Int(horizon),
@@ -66,11 +69,13 @@ function effective_config(; phase, dataset, horizon, architecture, learning_rate
         patience = 1,
         min_delta = 1.0e-3,
         posterior_samples = Int(posterior_samples),
+        posterior_sample_counts = sample_counts,
         max_train_observations = max_train_observations,
         max_eval_observations = max_eval_observations,
         base_seed = DEFAULT_SEED,
         training_seed = seed,
         prediction_seed = deterministic_seed("prediction", seed),
+        posterior_subset_seed = deterministic_seed("posterior_subset", seed),
         interval_seed = deterministic_seed("interval", seed),
         pge_commit = PGE_COMMIT,
         ivonrepro_commit = IVON_COMMIT,

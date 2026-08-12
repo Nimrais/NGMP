@@ -1,0 +1,21 @@
+architectures = ["moe", "moe_big"]
+base_seed = 12345
+benchmark = "IVON posterior-gate ensemble for PGE MoE"
+benchmark_manifest_sha256 = "4d0783454fe80f04bff0610bfa48b9f26ffc22d8d6fa43411505edb22511cef4"
+benchmark_project_sha256 = "8a36c41e0e082e8657753e35196c606cd88c24c113a8c1969e93a090e2cb2c18"
+benchmark_version = 2
+created_at_utc = "2026-08-12T12:48:46.504"
+datasets = ["ETTh1", "ETTh2"]
+horizons = [96, 192, 336, 720]
+ivonrepro_commit = "871dc5e0cc85a0ed00ea9fb4bad42fc1a52799ed"
+julia_version = "1.11.9"
+output_root = "paper_materials/ivon/moe"
+pge_commit = "8cfdef63384d48ba302b3dd25ffb0ff356fecaea"
+posterior_sample_counts = [10, 100, 1000]
+posterior_subsampling = "cell-seeded permutation; K=10 nested in K=100; K=1000 is the full bank"
+
+[selected_ivon]
+ess_multiplier = 1
+learning_rate = 0.001
+selection_mean_mse = 0.14043475258386262
+selection_mean_nll = 12.803035642704465
