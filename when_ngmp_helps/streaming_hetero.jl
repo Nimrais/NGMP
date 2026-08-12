@@ -56,33 +56,35 @@ const PANEL_STEMS = Dict(
 _logdet_cov(q) = logdet(Symmetric(Matrix(mean_cov(q)[2])))
 
 _arm_config(arm, config) = merge(config, (
-    iterations = arm.iterations,
+    iterations = config.smoke ? config.iterations : arm.iterations,
     projection_iterations = arm.projection_iterations,
 ))
 
 function streaming_config(smoke)
-    n_basis = smoke ? 6 : 32
+    level_n_basis = smoke ? 6 : 32
+    mean_n_basis = smoke ? 24 : 128
     return (
         smoke,
         seed = 42,
         repetitions = smoke ? 2 : 20,
         holdout_fraction = 1 / 3,
         aleatoric_samples = smoke ? 90 : 600,
-        # Retain `n_basis` as the legacy shared-map setting. The explicit
-        # pathway settings let NGMP mean-capacity experiments leave the
-        # exponentiated variance path unchanged.
-        n_basis,
-        mean_n_basis = n_basis,
-        level_n_basis = n_basis,
+        # `n_basis` remains as a legacy alias for the log-precision path.
+        # The mean path uses the capacity/Matérn setup selected by the
+        # NGMP-only diagnostic; the exponentiated variance path stays at its
+        # historical RBF capacity and prior scale.
+        n_basis = level_n_basis,
+        mean_n_basis,
+        level_n_basis,
         aleatoric_lengthscale = 0.25,
         feature_seed = 20260726,
-        mean_kernel = "rbf",
+        mean_kernel = "matern32",
         level_kernel = "rbf",
         mean_lengthscale = 0.25,
         level_lengthscale = 0.25,
         mean_feature_seed = 20260726,
         level_feature_seed = 20260726,
-        signal_sd = 1.0,
+        signal_sd = 2.0,
         level_sd = 1.6,
         anchor_sd = 1.0,
         top_carrier = 25.0,
@@ -176,6 +178,9 @@ function streaming_full(arm, data, feature_maps, config; free_energy = false)
     return (;
         logpdf = mean_predictive_logpdf(prediction, data.y_test),
         rmse = sqrt(mean(abs2.(prediction.mean .- data.y_test))),
+        latent_mean_rmse = sqrt(mean(abs2.(
+            prediction.mean .- aleatoric_mean.(data.x_test),
+        ))),
         logdet_w = _logdet_cov(fit.qw),
         free_energy = fit.free_energy,
         n_obs = length(data.y_train),
@@ -217,13 +222,18 @@ function compute()
                 config.top_carrier,
             )
             seq_rmse = sqrt(mean(abs2.(seq_prediction.mean .- data.y_test)))
+            seq_latent_mean_rmse = sqrt(mean(abs2.(
+                seq_prediction.mean .- aleatoric_mean.(data.x_test),
+            )))
             push!(rows_out, (;
                 repetition, arm = arm.key,
                 full_logpdf = full.logpdf,
                 full_rmse = full.rmse,
+                full_latent_mean_rmse = full.latent_mean_rmse,
                 full_logdet_w = full.logdet_w,
                 sequential_logpdf = last(sequential.logpdfs),
                 sequential_rmse = seq_rmse,
+                sequential_latent_mean_rmse = seq_latent_mean_rmse,
                 streaming_penalty = last(sequential.logpdfs) - full.logpdf,
             ))
             for batch in 1:config.n_batches
@@ -343,13 +353,18 @@ function refresh_arm(key)
             config.top_carrier,
         )
         seq_rmse = sqrt(mean(abs2.(seq_prediction.mean .- data.y_test)))
+        seq_latent_mean_rmse = sqrt(mean(abs2.(
+            seq_prediction.mean .- aleatoric_mean.(data.x_test),
+        )))
         push!(runs_rows, (;
             repetition, arm = arm.key,
             full_logpdf = full.logpdf,
             full_rmse = full.rmse,
+            full_latent_mean_rmse = full.latent_mean_rmse,
             full_logdet_w = full.logdet_w,
             sequential_logpdf = last(sequential.logpdfs),
             sequential_rmse = seq_rmse,
+            sequential_latent_mean_rmse = seq_latent_mean_rmse,
             streaming_penalty = last(sequential.logpdfs) - full.logpdf,
         ))
         for batch in 1:config.n_batches
@@ -494,14 +509,22 @@ function render()
     panels_frame = CSV.read(joinpath(RESULT_DIR, "streaming_hetero_panels.csv"), DataFrame)
     train = CSV.read(joinpath(RESULT_DIR, "streaming_hetero_train.csv"), DataFrame)
     arm_keys = String.(config["methods"])
+    mean_kernel = config["mean_kernel"] == "matern32" ? "Matérn-3/2" : uppercase(config["mean_kernel"])
+    mean_n_basis = config["mean_n_basis"]
+    level_kernel = uppercase(config["level_kernel"])
+    level_n_basis = config["level_n_basis"]
+    signal_sd = config["signal_sd"]
+    level_sd = config["level_sd"]
 
     summary_lines_out = String[
-        "# Streaming heteroscedastic study (aleatoric benchmark, n_basis = $(config["n_basis"]))",
+        "# Streaming heteroscedastic study (aleatoric benchmark)",
         "",
+        "Mean path: $mean_kernel RFF-$mean_n_basis with `signal_sd = $signal_sd`; log-precision path: $level_kernel RFF-$level_n_basis with `level_sd = $level_sd`.",
         "Full batch vs sequential ($(config["n_batches"]) batches), $(config["repetitions"]) paired seeds.",
+        "Mean RMSE is measured against the benchmark's known latent mean; observed RMSE uses noisy held-out targets.",
         "",
-        "| arm | full NLL | full RMSE | sequential NLL | sequential RMSE | streaming penalty |",
-        "|---|---|---|---|---|---|",
+        "| arm | full NLL | full observed RMSE | full mean RMSE | sequential NLL | sequential observed RMSE | sequential mean RMSE | streaming penalty |",
+        "|---|---|---|---|---|---|---|---|",
     ]
     for key in arm_keys
         selected = filter(row -> row.arm == key, runs)
@@ -510,10 +533,14 @@ function render()
             " ± ", round(ci95(selected.full_logpdf); digits = 3),
             " | ", round(mean(selected.full_rmse); digits = 3),
             " ± ", round(ci95(selected.full_rmse); digits = 3),
+            " | ", round(mean(selected.full_latent_mean_rmse); digits = 3),
+            " ± ", round(ci95(selected.full_latent_mean_rmse); digits = 3),
             " | ", round(mean(.-selected.sequential_logpdf); digits = 3),
             " ± ", round(ci95(selected.sequential_logpdf); digits = 3),
             " | ", round(mean(selected.sequential_rmse); digits = 3),
             " ± ", round(ci95(selected.sequential_rmse); digits = 3),
+            " | ", round(mean(selected.sequential_latent_mean_rmse); digits = 3),
+            " ± ", round(ci95(selected.sequential_latent_mean_rmse); digits = 3),
             " | ", round(mean(selected.streaming_penalty); digits = 3),
             " ± ", round(ci95(selected.streaming_penalty); digits = 3), " |")
         push!(summary_lines_out, line)

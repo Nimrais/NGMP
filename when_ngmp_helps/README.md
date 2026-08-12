@@ -39,10 +39,12 @@ regenerates every paper figure and table without running any inference.
    Bethe free-energy panels (`poisson_bethe_heldout_*`). Overridable:
    `WHEN_NGMP_POISSON_REPETITIONS`.
 3. `streaming_hetero.jl`: the heteroscedastic hierarchy (model code in
-   `hetero_model.jl`) fitted once on all data (smoothing) versus on ten
-   sequential batches with posterior-as-prior chaining (batching), 20 paired
-   seeds, three arms (projected VMP, its one-sweep budget-matched ablation,
-   and cavity/true NGMP). Produces the four prediction panels
+   `hetero_model.jl`) with a Matérn-3/2 RFF-128 mean path (`signal_sd = 2`)
+   and a separately frozen RBF-32 log-precision path (`level_sd = 1.6`), fitted
+   once on all data (smoothing) versus on ten sequential batches with
+   posterior-as-prior chaining (batching), 20 paired seeds, three arms
+   (projected VMP, its one-sweep budget-matched ablation, and cavity/true
+   NGMP). Produces the four prediction panels
    (`streaming_{vmp,cavity}_{full,sequential}`), the `q(w)` collapse figure
    (`streaming_collapse`), the projected-VMP Bethe free-energy convergence
    panels (`streaming_bethe_{full,sequential}` — evidence the comparison
