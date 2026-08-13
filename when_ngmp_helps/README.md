@@ -49,7 +49,7 @@ regenerates every paper figure and table without running any inference.
    variance panels with pointwise credible intervals, mean-weight uncertainty,
    and the true aleatoric variance
    (`streaming_{vmp,cavity}_variance_{full,sequential}`), each exported as a
-   compact 480-by-320-point vector PDF (so axes and titles remain readable
+   compact 480-by-320-point vector PDF (so axes remain readable
    when embedded at half-column width) and a 1200-by-800 PNG, in addition to
    the combined 2-by-2 inspection figure. Curve semantics are stated in the
    paper caption instead of repeated legends that obscure the panels,

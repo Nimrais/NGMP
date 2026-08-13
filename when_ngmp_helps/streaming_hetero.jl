@@ -320,11 +320,11 @@ end
 function streaming_prediction_panel(panel_frame, train, label, style)
     band = 1.96 .* sqrt.(panel_frame.pred_total_variance)
     panel = plot(;
-        xlabel = "x", ylabel = "y", legend = :topright,
+        xlabel = "x", ylabel = "y", legend = false,
         ylims = (-4.5, 4.5), left_margin = 5Plots.mm,
     )
     scatter!(panel, train.x, train.y;
-        color = :gray70, markersize = 1.6, markerstrokewidth = 0, label = "train")
+        color = :gray70, markersize = 2.2, markerstrokewidth = 0, label = "train")
     plot!(panel, panel_frame.x, panel_frame.pred_mean;
         ribbon = band, color = style.color, linestyle = style.linestyle,
         linewidth = 2.2, fillalpha = 0.2, label = label)
@@ -334,7 +334,7 @@ function streaming_prediction_panel(panel_frame, train, label, style)
     return panel
 end
 
-function streaming_variance_panel(panel_frame, panel_title, style)
+function streaming_variance_panel(panel_frame, style)
     variance_floor = 1e-4
     posterior_mean = max.(panel_frame.pred_total_variance, variance_floor)
     latent_variance = max.(
@@ -350,12 +350,11 @@ function streaming_variance_panel(panel_frame, panel_title, style)
         variance_floor,
     )
     panel = plot(;
-        title = panel_title,
         xlabel = "x", ylabel = "predictive variance", yscale = :log10,
         legend = false,
-        titlefontsize = 15, guidefontsize = 13, tickfontsize = 11,
+        guidefontsize = 13, tickfontsize = 11,
         ylims = (variance_floor, 1e2), left_margin = 5Plots.mm,
-        # A compact vector canvas keeps axes and titles readable when LaTeX
+        # A compact vector canvas keeps axes readable when LaTeX
         # embeds each PDF at half-column width. `dpi = 250` preserves
         # 1200-by-800 PNGs. Curve meanings are defined once in the caption.
         size = (480, 320), dpi = 250,
@@ -672,22 +671,15 @@ function render()
             filter(row -> row.arm == key && row.mode == mode, panels_frame),
             :x,
         )
-        panel = streaming_variance_panel(
-            selected,
-            string(
-                method_label(key), ", ",
-                mode == "full" ? "full batch" : "sequential",
-            ),
-            ARM_STYLES[key],
-        )
+        panel = streaming_variance_panel(selected, ARM_STYLES[key])
         variance_panels[(key, mode)] = panel
         save_figure(panel, stem)
     end
     variance_preview = plot(
-        plot(variance_panels[("pvmp", "full")]),
-        plot(variance_panels[("pvmp", "sequential")]),
-        plot(variance_panels[("ngmp", "full")]),
-        plot(variance_panels[("ngmp", "sequential")]);
+        plot(variance_panels[("pvmp", "full")]; title = "$(method_label("pvmp")), full batch"),
+        plot(variance_panels[("pvmp", "sequential")]; title = "$(method_label("pvmp")), sequential"),
+        plot(variance_panels[("ngmp", "full")]; title = "$(method_label("ngmp")), full batch"),
+        plot(variance_panels[("ngmp", "sequential")]; title = "$(method_label("ngmp")), sequential"),
         layout = (2, 2), size = (1100, 750),
     )
     save_figure(variance_preview, "streaming_hetero_variances")
