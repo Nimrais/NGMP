@@ -1,8 +1,0 @@
-repository = "https://github.com/Nimrais/IVONRepro.jl.git"
-commit = "871dc5e0cc85a0ed00ea9fb4bad42fc1a52799ed"
-git_tree_sha1 = "a74ed4195e6885954d3fd6db47f8d6fcf99c1c26"
-
-[sha256]
-"Project.toml" = "a5cd57c46973f80941fa2a6c892cf45b7d4477f759b3e21cc981b1adbea676d2"
-"src/IVONRepro.jl" = "05400796c3fbb97e8834aafa941cd35a0d13da3c701c76b0a355643fa9d611a4"
-"src/ivon.jl" = "4f60fafbaf68f7bcde5d858f98e0d41563ef0484cc09a31c0bcfed6a1ae9e104"
