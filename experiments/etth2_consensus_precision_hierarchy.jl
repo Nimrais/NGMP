@@ -151,22 +151,31 @@ end
 
 function score_metrics(μ, σ, y; quantiles = (0.1, 0.9))
     n = length(y)
+    length(μ) == n == length(σ) || error("prediction/target length mismatch")
+    all(isfinite, μ) || error("non-finite predictive mean")
+    all(value -> isfinite(value) && value > 0, σ) ||
+        error("improper predictive standard deviation")
     ll_terms = [logpdf(Normal(μ[j], σ[j]), y[j]) for j in 1:n]
     zc = 1.959963984540054
     ae = abs.(μ .- y); sq = (μ .- y) .^ 2
     covi = (y .>= μ .- zc .* σ) .& (y .<= μ .+ zc .* σ)
+    widths = 2zc .* σ
     pint = zeros(n)
     for q in quantiles
         zq = quantile(Normal(), q); qhat = μ .+ zq .* σ
         pint .+= max.(q .* (y .- qhat), (q - 1) .* (y .- qhat)) ./
             length(quantiles)
     end
-    mae = mean(ae); rmse = sqrt(mean(sq)); ll = mean(ll_terms); p = mean(covi)
+    mae = mean(ae); mse = mean(sq); rmse = sqrt(mse)
+    ll = mean(ll_terms); p = mean(covi)
     return (; mae, mae_ci = zc * std(ae) / sqrt(n),
+            mse, mse_ci = zc * std(sq) / sqrt(n),
             rmse, rmse_ci = zc * std(sq) / sqrt(n) / (2 * rmse),
             ll, ll_ci = zc * std(ll_terms) / sqrt(n),
             nll = -ll, nll_ci = zc * std(ll_terms) / sqrt(n),
             cov95 = p, cov_ci = zc * sqrt(p * (1 - p) / n),
+            interval_width = mean(widths),
+            interval_width_ci = zc * std(widths) / sqrt(n),
             pinball = mean(pint), pin_ci = zc * std(pint) / sqrt(n))
 end
 
@@ -443,6 +452,11 @@ function run_arm(cache, cell, tag, setup, L, carrier, tauy, n_obs, bases;
         "carrier" => String(carrier), "tauy" => String(tauy),
         "n_obs" => n_obs, "rff_seed" => RFF_SEED,
         "x_message" => String(XMSG),
+        "alpha" => HYPER[].alpha, "momentum" => HYPER[].momentum,
+        "damping_method" => String(HYPER[].method),
+        "gain" => HYPER[].gain, "beta_rate0" => HYPER[].beta_rate0,
+        "anchor_var" => HYPER[].anchor_var,
+        "n_rff" => N_RFF, "rff_lengthscale" => FIXED_LENGTHSCALE,
         "status" => "ok", "error" => "",
     )
 

@@ -153,12 +153,11 @@ stop-gradient scheme. `inner` carries the ordinary optimizer meta (e.g. a
 struct PrecisionTempering{T <: Real, M}
     beta::T
     inner::M
-end
-
-function PrecisionTempering(beta::Real, inner)
-    0 <= beta <= 1 || throw(ArgumentError("tempering beta must lie in [0, 1]"))
-    b = float(beta)
-    return PrecisionTempering{typeof(b), typeof(inner)}(b, inner)
+    function PrecisionTempering(beta::Real, inner)
+        0 <= beta <= 1 || throw(ArgumentError("tempering beta must lie in [0, 1]"))
+        b = float(beta)
+        return new{typeof(b), typeof(inner)}(b, inner)
+    end
 end
 
 function damping_configuration(state::NGMPEdgeState)
