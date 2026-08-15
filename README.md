@@ -126,20 +126,6 @@ hand-written section text that surrounds the table; see that directory's
 [README](paper_materials/etth_precision_gated/README.md) for the protocol
 details.
 
-### 4. Copying artifacts into the paper
-
-The paper repository expects the files under `figures/` with these names
-(everything else keeps its name):
-
-| Repository file | Paper file |
-|---|---|
-| `when_ngmp_helps/figures/*.pdf` | `figures/*.pdf` |
-| `when_ngmp_helps/results/poisson_state_space_metrics_table{,_full}.tex` | `figures/poisson_state_space_metrics_table{,_full}.tex` |
-| `paper_materials/etth_precision_gated/main_table.tex` | `figures/etth_precision_main_table.tex` |
-| `paper_materials/etth_precision_gated/appendix_table.tex` | `figures/etth_precision_appendix_table.tex` |
-| `paper_materials/etth_precision_gated/ensemble_forecasting.tex` | `figures/etth_ensemble_forecasting.tex` |
-| `paper_materials/etth_precision_gated/etth1_h192_ngmp_vmp.{pdf,tex}` | `figures/etth1_h192_ngmp_vmp.pdf`, `figures/etth1_h192_ngmp_vmp_caption.tex` |
-
 ## Tests
 
 ```sh
