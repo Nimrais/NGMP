@@ -28,13 +28,13 @@ const COLORS = (
 )
 
 # Display names for the inference arms. CSVs and internal dispatch always
-# store the stable keys (vmp, vmp1, ngmp, exact); these labels are applied
-# only while rendering figures/tables, so renaming every plot and table is:
-# edit this NamedTuple, then `julia when_ngmp_helps/render_all.jl`.
+# store the stable keys (vmp, pvmp, pvmp1, ngmp, exact); these labels are
+# applied only while rendering figures/tables, so renaming every plot and
+# table is: edit this NamedTuple, then `julia when_ngmp_helps/render_all.jl`.
 const METHOD_LABELS = (
-    vmp = "VMP",              # plain mean-field VMP (exhibit 1)
-    pvmp = "VMP",             # ProjectedTo arm (exhibits 2–3; paper calls both VMP)
-    pvmp1 = "VMP, 1-step projection",   # budget-matched ablation (1 inner Manopt step)
+    vmp = "VMP",              # conjugate mean-field VMP, no projection (exhibit 1)
+    pvmp = "PVMP",            # projective VMP: ProjectedTo iterated to convergence (exhibits 2–3)
+    pvmp1 = "NCVMP",          # non-conjugate VMP: single projection step (budget-matched control)
     ngmp = "NGMP",
     exact = "Exact moments",
 )

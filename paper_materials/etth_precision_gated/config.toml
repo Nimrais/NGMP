@@ -1,0 +1,22 @@
+anchor_variance = 1.0
+benchmark = "ETTh precision-gated ensemble study"
+damping_alpha = 0.2
+datasets = ["ETTh1", "ETTh2"]
+excluded = ["depth-three", "functional-tau-y", "calibration-link"]
+horizons = [96, 192, 336, 720]
+momentum = 0.0
+rff_count = 400
+rff_lengthscale = 1.5
+seed = 12345
+selection_fit_fraction = 0.8
+selection_metric = "mean standardized NLL, horizons equally weighted"
+selection_score_fraction = 0.2
+standardized_target = "OT"
+tie_breakers = ["mean MSE", "parameter count", "configuration ID"]
+x_message = "Student-t tangent projection"
+
+[test_counts]
+192 = 3426
+336 = 3398
+720 = 3321
+96 = 3446

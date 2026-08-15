@@ -1,0 +1,61 @@
+\begin{table*}[p]
+\centering\scriptsize
+\caption{Full descriptive ETTh1 RMSE and NLL results. Intervals are 95\% descriptive confidence-interval half-widths computed per test origin; RMSE intervals use the delta method. Counts are 3446, 3426, 3398, and 3321 at horizons 96, 192, 336, and 720. PGE--PVMP and affine NGMP are pre-existing results.}
+\label{tab:etth-precision-gated-full}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lrrrr}
+\toprule
+Method & 96 & 192 & 336 & 720 \\
+\midrule
+\multicolumn{5}{l}{\textit{RMSE}} \\
+Adam--affine & \(0.3836 \pm 0.0090\) & \(0.3699 \pm 0.0091\) & \(0.4152 \pm 0.0099\) & \(0.4639 \pm 0.0111\) \\
+Adam--ReLU2 & \(0.3955 \pm 0.0097\) & \(0.3699 \pm 0.0091\) & \(0.4801 \pm 0.0123\) & \(0.4642 \pm 0.0112\) \\
+IVON--affine, $K=1000$ & \(0.3832 \pm 0.0090\) & \(0.3695 \pm 0.0091\) & \(0.3672 \pm 0.0084\) & \(0.5428 \pm 0.0127\) \\
+IVON--ReLU2, $K=1000$ & \(0.3832 \pm 0.0090\) & \(0.3697 \pm 0.0091\) & \(0.3677 \pm 0.0084\) & \(0.5334 \pm 0.0125\) \\
+\addlinespace[2pt]
+PGE--PVMP (2026) & \(0.3583 \pm 0.0083\) & \(0.3386 \pm 0.0085\) & \(0.3105 \pm 0.0073\) & \(0.3347 \pm 0.0076\) \\
+NGMP--affine & \(0.3554 \pm 0.0084\) & \(0.3337 \pm 0.0086\) & \(0.3115 \pm 0.0074\) & \(0.3300 \pm 0.0080\) \\
+\midrule
+\multicolumn{5}{l}{\textit{NLL}} \\
+Adam--affine & \(2.0553\!\times\!10^{25} \pm 1.5536\!\times\!10^{25}\) & \(1.1050\!\times\!10^{22} \pm 1.0354\!\times\!10^{22}\) & \(1.1159\!\times\!10^{22} \pm 6.0082\!\times\!10^{21}\) & \(9.0836\!\times\!10^{11} \pm 6.4103\!\times\!10^{11}\) \\
+Adam--ReLU2 & \(2.2759\!\times\!10^{24} \pm 1.1906\!\times\!10^{24}\) & \(1.2482\!\times\!10^{19} \pm 8.2942\!\times\!10^{18}\) & \(2.4524\!\times\!10^{14} \pm 1.7209\!\times\!10^{14}\) & \(1.5279\!\times\!10^{17} \pm 1.0479\!\times\!10^{17}\) \\
+IVON--affine, $K=1000$ & \(10.2777 \pm 0.7366\) & \(3.5515\!\times\!10^{4} \pm 1.1067\!\times\!10^{4}\) & \(429.0098 \pm 143.4073\) & \(168.4529 \pm 26.4000\) \\
+IVON--ReLU2, $K=1000$ & \(2216.8905 \pm 676.2776\) & \(2.2344\!\times\!10^{8} \pm 9.2280\!\times\!10^{7}\) & \(58.6475 \pm 9.6980\) & \(94.2422 \pm 16.2638\) \\
+\addlinespace[2pt]
+PGE--PVMP (2026) & \(0.4120 \pm 0.0173\) & \(0.3701 \pm 0.0171\) & \(0.3141 \pm 0.0135\) & \(0.3763 \pm 0.0140\) \\
+NGMP--affine & \(0.3888 \pm 0.0210\) & \(0.3378 \pm 0.0200\) & \(0.2877 \pm 0.0161\) & \(0.3571 \pm 0.0153\) \\
+\bottomrule
+\end{tabular}%
+}
+\end{table*}
+
+\begin{table*}[p]
+\centering\scriptsize
+\caption{Full descriptive ETTh2 RMSE and NLL results. Intervals are 95\% descriptive confidence-interval half-widths computed per test origin; RMSE intervals use the delta method. Counts are 3446, 3426, 3398, and 3321 at horizons 96, 192, 336, and 720. PGE--PVMP and affine NGMP are pre-existing results.}
+\label{tab:etth-precision-gated-full-etth2}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lrrrr}
+\toprule
+Method & 96 & 192 & 336 & 720 \\
+\midrule
+\multicolumn{5}{l}{\textit{RMSE}} \\
+Adam--affine & \(0.5821 \pm 0.0134\) & \(0.5655 \pm 0.0139\) & \(0.5190 \pm 0.0121\) & \(0.6201 \pm 0.0129\) \\
+Adam--ReLU2 & \(0.5592 \pm 0.0128\) & \(0.5655 \pm 0.0139\) & \(0.5190 \pm 0.0121\) & \(0.6201 \pm 0.0129\) \\
+IVON--affine, $K=1000$ & \(0.5821 \pm 0.0134\) & \(0.5198 \pm 0.0129\) & \(0.5869 \pm 0.0142\) & \(0.8249 \pm 0.0181\) \\
+IVON--ReLU2, $K=1000$ & \(0.5821 \pm 0.0134\) & \(0.5655 \pm 0.0139\) & \(0.5874 \pm 0.0142\) & \(0.6202 \pm 0.0129\) \\
+\addlinespace[2pt]
+PGE--PVMP (2026) & \(0.5882 \pm 0.0120\) & \(0.5798 \pm 0.0127\) & \(0.5940 \pm 0.0128\) & \(0.5669 \pm 0.0131\) \\
+NGMP--affine & \(0.5631 \pm 0.0124\) & \(0.5408 \pm 0.0128\) & \(0.5463 \pm 0.0125\) & \(0.6101 \pm 0.0143\) \\
+\midrule
+\multicolumn{5}{l}{\textit{NLL}} \\
+Adam--affine & \(3.0584\!\times\!10^{23} \pm 2.2858\!\times\!10^{23}\) & \(2.8850\!\times\!10^{23} \pm 2.5057\!\times\!10^{23}\) & \(5.8244\!\times\!10^{19} \pm 3.7745\!\times\!10^{19}\) & \(2.0804\!\times\!10^{19} \pm 1.3583\!\times\!10^{19}\) \\
+Adam--ReLU2 & \(1.1333\!\times\!10^{31} \pm 9.7716\!\times\!10^{30}\) & \(7.0543\!\times\!10^{24} \pm 6.0491\!\times\!10^{24}\) & \(1.4496\!\times\!10^{23} \pm 1.2198\!\times\!10^{23}\) & \(4.6866\!\times\!10^{38} \pm 4.7607\!\times\!10^{38}\) \\
+IVON--affine, $K=1000$ & \(5.9904\!\times\!10^{21} \pm 6.4398\!\times\!10^{21}\) & \(304.6987 \pm 52.2098\) & \(3.7880\!\times\!10^{5} \pm 1.0683\!\times\!10^{5}\) & \(3.2209\!\times\!10^{5} \pm 7.4793\!\times\!10^{4}\) \\
+IVON--ReLU2, $K=1000$ & \(1.9494\!\times\!10^{18} \pm 1.3836\!\times\!10^{18}\) & \(1.1309\!\times\!10^{5} \pm 6.8836\!\times\!10^{4}\) & \(2.0843\!\times\!10^{6} \pm 5.8045\!\times\!10^{5}\) & \(1.1263\!\times\!10^{6} \pm 2.1811\!\times\!10^{5}\) \\
+\addlinespace[2pt]
+PGE--PVMP (2026) & \(0.9342 \pm 0.0306\) & \(0.9237 \pm 0.0328\) & \(0.9612 \pm 0.0334\) & \(0.8699 \pm 0.0299\) \\
+NGMP--affine & \(0.9397 \pm 0.0386\) & \(0.8602 \pm 0.0365\) & \(0.8702 \pm 0.0348\) & \(0.9774 \pm 0.0357\) \\
+\bottomrule
+\end{tabular}%
+}
+\end{table*}

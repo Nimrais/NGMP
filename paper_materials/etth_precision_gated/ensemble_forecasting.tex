@@ -1,0 +1,69 @@
+\subsection{Ensemble Forecasting}
+
+We consider univariate long-horizon forecasting on the ETTh1 and ETTh2
+electricity-transformer data sets, whose observations are hourly.  From the
+preceding 96-hour multivariate context, the task is to predict one standardized
+oil-temperature target (\texttt{OT}) $H\in\{96,192,336,720\}$ hours ahead.
+Five independently trained neural forecasters (CNN, NLinear, LSTM, DLinear,
+and NConv) provide candidate predictions.  Constant forecasts at the 10th and
+90th training-set quantiles complete the frozen seven-expert bank.  The gate is
+fitted on the original validation partition and evaluated on the original test
+partition; no expert or VAE representation is retrained.
+
+The controlled edge-uncertainty experiments in \cref{sec:edge-uncertainty}
+predict a larger separation in NLL and interval coverage than in point error when
+uncertain reliability updates are composed.  We test that prediction against
+four neural gates and a precision-gated probabilistic ensemble.  The neural
+baselines are an affine gate and a two-layer ReLU gate trained with Adam, and
+an affine gate and two-layer ReLU gate trained with IVON
+\citep{shen_variational_2024}, evaluated with $K=1000$ posterior gate draws.
+The Adam and IVON rows are independently trained neural benchmarks; no causal
+optimizer effect is inferred from their contrast.  For readability, the main
+table retains the stronger IVON neural baselines; all Adam results remain in
+the appendix.
+
+The affine IVON gate is the closest neural comparison to the precision-gated
+model: both consume the same 65-dimensional context and frozen seven-expert
+bank, and both map context affinely to seven reliability scores.  Their scale
+semantics differ.  IVON optimizes the softmax-weighted expert squared error;
+adding a common shift to all seven logits leaves that objective unchanged, so
+the precision scale implied by those logits is unidentified.  NGMP instead
+performs inference in an explicit probabilistic precision model whose priors
+and likelihood determine both relative weights and absolute predictive scale.
+
+\paragraph{Pre-existing NGMP result.}
+We report the existing affine independent-expert \texttt{linear2\_ngmp}
+configuration, fitted on the complete original validation partition at every
+horizon.  The same model and hyperparameters are used in all eight cells; no
+per-cell test-result selection is performed.  These outcomes were inspected
+in earlier exploratory work, so they are retrospective results rather than an
+evaluation on a historically unseen test set.
+
+The Dynamic precision-gated ensemble of
+\citet{lukashchuk_composing_2026} supplies the model-family provenance, frozen
+experts, and historical 2026 PVMP results.  We report that historical
+row for continuity.  Its configuration differs from the affine NGMP model, so
+their contrast is not a matched inference comparison and cannot
+attribute differences to inference alone.
+
+\input{figures/etth_precision_main_table}
+
+\paragraph{Results.}
+Across the benchmark, RMSE alone often makes the neural gates appear
+competitive, while their likelihood-derived predictive intervals can collapse.
+The larger separation in NLL and coverage supports the uncertainty prediction
+from the controlled experiments: the affine NGMP precision model retains an
+explicit, likelihood-defined scale when uncertain reliability updates are
+composed.  Against historical PVMP, affine NGMP has lower NLL at all
+four ETTh1 horizons and at ETTh2 horizons 192 and 336.  It has lower RMSE at
+ETTh1 horizons 96, 192, and 720 and at ETTh2 horizons 96, 192, and 336.  Normal
+confidence intervals are shown with every point estimate.  Full results,
+including the Adam gates omitted from the compact main table, are reported in
+\cref{tab:etth-precision-gated-full,tab:etth-precision-gated-full-etth2}.
+
+\begin{figure*}[t]
+    \centering
+    \includegraphics[width=\textwidth]{figures/etth1_h192_ngmp_vmp.pdf}
+    \input{figures/etth1_h192_ngmp_vmp_caption}
+    \label{fig:etth1-h192-ngmp-vmp}
+\end{figure*}

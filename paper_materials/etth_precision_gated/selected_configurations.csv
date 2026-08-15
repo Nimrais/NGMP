@@ -1,0 +1,3 @@
+dataset,configuration_id,mean_nll,mean_mse,parameter_count
+ETTh1,consensus_rff_all_g3p0_no_beta,0.5321476158238966,0.16348399525099366,6511
+ETTh2,consensus_rff_all_g1p5_no_beta,0.8860168106553996,0.318288455741346,6511
