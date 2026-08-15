@@ -165,7 +165,12 @@ function fit_projected_vmp(counts, observed_indices, config; free_energy = true)
     )
 end
 
-function fit_ngmp(counts, observed_indices, config; free_energy = true)
+# `catch_exception = true` lets a fit that throws mid-way (a momentum step
+# leaving the natural domain, for example) return the free-energy snapshots of
+# the completed sweeps together with the error instead of aborting; posteriors
+# are then NaN. Used by the damping diagnostic only.
+function fit_ngmp(counts, observed_indices, config; free_energy = true,
+                  catch_exception = false)
     dependencies = NGMPDependencies(in = nothing)
     observed_counts = counts[observed_indices]
     observed = falses(length(counts))
@@ -189,14 +194,18 @@ function fit_ngmp(counts, observed_indices, config; free_energy = true)
         initialization = poisson_ngmp_initialization(initial_means),
         iterations = config.iterations,
         free_energy = free_energy,
+        catch_exception = catch_exception,
         options = (limit_stack_depth = 500,),
     )
-    posterior = last(result.posteriors[:z])
+    failed = !isnothing(result.error)
+    posterior = failed ? missing : last(result.posteriors[:z])
     return (
-        mean = mean.(posterior),
-        variance = var.(posterior),
-        free_energy = free_energy ? Float64.(result.free_energy) : Float64[],
+        mean = ismissing(posterior) ? fill(NaN, length(counts)) : mean.(posterior),
+        variance = ismissing(posterior) ? fill(NaN, length(counts)) : var.(posterior),
+        free_energy = free_energy && !isnothing(getfield(result, :free_energy)) ?
+            Float64.(getfield(result, :free_energy)) : Float64[],
         elapsed,
+        error = result.error,
     )
 end
 

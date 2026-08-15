@@ -1,8 +1,10 @@
 # When does NGMP help?
 
 This directory is the canonical, script-based reproduction entry point for the
-three exhibits of the paper's "The Role of Edge Uncertainty" section. It
-generates exactly the artifacts the paper uses — nothing else.
+three exhibits of the paper's comparison study ("Comparing VMP to NGMP: When
+Does NGMP Matter?"), its convergence-diagnostics appendix, and the damping
+diagnostic of the "Damping and Momentum" appendix. It generates exactly the
+artifacts the paper uses — nothing else.
 
 Every study is split into two stages:
 
@@ -38,6 +40,25 @@ regenerates every paper figure and table without running any inference.
    (`poisson_gap50_*`), the gap-depth profiles (`poisson_depth_*`), and the
    Bethe free-energy panels (`poisson_bethe_heldout_*`). Overridable:
    `WHEN_NGMP_POISSON_REPETITIONS`.
+   - `poisson_damping.jl` is the companion damping diagnostic for the paper's
+     "Damping and Momentum" appendix. It includes `poisson_state_space.jl` and
+     compares three outer-loop settings of the same NGMP model: the undamped
+     fixed-point map (α = 1), pure natural damping (α = 0.25), and the setting
+     used for every NGMP sunspot result above (α = 0.5, β = 0.2), tracking the
+     model's Bethe free energy (RxInfer `free_energy`) per variational iteration. On the sunspot masks all
+     three converge (undamped fastest; supplementary panels
+     `poisson_damping_heldout_{5,10,20,50}`, first 20 of 60 sweeps), so the
+     paper panels use the synthetic random-walk series of the earlier synthetic
+     damping figure (`Random.seed!(seed)`, z_k = z_{k-1} + N(0, 0.1), all counts
+     observed) at chain lengths N ∈ {100, 250, 500, 1000}, 20 seeds, 200 sweeps
+     (`poisson_damping_synthetic_n{100,250,500,1000}`; free energy above each
+     seed's converged value, geometric mean and 95 % band over seeds, log axis): longer chains wander to extreme log-rates, where
+     the undamped map diverges and the momentum setting can leave the natural
+     domain (such fits are kept through `catch_exception = true` and counted
+     as failed). `results/poisson_damping_summary.md` holds the settle sweeps
+     and the per-chain-length convergence/divergence/failure counts quoted in
+     the appendix. Overridable: `WHEN_NGMP_DAMPING_ITERATIONS`,
+     `WHEN_NGMP_DAMPING_SYNTHETIC_ITERATIONS`, `WHEN_NGMP_POISSON_REPETITIONS`.
 3. `streaming_hetero.jl`: the heteroscedastic hierarchy (model code in
    `hetero_model.jl`) with a Matérn-3/2 RFF-128 mean path (`signal_sd = 2`)
    and a separately frozen RBF-32 log-precision path (`level_sd = 1.6`), fitted
