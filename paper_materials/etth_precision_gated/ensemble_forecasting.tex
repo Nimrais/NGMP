@@ -11,12 +11,15 @@ fitted on the original validation partition and evaluated on the original test
 partition; no expert or VAE representation is retrained.
 
 The controlled edge-uncertainty experiments in \cref{sec:edge-uncertainty}
-predict a larger separation in NLL and interval coverage than in point error when
+predict a larger separation in NLL than in point error when
 uncertain reliability updates are composed.  We test that prediction against
 four neural gates and a precision-gated probabilistic ensemble.  The neural
 baselines are an affine gate and a two-layer ReLU gate trained with Adam, and
 an affine gate and two-layer ReLU gate trained with IVON
-\citep{shen_variational_2024}, evaluated with $K=1000$ posterior gate draws.
+\citep{shen_variational_2024}. Here $K=1000$ means that the IVON posterior
+predictive is approximated with 1{,}000 gate-weight draws. Each draw produces
+one Gaussian ensemble component; the reported NLL uses the equally weighted
+mixture density, and the point forecast averages the component means.
 The Adam and IVON rows are independently trained neural benchmarks; no causal
 optimizer effect is inferred from their contrast.  For readability, the main
 table retains the stronger IVON neural baselines; all Adam results remain in
@@ -50,11 +53,10 @@ attribute differences to inference alone.
 
 \paragraph{Results.}
 Across the benchmark, RMSE alone often makes the neural gates appear
-competitive, while their likelihood-derived predictive intervals can collapse.
-The larger separation in NLL and coverage supports the uncertainty prediction
-from the controlled experiments: the affine NGMP precision model retains an
-explicit, likelihood-defined scale when uncertain reliability updates are
-composed.  Against historical PVMP, affine NGMP has lower NLL at all
+competitive, whereas their NLL is substantially worse than that of both
+precision-gated models. This larger separation in NLL than in RMSE supports
+the prediction from the controlled experiments. Against historical PVMP,
+affine NGMP has lower NLL at all
 four ETTh1 horizons and at ETTh2 horizons 192 and 336.  It has lower RMSE at
 ETTh1 horizons 96, 192, and 720 and at ETTh2 horizons 96, 192, and 336.  Normal
 confidence intervals are shown with every point estimate.  Full results,
