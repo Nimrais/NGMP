@@ -2,7 +2,14 @@
 
 This repository is the code behind
 
-> M. Lukashchuk et al., *Natural-Gradient Message Passing* (TMLR submission).
+```
+@article{lukashchuk2026information,
+  title={Information Geometry of Message Passing},
+  author={Lukashchuk, Mykola and Yemets, Kyrylo and Ledbetter, Alex and {\c{S}}en{\"o}z, {\.I}smail},
+  journal={arXiv preprint arXiv:2608.15922},
+  year={2026}
+}
+```
 
 The Julia package `SurrogateModelling` (`src/`) implements the natural-gradient
 message-passing (NGMP) rules on top of forks of RxInfer/ReactiveMP: the
