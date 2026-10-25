@@ -124,13 +124,26 @@ const DATASET_ORDER = [
 
 const DVI_BIG_ROOT = joinpath(PAPER_ROOT, "dvi_uci",
     "wu2019_repeated_holdout_v1_20splits_full_heteroscedastic_2hidden50_v1_20261025")
+const HOMO_BIG_ROOT = joinpath(PAPER_ROOT, "dvi_uci",
+    "wu2019_repeated_holdout_v1_20splits_homoscedastic_2hidden50_budget50k_v1_20261025")
 
-function table_sources(; include_dvi_big = false, dvi_big_directory = joinpath(DVI_BIG_ROOT, "dvi"))
+function table_sources(; include_dvi_big = false, dvi_big_directory = joinpath(DVI_BIG_ROOT, "dvi"),
+    include_ddvi_big_homo = false, include_dvi_big_homo = false,
+    ddvi_big_homo_directory = joinpath(HOMO_BIG_ROOT, "ddvi"),
+    dvi_big_homo_directory = joinpath(HOMO_BIG_ROOT, "dvi"))
     sources = copy(SOURCES)
     if include_dvi_big
         position = findfirst(source -> source.method == "DVI-Hetero", sources)
         insert!(sources, position + 1, ResultSource("DVI-2HL-Hetero", "heteroscedastic",
             "full", dvi_big_directory; hidden_layers = 2))
+    end
+    for (enabled, small, label, propagation, directory) in (
+        (include_ddvi_big_homo, "dDVI-Homo", "dDVI-2HL-Homo", "diagonal", ddvi_big_homo_directory),
+        (include_dvi_big_homo, "DVI-Homo", "DVI-2HL-Homo", "full", dvi_big_homo_directory))
+        enabled || continue
+        position = findfirst(source -> source.method == small, sources)
+        insert!(sources, position + 1, ResultSource(label, "homoscedastic",
+            propagation, directory; hidden_layers = 2))
     end
     return sources
 end
@@ -272,7 +285,8 @@ function validate_source_architecture(source, runs, summary)
             error("$(source.method) contains mixed architectures")
         dimensions = Dict("concrete" => 8, "energy" => 8, "housing" => 13,
             "power" => 4, "wine" => 11, "yacht" => 6)
-        all(row.model_coefficients == 50 * dimensions[string(row.dataset)] + 2702
+        output_units = source.likelihood == "homoscedastic" ? 1 : 2
+        all(row.model_coefficients == 50 * dimensions[string(row.dataset)] + 2600 + 51 * output_units
             for row in eachrow(table)) || error("$(source.method) has incorrect coefficient counts")
     end
     return nothing
@@ -300,11 +314,15 @@ function render_markdown(io, sources, results)
 end
 
 function main(args = ARGS)
-    (isempty(args) || args == ["--include-dvi-big"]) || error(
+    allowed = ["--include-dvi-big", "--include-ddvi-big-homo", "--include-dvi-big-homo"]
+    (all(arg -> arg in allowed, args) && length(unique(args)) == length(args)) || error(
         "usage: julia --project=. " *
-        "paper_materials/make_final_baseline_table.jl [--include-dvi-big]",
+        "paper_materials/make_final_baseline_table.jl [--include-dvi-big] " *
+        "[--include-ddvi-big-homo] [--include-dvi-big-homo]",
     )
-    sources = table_sources(; include_dvi_big = !isempty(args))
+    sources = table_sources(; include_dvi_big = "--include-dvi-big" in args,
+        include_ddvi_big_homo = "--include-ddvi-big-homo" in args,
+        include_dvi_big_homo = "--include-dvi-big-homo" in args)
     validate_split_manifests(sources)
     results = load_results(sources)
     render_markdown(stdout, sources, results)

@@ -181,6 +181,15 @@ Pass `--include-dvi-big` to the table
 generator to include `DVI-2HL-Hetero`; without this option the existing nine
 variants remain available. Pilot results never enter the table.
 
+The separate homoscedastic big campaigns use two 50-unit hidden layers and
+one output, retaining the small homoscedastic baselines' 50k selection/refit
+budgets. Launch `bash baselines/dvi/run_ddvi_homoscedastic_two_hidden_paper.sh run`
+or `bash baselines/dvi/run_dvi_homoscedastic_two_hidden_paper.sh run` independently.
+Add `--include-ddvi-big-homo` and/or `--include-dvi-big-homo` to the table
+generator once those respective 120-fit bundles are complete. These flags
+combine with `--include-dvi-big` for a 12-variant table. See the
+[campaign README](dvi_uci/wu2019_repeated_holdout_v1_20splits_homoscedastic_2hidden50_budget50k_v1_20261025/README.md).
+
 The generator now also requires the separate `dDVI-2HL-Hetero` experiment:
 `wu2019_repeated_holdout_v1_20splits_heteroscedastic_2hidden50_v1_20261024/ddvi`
 under `dvi_uci/`. Run `bash baselines/dvi/run_ddvi_two_hidden_paper.sh` to

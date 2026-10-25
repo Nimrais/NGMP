@@ -1,0 +1,5 @@
+backend = "reactant"
+device = "gpu"
+julia_version = "1.11.9"
+source_fingerprint = "64a83715925d680947a39e71f2ad23c3a8ce79a3188e082661623ad6c1a9fe33"
+workers = 2

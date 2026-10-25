@@ -1,0 +1,267 @@
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+I0000 00:00:1792954523.930767   14021 service.cc:153] XLA service 0x197a0110 initialized for platform CUDA (this does not guarantee that XLA will be used). Devices:
+I0000 00:00:1792954523.930809   14021 service.cc:161]   StreamExecutor device (0): NVIDIA GeForce RTX 3090, Compute Capability 8.6
+I0000 00:00:1792954523.931314   14021 se_gpu_pjrt_client.cc:1440] Using BFC allocator.
+I0000 00:00:1792954523.931377   14021 gpu_helpers.cc:144] XLA backend will use up to 10115507814 bytes on device 0 for BFCAllocator.
+I0000 00:00:1792954523.931434   14021 gpu_helpers.cc:182] XLA backend will use up to 15173261721 bytes on device 0 for CollectiveBFCAllocator.
+I0000 00:00:1792954523.939522   14021 cuda_dnn.cc:461] Loaded cuDNN version 91400
+I0000 00:00:1792954576.091130   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792954576.093939   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792954576.096103   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792954576.098231   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792954576.100200   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792954583.082126   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792954583.084666   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792954583.086707   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792954583.088624   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792954583.090461   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792954620.451808   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792954620.454293   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792954620.456310   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792954620.458051   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792954620.459722   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792954624.580414   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792954624.582666   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792954624.584521   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792954624.586276   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792954624.587947   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792955016.398236   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792955016.401268   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792955016.403814   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792955016.406185   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792955016.408524   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792955022.419920   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792955022.422895   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792955022.425351   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792955022.427585   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792955022.429825   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792955022.472476   14021 dot_search_space.cc:240] All configs were filtered out because none of them sufficiently match the hints. Maybe the hints set does not contain a good representative set of valid configs? Working around this by using the full hints set instead.
+I0000 00:00:1792955022.472547   14021 dot_search_space.cc:240] All configs were filtered out because none of them sufficiently match the hints. Maybe the hints set does not contain a good representative set of valid configs? Working around this by using the full hints set instead.
+I0000 00:00:1792955022.472564   14021 dot_search_space.cc:240] All configs were filtered out because none of them sufficiently match the hints. Maybe the hints set does not contain a good representative set of valid configs? Working around this by using the full hints set instead.
+I0000 00:00:1792955022.472575   14021 dot_search_space.cc:240] All configs were filtered out because none of them sufficiently match the hints. Maybe the hints set does not contain a good representative set of valid configs? Working around this by using the full hints set instead.
+I0000 00:00:1792955022.808320   14079 subprocess_compilation.cc:348] ptxas warning : Registers are spilled to local memory in function 'gemm_fusion_dot_8', 16 bytes spill stores, 16 bytes spill loads
+
+I0000 00:00:1792955023.505113   14091 subprocess_compilation.cc:348] ptxas warning : Registers are spilled to local memory in function 'gemm_fusion_dot_general_70', 44 bytes spill stores, 44 bytes spill loads
+
+I0000 00:00:1792955024.162773   14088 subprocess_compilation.cc:348] ptxas warning : Registers are spilled to local memory in function 'gemm_fusion_dot_8', 44 bytes spill stores, 44 bytes spill loads
+
+I0000 00:00:1792955024.172627   14085 subprocess_compilation.cc:348] ptxas warning : Registers are spilled to local memory in function 'gemm_fusion_dot_general_46', 44 bytes spill stores, 44 bytes spill loads
+
+I0000 00:00:1792955024.268018   14083 subprocess_compilation.cc:348] ptxas warning : Registers are spilled to local memory in function 'gemm_fusion_dot_4', 140 bytes spill stores, 140 bytes spill loads
+
+I0000 00:00:1792955066.295253   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792955066.299079   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792955066.301849   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792955066.304378   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792955066.306644   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792955071.615164   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792955071.618744   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792955071.621478   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792955071.624012   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792955071.626393   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792955071.677491   14021 dot_search_space.cc:240] All configs were filtered out because none of them sufficiently match the hints. Maybe the hints set does not contain a good representative set of valid configs? Working around this by using the full hints set instead.
+I0000 00:00:1792955072.104350   14093 subprocess_compilation.cc:348] ptxas warning : Registers are spilled to local memory in function 'gemm_fusion_dot_8', 16 bytes spill stores, 16 bytes spill loads
+
+I0000 00:00:1792955072.325311   14085 subprocess_compilation.cc:348] ptxas warning : Registers are spilled to local memory in function 'gemm_fusion_dot_8', 44 bytes spill stores, 44 bytes spill loads
+
+I0000 00:00:1792955635.001004   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792955635.003641   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792955635.005893   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792955635.007937   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792955635.009805   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792955640.750404   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792955640.753626   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792955640.756345   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792955640.758809   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792955640.761046   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792955699.688476   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792955699.691439   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792955699.693722   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792955699.695770   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792955699.697737   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792955705.853295   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792955705.856172   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792955705.858348   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792955705.860313   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792955705.862212   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792956415.257702   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792956415.260571   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792956415.262927   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792956415.265175   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792956415.267378   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792956421.540838   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792956421.544524   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792956421.547616   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792956421.550474   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792956421.553201   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792956484.408047   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792956484.411616   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792956484.414774   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792956484.417693   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792956484.420236   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792956489.760052   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792956489.763609   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792956489.766421   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792956489.768974   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792956489.771396   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792957038.026459   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792957038.029289   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792957038.031678   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792957038.033890   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792957038.036012   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792957044.212484   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792957044.215504   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792957044.218008   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792957044.220352   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792957044.222601   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792957093.516562   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792957093.519939   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792957093.522664   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792957093.525083   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792957093.527389   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792957098.751792   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792957098.755142   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792957098.757763   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792957098.760189   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792957098.762430   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792957875.618559   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792957875.621983   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792957875.624900   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792957875.627607   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792957875.630149   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792957882.458698   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792957882.461967   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792957882.464698   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792957882.467215   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792957882.469569   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792957936.626912   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792957936.630684   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792957936.633683   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792957936.636360   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792957936.638901   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792957942.003148   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792957942.006841   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792957942.009960   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792957942.012836   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+I0000 00:00:1792957942.015463   14021 dot_merger.cc:476] Merging Dots in computation: main.50
+[1/60] Yacht split 1 homoscedastic diagonal
+    test LPD -3.80323  RMSE 2.33156  epoch 5410  118.6s
+[2/60] Yacht split 3 homoscedastic diagonal
+    test LPD -3.83470  RMSE 3.37883  epoch 5500  37.4s
+[3/60] Yacht split 5 homoscedastic diagonal
+    test LPD -3.78725  RMSE 3.20382  epoch 5010  35.9s
+[4/60] Yacht split 7 homoscedastic diagonal
+    test LPD -3.79230  RMSE 6.44584  epoch 6195  44.6s
+[5/60] Yacht split 9 homoscedastic diagonal
+    test LPD -3.77964  RMSE 3.98039  epoch 5240  38.5s
+[6/60] Yacht split 11 homoscedastic diagonal
+    test LPD -3.80968  RMSE 1.56569  epoch 5080  40.0s
+[7/60] Yacht split 13 homoscedastic diagonal
+    test LPD -3.79566  RMSE 5.69962  epoch 6560  48.7s
+[8/60] Yacht split 15 homoscedastic diagonal
+    test LPD -3.79504  RMSE 3.48478  epoch 5560  43.2s
+[9/60] Yacht split 17 homoscedastic diagonal
+    test LPD -3.80035  RMSE 2.71579  epoch 5545  41.0s
+[10/60] Yacht split 19 homoscedastic diagonal
+    test LPD -3.81129  RMSE 1.81233  epoch 5350  40.2s
+[11/60] Concrete split 1 homoscedastic diagonal
+    test LPD -3.93642  RMSE 8.52009  epoch 1670  76.1s
+[12/60] Concrete split 3 homoscedastic diagonal
+    test LPD -3.90003  RMSE 8.02074  epoch 3090  72.6s
+[13/60] Concrete split 5 homoscedastic diagonal
+    test LPD -3.92869  RMSE 8.65974  epoch 1670  51.1s
+[14/60] Concrete split 7 homoscedastic diagonal
+    test LPD -3.90010  RMSE 7.38400  epoch 1670  53.5s
+[15/60] Concrete split 9 homoscedastic diagonal
+    test LPD -3.89254  RMSE 7.39726  epoch 1670  49.2s
+[16/60] Concrete split 11 homoscedastic diagonal
+    test LPD -3.89731  RMSE 7.34466  epoch 1670  50.0s
+[17/60] Concrete split 13 homoscedastic diagonal
+    test LPD -3.93364  RMSE 8.10473  epoch 1670  50.5s
+[18/60] Concrete split 15 homoscedastic diagonal
+    test LPD -3.89224  RMSE 7.79107  epoch 5430  89.2s
+[19/60] Concrete split 17 homoscedastic diagonal
+    test LPD -3.90858  RMSE 7.49235  epoch 1670  49.8s
+[20/60] Concrete split 19 homoscedastic diagonal
+    test LPD -3.89480  RMSE 7.74577  epoch 3125  77.3s
+[21/60] Energy split 1 homoscedastic diagonal
+    test LPD -3.33866  RMSE 3.35409  epoch 4845  104.1s
+[22/60] Energy split 3 homoscedastic diagonal
+    test LPD -3.33589  RMSE 3.26260  epoch 2620  52.4s
+[23/60] Energy split 5 homoscedastic diagonal
+    test LPD -3.33408  RMSE 2.89594  epoch 6995  94.2s
+[24/60] Energy split 7 homoscedastic diagonal
+    test LPD -3.33936  RMSE 3.33724  epoch 6570  92.3s
+[25/60] Energy split 9 homoscedastic diagonal
+    test LPD -3.34075  RMSE 3.07930  epoch 2615  51.9s
+[26/60] Energy split 11 homoscedastic diagonal
+    test LPD -3.32852  RMSE 2.60636  epoch 3810  67.5s
+[27/60] Energy split 13 homoscedastic diagonal
+    test LPD -3.34059  RMSE 3.00576  epoch 7100  93.2s
+[28/60] Energy split 15 homoscedastic diagonal
+    test LPD -3.32063  RMSE 2.62204  epoch 5800  84.9s
+[29/60] Energy split 17 homoscedastic diagonal
+    test LPD -3.33512  RMSE 3.26967  epoch 6290  87.1s
+[30/60] Energy split 19 homoscedastic diagonal
+    test LPD -3.33479  RMSE 3.46507  epoch 2755  51.2s
+[31/60] Boston split 1 homoscedastic diagonal
+    test LPD -3.32940  RMSE 4.63142  epoch 8465  113.3s
+[32/60] Boston split 3 homoscedastic diagonal
+    test LPD -3.38572  RMSE 5.54796  epoch 4045  51.1s
+[33/60] Boston split 5 homoscedastic diagonal
+    test LPD -3.30836  RMSE 3.83240  epoch 4100  50.9s
+[34/60] Boston split 7 homoscedastic diagonal
+    test LPD -3.29123  RMSE 3.47913  epoch 4585  55.5s
+[35/60] Boston split 9 homoscedastic diagonal
+    test LPD -3.32849  RMSE 4.77450  epoch 4030  50.4s
+[36/60] Boston split 11 homoscedastic diagonal
+    test LPD -3.31346  RMSE 3.84390  epoch 7415  82.9s
+[37/60] Boston split 13 homoscedastic diagonal
+    test LPD -3.47430  RMSE 7.26243  epoch 4280  53.4s
+[38/60] Boston split 15 homoscedastic diagonal
+    test LPD -3.29194  RMSE 3.32308  epoch 4320  53.7s
+[39/60] Boston split 17 homoscedastic diagonal
+    test LPD -3.42577  RMSE 6.41669  epoch 3235  43.9s
+[40/60] Boston split 19 homoscedastic diagonal
+    test LPD -3.42114  RMSE 6.76031  epoch 5805  67.7s
+[41/60] Power split 1 homoscedastic diagonal
+    test LPD -3.79496  RMSE 4.32857  epoch 640  104.4s
+[42/60] Power split 3 homoscedastic diagonal
+    test LPD -3.79459  RMSE 4.27777  epoch 640  81.4s
+[43/60] Power split 5 homoscedastic diagonal
+    test LPD -3.79167  RMSE 4.33219  epoch 625  82.4s
+[44/60] Power split 7 homoscedastic diagonal
+    test LPD -3.79346  RMSE 4.07858  epoch 530  78.9s
+[45/60] Power split 9 homoscedastic diagonal
+    test LPD -3.79359  RMSE 4.12720  epoch 620  80.6s
+[46/60] Power split 11 homoscedastic diagonal
+    test LPD -3.79021  RMSE 4.01020  epoch 642  82.4s
+[47/60] Power split 13 homoscedastic diagonal
+    test LPD -3.79907  RMSE 4.53438  epoch 625  81.5s
+[48/60] Power split 15 homoscedastic diagonal
+    test LPD -3.79493  RMSE 4.14775  epoch 635  82.1s
+[49/60] Power split 17 homoscedastic diagonal
+    test LPD -3.79548  RMSE 4.26529  epoch 642  80.9s
+[50/60] Power split 19 homoscedastic diagonal
+    test LPD -3.79264  RMSE 4.25722  epoch 630  81.5s
+[51/60] Wine split 1 homoscedastic diagonal
+    test LPD -1.05126  RMSE 0.66362  epoch 3845  111.1s
+[52/60] Wine split 3 homoscedastic diagonal
+    test LPD -1.01006  RMSE 0.60340  epoch 1155  58.1s
+[53/60] Wine split 5 homoscedastic diagonal
+    test LPD -1.13933  RMSE 0.75870  epoch 1555  63.8s
+[54/60] Wine split 7 homoscedastic diagonal
+    test LPD -1.08443  RMSE 0.69779  epoch 1155  57.0s
+[55/60] Wine split 9 homoscedastic diagonal
+    test LPD -1.05701  RMSE 0.66836  epoch 1440  64.2s
+[56/60] Wine split 11 homoscedastic diagonal
+    test LPD -1.00751  RMSE 0.60340  epoch 1475  65.0s
+[57/60] Wine split 13 homoscedastic diagonal
+    test LPD -1.03514  RMSE 0.64583  epoch 1560  67.0s
+[58/60] Wine split 15 homoscedastic diagonal
+    test LPD -1.00012  RMSE 0.60186  epoch 3710  85.5s
+[59/60] Wine split 17 homoscedastic diagonal
+    test LPD -1.04307  RMSE 0.65842  epoch 3845  85.4s
+[60/60] Wine split 19 homoscedastic diagonal
+    test LPD -1.08257  RMSE 0.70217  epoch 3380  80.8s
+DVI benchmark complete: 60 successful rows, 0 failure rows. Output: /home/nimrais/repos/NGMP/paper_materials/dvi_uci/wu2019_repeated_holdout_v1_20splits_homoscedastic_2hidden50_budget50k_v1_20261025/ddvi_shards/01

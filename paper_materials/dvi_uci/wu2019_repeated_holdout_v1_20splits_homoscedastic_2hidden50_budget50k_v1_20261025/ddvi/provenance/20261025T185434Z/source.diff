@@ -1,0 +1,100 @@
+diff --git a/baselines/dvi/README.md b/baselines/dvi/README.md
+index c68f8cc..102a24c 100644
+--- a/baselines/dvi/README.md
++++ b/baselines/dvi/README.md
+@@ -489,3 +489,33 @@ julia --project=baselines/dvi baselines/dvi/test/runtests.jl
+ julia --project=baselines/dvi baselines/dvi/test/full_two_hidden_workflow.jl
+ DVI_DEVICE=gpu julia --project=baselines/dvi baselines/dvi/test/full_two_hidden_reactant.jl
+ ```
++
++## Homoscedastic dDVI big and DVI big
++
++The two independent launchers use `d -> 50 -> 50 -> 1`, with fixed unit
++observation variance in standardized target units. They retain the small
++homoscedastic baselines' 50,000-step selection/refit budgets and 14,000-step
++KL warmup plus 1,000-step anneal. Each runs all six datasets and 20 paired splits.
++
++```sh
++bash baselines/dvi/run_ddvi_homoscedastic_two_hidden_paper.sh check
++bash baselines/dvi/run_ddvi_homoscedastic_two_hidden_paper.sh run
++# Run separately, after the first campaign finishes on the same GPU:
++bash baselines/dvi/run_dvi_homoscedastic_two_hidden_paper.sh run
++```
++
++Both automatically select Julia 1.11.9, default to two Reactant/GPU workers,
++and run a short CPU/GPU smoke check before the first full campaign. `smoke`
++can also be invoked directly. `run` resumes completed fits; `finish` verifies
++and regenerates a completed bundle without training or GPU access. Smoke
++results cannot enter the final table. Interrupted individual fits restart.
++
++See the [campaign README](../../paper_materials/dvi_uci/wu2019_repeated_holdout_v1_20splits_homoscedastic_2hidden50_budget50k_v1_20261025/README.md)
++for artifacts, execution overrides, LFS storage and table flags. Shared
++campaign code serves both launchers; the numerical model implementation is unchanged.
++
++Validate protocol and table integration with Julia 1.11.9:
++
++```sh
++julia +1.11 --project=baselines/dvi baselines/dvi/test/homoscedastic_two_hidden_workflow.jl
++```
+diff --git a/paper_materials/make_final_baseline_table.jl b/paper_materials/make_final_baseline_table.jl
+index 26c8872..81acdc7 100644
+--- a/paper_materials/make_final_baseline_table.jl
++++ b/paper_materials/make_final_baseline_table.jl
+@@ -124,14 +124,27 @@ const DATASET_ORDER = [
+ 
+ const DVI_BIG_ROOT = joinpath(PAPER_ROOT, "dvi_uci",
+     "wu2019_repeated_holdout_v1_20splits_full_heteroscedastic_2hidden50_v1_20261025")
++const HOMO_BIG_ROOT = joinpath(PAPER_ROOT, "dvi_uci",
++    "wu2019_repeated_holdout_v1_20splits_homoscedastic_2hidden50_budget50k_v1_20261025")
+ 
+-function table_sources(; include_dvi_big = false, dvi_big_directory = joinpath(DVI_BIG_ROOT, "dvi"))
++function table_sources(; include_dvi_big = false, dvi_big_directory = joinpath(DVI_BIG_ROOT, "dvi"),
++    include_ddvi_big_homo = false, include_dvi_big_homo = false,
++    ddvi_big_homo_directory = joinpath(HOMO_BIG_ROOT, "ddvi"),
++    dvi_big_homo_directory = joinpath(HOMO_BIG_ROOT, "dvi"))
+     sources = copy(SOURCES)
+     if include_dvi_big
+         position = findfirst(source -> source.method == "DVI-Hetero", sources)
+         insert!(sources, position + 1, ResultSource("DVI-2HL-Hetero", "heteroscedastic",
+             "full", dvi_big_directory; hidden_layers = 2))
+     end
++    for (enabled, small, label, propagation, directory) in (
++        (include_ddvi_big_homo, "dDVI-Homo", "dDVI-2HL-Homo", "diagonal", ddvi_big_homo_directory),
++        (include_dvi_big_homo, "DVI-Homo", "DVI-2HL-Homo", "full", dvi_big_homo_directory))
++        enabled || continue
++        position = findfirst(source -> source.method == small, sources)
++        insert!(sources, position + 1, ResultSource(label, "homoscedastic",
++            propagation, directory; hidden_layers = 2))
++    end
+     return sources
+ end
+ 
+@@ -272,7 +285,8 @@ function validate_source_architecture(source, runs, summary)
+             error("$(source.method) contains mixed architectures")
+         dimensions = Dict("concrete" => 8, "energy" => 8, "housing" => 13,
+             "power" => 4, "wine" => 11, "yacht" => 6)
+-        all(row.model_coefficients == 50 * dimensions[string(row.dataset)] + 2702
++        output_units = source.likelihood == "homoscedastic" ? 1 : 2
++        all(row.model_coefficients == 50 * dimensions[string(row.dataset)] + 2600 + 51 * output_units
+             for row in eachrow(table)) || error("$(source.method) has incorrect coefficient counts")
+     end
+     return nothing
+@@ -300,11 +314,15 @@ function render_markdown(io, sources, results)
+ end
+ 
+ function main(args = ARGS)
+-    (isempty(args) || args == ["--include-dvi-big"]) || error(
++    allowed = ["--include-dvi-big", "--include-ddvi-big-homo", "--include-dvi-big-homo"]
++    (all(arg -> arg in allowed, args) && length(unique(args)) == length(args)) || error(
+         "usage: julia --project=. " *
+-        "paper_materials/make_final_baseline_table.jl [--include-dvi-big]",
++        "paper_materials/make_final_baseline_table.jl [--include-dvi-big] " *
++        "[--include-ddvi-big-homo] [--include-dvi-big-homo]",
+     )
+-    sources = table_sources(; include_dvi_big = !isempty(args))
++    sources = table_sources(; include_dvi_big = "--include-dvi-big" in args,
++        include_ddvi_big_homo = "--include-ddvi-big-homo" in args,
++        include_dvi_big_homo = "--include-dvi-big-homo" in args)
+     validate_split_manifests(sources)
+     results = load_results(sources)
+     render_markdown(stdout, sources, results)

@@ -489,3 +489,33 @@ julia --project=baselines/dvi baselines/dvi/test/runtests.jl
 julia --project=baselines/dvi baselines/dvi/test/full_two_hidden_workflow.jl
 DVI_DEVICE=gpu julia --project=baselines/dvi baselines/dvi/test/full_two_hidden_reactant.jl
 ```
+
+## Homoscedastic dDVI big and DVI big
+
+The two independent launchers use `d -> 50 -> 50 -> 1`, with fixed unit
+observation variance in standardized target units. They retain the small
+homoscedastic baselines' 50,000-step selection/refit budgets and 14,000-step
+KL warmup plus 1,000-step anneal. Each runs all six datasets and 20 paired splits.
+
+```sh
+bash baselines/dvi/run_ddvi_homoscedastic_two_hidden_paper.sh check
+bash baselines/dvi/run_ddvi_homoscedastic_two_hidden_paper.sh run
+# Run separately, after the first campaign finishes on the same GPU:
+bash baselines/dvi/run_dvi_homoscedastic_two_hidden_paper.sh run
+```
+
+Both automatically select Julia 1.11.9, default to two Reactant/GPU workers,
+and run a short CPU/GPU smoke check before the first full campaign. `smoke`
+can also be invoked directly. `run` resumes completed fits; `finish` verifies
+and regenerates a completed bundle without training or GPU access. Smoke
+results cannot enter the final table. Interrupted individual fits restart.
+
+See the [campaign README](../../paper_materials/dvi_uci/wu2019_repeated_holdout_v1_20splits_homoscedastic_2hidden50_budget50k_v1_20261025/README.md)
+for artifacts, execution overrides, LFS storage and table flags. Shared
+campaign code serves both launchers; the numerical model implementation is unchanged.
+
+Validate protocol and table integration with Julia 1.11.9:
+
+```sh
+julia +1.11 --project=baselines/dvi baselines/dvi/test/homoscedastic_two_hidden_workflow.jl
+```
