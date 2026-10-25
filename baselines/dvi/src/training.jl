@@ -112,12 +112,9 @@ function numerical_diagnostics(
         output_error = sprint(showerror, error)
         isnothing(first_nonfinite) && (first_nonfinite = "forward-pass-error")
     end
-    log_stds = vcat(
-        vec(params.hidden.weight_log_std),
-        vec(params.hidden.bias_log_std),
-        vec(params.output.weight_log_std),
-        vec(params.output.bias_log_std),
-    )
+    log_stds = vcat(map(layer -> vcat(
+        vec(layer.weight_log_std), vec(layer.bias_log_std),
+    ), model_layers(params))...)
     log_std_extrema = finite_extrema(log_stds)
     tracker_state = tracker === nothing ? (
         clamp_count = 0,

@@ -1,0 +1,10 @@
+# Local worker outputs duplicate the complete merged ddvi/ results.
+/ddvi_shards/
+/preflight/
+/campaign.lock
+/launcher.pid
+/worker_pids.txt
+# Aborted initial launcher snapshot; the complete snapshot is retained.
+/provenance/20261024T204633Z/
+# Preserve the exact root environment used for this experiment.
+!/provenance/20261024T204953Z/Manifest.toml

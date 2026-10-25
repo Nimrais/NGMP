@@ -6,10 +6,17 @@ function scalar_metrics(metrics)
 end
 
 function method_name(config::DVIConfig)
+    config.hidden_layers == 2 && return "Diagonal Deterministic Variational Inference (dDVI-2HL)"
     return config.propagation == "full" ?
         "Deterministic Variational Inference (DVI)" :
         "Diagonal Deterministic Variational Inference (dDVI)"
 end
+
+architecture_record(input_dimension, likelihood, config) = (
+    hidden_layers = config.hidden_layers,
+    hidden_units = config.hidden_units,
+    model_coefficients = model_coefficient_count(input_dimension, likelihood, config),
+)
 
 function run_configuration(
     dataset,
@@ -45,6 +52,7 @@ function run_configuration(
     if config.selection_only
         return (
             method = method_name(config),
+            architecture_record(input_dimension, likelihood, config)...,
             method_reference = "Wu et al., ICLR 2019, arXiv:1810.03958",
             uci_protocol_reference = "Wu et al., ICLR 2019, Table 2",
             numerical_protocol = config.numerical_protocol,
@@ -96,6 +104,7 @@ function run_configuration(
             y_center = prepared.outer.standardizer.y_center,
             y_scale = prepared.outer.standardizer.y_scale,
             eb_hidden_layer_variance = NaN,
+            eb_second_hidden_layer_variance = NaN,
             eb_output_layer_variance = NaN,
             metric_values...,
         )
@@ -165,6 +174,7 @@ function run_configuration(
                 split_id = split_id,
                 split_spec = split_spec_record(prepared.split_spec),
                 posterior_params = refit.params,
+                architecture_record(input_dimension, likelihood, config)...,
                 standardizer = prepared.outer.standardizer,
                 method = method_name(config),
                 method_reference =
@@ -189,9 +199,11 @@ function run_configuration(
                 model_seed = seeds.model,
                 prediction_config = (
                     hidden_units = config.hidden_units,
+                    hidden_layers = config.hidden_layers,
                     homo_log_variance = config.homo_log_variance,
                 ),
                 training_config = config_dictionary(config),
+                refit_losses = refit.losses,
                 test_metrics = scalar_metrics(metrics),
             ),
         )
@@ -199,6 +211,7 @@ function run_configuration(
 
     return (
         method = method_name(config),
+        architecture_record(input_dimension, likelihood, config)...,
         method_reference = "Wu et al., ICLR 2019, arXiv:1810.03958",
         uci_protocol_reference = "Wu et al., ICLR 2019, Table 2",
         numerical_protocol = config.numerical_protocol,
@@ -251,6 +264,7 @@ function run_configuration(
         y_center = prepared.outer.standardizer.y_center,
         y_scale = prepared.outer.standardizer.y_scale,
         eb_hidden_layer_variance = prior_variances.hidden,
+        eb_second_hidden_layer_variance = get(prior_variances, :hidden2, NaN),
         eb_output_layer_variance = prior_variances.output,
         scalar_metrics(metrics)...,
     )
@@ -282,6 +296,7 @@ function failure_row(
     )...)
     return (
         method = method_name(config),
+        architecture_record(size(dataset.features, 2), likelihood, config)...,
         method_reference = "Wu et al., ICLR 2019, arXiv:1810.03958",
         uci_protocol_reference = "Wu et al., ICLR 2019, Table 2",
         numerical_protocol = config.numerical_protocol,
@@ -340,6 +355,7 @@ function failure_row(
         y_center = prepared.outer.standardizer.y_center,
         y_scale = prepared.outer.standardizer.y_scale,
         eb_hidden_layer_variance = NaN,
+        eb_second_hidden_layer_variance = NaN,
         eb_output_layer_variance = NaN,
         metric_values...,
     )

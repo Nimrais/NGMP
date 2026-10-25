@@ -157,12 +157,25 @@ function reactant_dvi_loss(
     weight,
 )
     output = DVIUCI.propagate_dvi(params, features, config)
-    reconstruction = mean(reactant_expected_log_likelihood(
-        output, targets, likelihood, config,
+    # Use separate reductions for the direct log-variance and precision terms
+    # in the new architecture, avoiding the legacy fused likelihood expression.
+    reconstruction = if config.hidden_layers == 2
+        prediction = vec(output.mean[:, 1])
+        prediction_variance = DVIUCI.output_covariance_entry(output, 1, 1, config)
+        log_variance = likelihood == "heteroscedastic" ? vec(output.mean[:, 2]) :
+            zero.(prediction) .+ Float32(config.homo_log_variance)
+        log_variance_variance = likelihood == "heteroscedastic" ?
+            DVIUCI.output_covariance_entry(output, 2, 2, config) : zero.(prediction)
+        precision = DVIUCI.safe_exp(-log_variance .+ 0.5f0 .* log_variance_variance, config)
+        -0.5f0 * (DVIUCI.DVI_LOG2PI + mean(log_variance) +
+            mean(precision .* (prediction_variance .+ (prediction .- targets) .^ 2)))
+    else
+        mean(reactant_expected_log_likelihood(output, targets, likelihood, config))
+    end
+    kl = sum(map(
+        layer -> reactant_empirical_bayes_layer_kl(layer, config),
+        DVIUCI.model_layers(params),
     ))
-    kl =
-        reactant_empirical_bayes_layer_kl(params.hidden, config) +
-        reactant_empirical_bayes_layer_kl(params.output, config)
     return weight * kl / n_training - reconstruction
 end
 
@@ -275,6 +288,7 @@ function batch_kernel_key(
         batch_size,
         eltype(backend.params.hidden.weight_mu),
         config.hidden_units,
+        config.hidden_layers,
         config.safe_exp_min,
         config.safe_exp_max,
         config.eb_alpha,
@@ -335,6 +349,7 @@ function validation_kernel_key(
         size(validation_features),
         eltype(backend.params.hidden.weight_mu),
         config.hidden_units,
+        config.hidden_layers,
         config.safe_exp_min,
         config.safe_exp_max,
     )

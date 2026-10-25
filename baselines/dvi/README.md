@@ -341,3 +341,51 @@ julia --project=baselines/dvi baselines/dvi/merge_shards.jl \
   url       = {https://arxiv.org/abs/1810.03958}
 }
 ```
+
+## Two-hidden-layer dDVI experiment
+
+Set `DVI_HIDDEN_LAYERS=2 DVI_HIDDEN_UNITS=50 DVI_PROPAGATION=diagonal`
+for a `d -> 50 -> 50 -> 2` heteroscedastic network. The default remains one
+hidden layer; two hidden layers are supported only with diagonal propagation.
+The additional layer contributes its own factorized Gaussian posterior and
+empirical-Bayes KL term. Coefficient counts are `50d + 2702` (2,902–3,352).
+
+The fixed 120-fit campaign covers Concrete Compressive Strength, Energy
+Efficiency (heating load), Boston Housing, Combined Cycle Power Plant, Wine
+Quality Red, and Yacht Hydrodynamics, with the original 20 paired splits:
+
+```sh
+bash baselines/dvi/run_ddvi_two_hidden_paper.sh
+```
+
+The launcher uses Julia on PATH, or `DDVI_JULIA_BIN` when set. It runs four
+Zygote/CPU workers with one Julia/BLAS thread each, using the original
+heteroscedastic dDVI training settings: Adam `0.0003`, batches of 100,
+10,000 maximum epochs, validation every five epochs, patience 500, a
+14,000-step KL warmup and 1,000-step anneal, and no optimizer-step cap.
+Ambient `DVI_*` variables do not override this fixed campaign. Its writable
+package depot defaults to `cache/ddvi_depot`, followed by the user's existing
+depot; `DDVI_DEPOT_PATH` can override that search path.
+
+The output root is
+`paper_materials/dvi_uci/wu2019_repeated_holdout_v1_20splits_heteroscedastic_2hidden50_v1_20261024/`.
+It contains four `ddvi_shards/` directories, logs, source/environment provenance,
+`status.toml`, and the final merged `ddvi/` directory. Each run saves the
+configuration, exact split manifest, selection history, refitted posterior,
+refit loss history, standardizer, metrics, architecture, and failure diagnostics.
+Successful fits with valid matching checkpoints are skipped on restart;
+interrupted fits restart from initialization. A process lock prevents duplicate
+campaign launchers. Failure rows prevent merging and final-table generation.
+
+On completion, every saved posterior is re-evaluated against its recorded
+metrics. The launcher saves `final_baseline_table.md`, `paired_differences.csv`,
+`paired_summary.csv`, and `comparison.md`. Paired NLL/RMSE differences are
+**two hidden layers minus one hidden layer**, with negative values better;
+intervals are `1.96 * standard error` over the 20 paired split differences.
+The full-table generator names the additional method `dDVI-2HL-Hetero` and
+retains the original dDVI row. Missing/incomplete results are an error.
+
+New checkpoints use schema `dvi-uci-posterior-v4`. Existing one-hidden-layer
+posterior parameter structures still work with `DVIConfig(hidden_layers=1)`;
+historical results are not overwritten or automatically resumed across the
+implementation-version change.

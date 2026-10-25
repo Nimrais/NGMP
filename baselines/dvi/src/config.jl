@@ -94,7 +94,7 @@ function default_output_directory()
 end
 
 const DVI_IMPLEMENTATION_VERSION =
-    "full-covariance-selection-optimized-v2"
+    "diagonal-two-hidden-layers-v3"
 
 Base.@kwdef struct DVIConfig
     datasets::Vector{String} = first.(DATASET_REGISTRY)
@@ -106,6 +106,7 @@ Base.@kwdef struct DVIConfig
     execution_device::String = "cpu"
     implementation_version::String = DVI_IMPLEMENTATION_VERSION
     hidden_units::Int = 50
+    hidden_layers::Int = 1
     batch_size::Int = 100
     learning_rate::Float64 = 3e-4
     eb_alpha::Float64 = 1.0
@@ -179,6 +180,7 @@ function load_config()
         ))),
         implementation_version = DVI_IMPLEMENTATION_VERSION,
         hidden_units = env_int("DVI_HIDDEN_UNITS", 50),
+        hidden_layers = env_int("DVI_HIDDEN_LAYERS", 1),
         batch_size = env_int("DVI_BATCH_SIZE", 100),
         learning_rate = env_float("DVI_LEARNING_RATE", 3e-4),
         eb_alpha = env_float("DVI_EB_ALPHA", 1.0),
@@ -278,6 +280,10 @@ function validate_config(config::DVIConfig)
     )
     config.hidden_units >= 1 ||
         throw(ArgumentError("DVI_HIDDEN_UNITS must be positive"))
+    config.hidden_layers in (1, 2) ||
+        throw(ArgumentError("DVI_HIDDEN_LAYERS must be 1 or 2"))
+    config.hidden_layers == 1 || config.propagation == "diagonal" ||
+        throw(ArgumentError("two hidden layers require DVI_PROPAGATION=diagonal"))
     config.batch_size >= 1 ||
         throw(ArgumentError("DVI_BATCH_SIZE must be positive"))
     isfinite(config.learning_rate) && config.learning_rate > 0 ||

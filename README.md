@@ -104,7 +104,8 @@ differs.
 | dDVI, hodDVI, DVI, hoDVI | `baselines/dvi/run.jl` and its shell launchers, commands in `paper_materials/README.md` §2–4 (GPU/Reactant, ~48 GPU hours in total) | `paper_materials/dvi_uci/...` |
 | hoBPC | `baselines/bpc/run.jl`, `paper_materials/README.md` §5 | `paper_materials/bpc_uci/...` |
 | hoIVON | `julia --project=baselines/ivon baselines/ivon/run_uci.jl pilot`, then `full`, then `summarize` (see [`baselines/ivon/README.md`](baselines/ivon/README.md), section "Standalone UCI regression benchmark") | `paper_materials/ivon/uci/` |
-| Final combined table (all rows, bold = CI-compatible with the best) | `julia --project=. paper_materials/make_final_baseline_table.jl` (validates 840 rows and identical split manifests before printing) | stdout Markdown; the LaTeX rows in `sections/modelling.tex` and `sections/apendix_modelling.tex` are these numbers |
+| Two-hidden-layer dDVI (`d -> 50 -> 50 -> 2`, heteroscedastic) | `bash baselines/dvi/run_ddvi_two_hidden_paper.sh` runs all six datasets × 20 splits with the original dDVI protocol; see `baselines/dvi/README.md`. | `paper_materials/dvi_uci/wu2019_repeated_holdout_v1_20splits_heteroscedastic_2hidden50_v1_20261024/` |
+| Final combined table (nine variants, bold = CI-compatible with the best) | `julia --project=. paper_materials/make_final_baseline_table.jl` validates 1,080 rows and identical split manifests before printing; requires the completed two-hidden-layer dDVI campaign. | stdout Markdown; the campaign also saves `final_baseline_table.md`. Manuscript tables are not updated automatically. |
 
 `paper_materials/README.md` documents the compute budget of the baselines
 (about 100 single-GPU machine hours end to end) and the provenance of every

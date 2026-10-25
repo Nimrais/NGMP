@@ -5,7 +5,7 @@ const CONFIG_RUNTIME_ONLY_FIELDS = Set([
     "show_progress",
     "selection_only",
 ])
-const DVI_POSTERIOR_SCHEMA_VERSION = "dvi-uci-posterior-v3"
+const DVI_POSTERIOR_SCHEMA_VERSION = "dvi-uci-posterior-v4"
 
 function configuration_stem(
     dataset::AbstractString,
@@ -177,13 +177,18 @@ function configuration_succeeded(
                     "propagation",
                     "posterior_params",
                     "split_spec",
+                    "prediction_config",
+                    "n_features",
                 ),
             ) &&
                 file["schema_version"] == DVI_POSTERIOR_SCHEMA_VERSION &&
                 file["dataset"] == dataset &&
                 file["split_id"] == split_id &&
                 file["likelihood"] == likelihood &&
-                file["propagation"] == propagation
+                file["propagation"] == propagation &&
+                model_architecture_matches(file["posterior_params"], file["n_features"], likelihood, config) &&
+                file["prediction_config"].hidden_layers == config.hidden_layers &&
+                file["prediction_config"].hidden_units == config.hidden_units
         end
     catch
         false
@@ -256,10 +261,11 @@ function summary_table(runs::DataFrame)
     successful = filter(row -> row.status == "success", runs)
     isempty(successful) && return DataFrame()
     rows = NamedTuple[]
-    for group in groupby(
-        successful,
-        [:dataset, :dataset_name, :likelihood, :propagation],
-    )
+    grouping = [:dataset, :dataset_name, :likelihood, :propagation]
+    architecture_columns = filter(name -> name in propertynames(successful),
+        [:hidden_layers, :hidden_units, :model_coefficients])
+    append!(grouping, architecture_columns)
+    for group in groupby(successful, grouping)
         metric_summary = Pair{Symbol, Any}[]
         for metric in DVI_SCALAR_METRIC_NAMES
             values = Float64.(group[!, metric])
@@ -283,6 +289,7 @@ function summary_table(runs::DataFrame)
             dataset_name = string(first(group.dataset_name)),
             likelihood = string(first(group.likelihood)),
             propagation = string(first(group.propagation)),
+            (name => first(group[!, name]) for name in architecture_columns)...,
             n = nrow(group),
             metric_summary...,
         )...))
@@ -297,6 +304,9 @@ end
 format_ci95(mean_value, standard_error) =
     @sprintf("%.4f ± %.4f", mean_value, 1.96 * standard_error)
 
+table_method_label(row) = hasproperty(row, :hidden_layers) && row.hidden_layers == 2 ?
+    "dDVI-2HL" : string(row.propagation)
+
 function write_tables(summary::DataFrame, config::DVIConfig)
     isempty(summary) && return nothing
     atomic_csv_write(joinpath(config.output_dir, "summary.csv"), summary)
@@ -310,7 +320,7 @@ function write_tables(summary::DataFrame, config::DVIConfig)
         for row in eachrow(summary)
             println(
                 io,
-                "| $(row.dataset_name) | $(row.propagation) | " *
+                "| $(row.dataset_name) | $(table_method_label(row)) | " *
                 "$(row.likelihood) | $(row.n) | " *
                 "$(format_ci95(row.lpd_original_mean, row.lpd_original_se)) | " *
                 "$(format_ci95(row.rmse_original_mean, row.rmse_original_se)) | " *
@@ -332,7 +342,7 @@ function write_tables(summary::DataFrame, config::DVIConfig)
             dataset_name = replace(string(row.dataset_name), "_" => "\\_")
             println(
                 io,
-                "$dataset_name & $(row.propagation) & $(row.likelihood) & " *
+                "$dataset_name & $(table_method_label(row)) & $(row.likelihood) & " *
                 "$(row.n) & " *
                 @sprintf(
                     "%.4f \$\\pm\$ %.4f & %.4f \$\\pm\$ %.4f \\\\",

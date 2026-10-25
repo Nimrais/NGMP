@@ -1,0 +1,7 @@
+yacht: (308, 6), coefficients=3002
+concrete: (1030, 8), coefficients=3102
+energy: (768, 8), coefficients=3102
+housing: (506, 13), coefficients=3352
+power: (9568, 4), coefficients=2902
+wine: (1599, 11), coefficients=3252
+Projected four-worker runtime: 6.3 hours (historical step counts; actual stopping may differ)

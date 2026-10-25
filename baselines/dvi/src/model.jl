@@ -37,6 +37,9 @@ function initialize_model(
     hidden = initialize_dvi_layer(
         rng, input_dimension, config.hidden_units, config,
     )
+    hidden2 = config.hidden_layers == 2 ? initialize_dvi_layer(
+        rng, config.hidden_units, config.hidden_units, config,
+    ) : nothing
     output = initialize_dvi_layer(
         rng, config.hidden_units, output_dimension, config,
     )
@@ -50,17 +53,48 @@ function initialize_model(
             config.log_variance_head_posterior_std,
         ))
     end
+    config.hidden_layers == 2 && return (
+        hidden = hidden, hidden2 = hidden2, output = output,
+    )
     return (
         hidden = hidden,
         output = output,
     )
 end
 
+model_layers(params) = values(params)
+model_hidden_layers(params) = hasproperty(params, :hidden2) ? 2 : 1
+
+function model_coefficient_count(input_dimension, likelihood, config::DVIConfig)
+    width = config.hidden_units
+    outputs = likelihood == "homoscedastic" ? 1 : 2
+    return (input_dimension + 1) * width +
+        (config.hidden_layers - 1) * (width + 1) * width +
+        (width + 1) * outputs
+end
+
+function model_architecture_matches(params, input_dimension, likelihood, config::DVIConfig)
+    model_hidden_layers(params) == config.hidden_layers || return false
+    names = config.hidden_layers == 2 ? (:hidden, :hidden2, :output) : (:hidden, :output)
+    keys(params) == names || return false
+    outputs = likelihood == "homoscedastic" ? 1 : 2
+    widths = config.hidden_layers == 2 ?
+        (input_dimension, config.hidden_units, config.hidden_units, outputs) :
+        (input_dimension, config.hidden_units, outputs)
+    for (i, layer) in enumerate(model_layers(params))
+        shape = (widths[i + 1], widths[i])
+        size(layer.weight_mu) == shape && size(layer.weight_log_std) == shape || return false
+        size(layer.bias_mu) == (widths[i + 1],) &&
+            size(layer.bias_log_std) == (widths[i + 1],) || return false
+    end
+    return parameters_are_finite(params)
+end
+
 """
     propagate_dvi(params, features, config)
 
 Deterministically propagate Gaussian activation moments through the
-one-hidden-layer Bayesian ReLU network. `config.propagation == "full"`
+Bayesian ReLU network. `config.propagation == "full"`
 implements DVI; `"diagonal"` implements dDVI.
 """
 function propagate_dvi(
@@ -69,6 +103,9 @@ function propagate_dvi(
     config::DVIConfig;
     tracker::Union{Nothing, NumericalTracker} = nothing,
 )
+    model_hidden_layers(params) == config.hidden_layers || throw(ArgumentError(
+        "posterior architecture does not match DVI_HIDDEN_LAYERS",
+    ))
     if config.propagation == "full"
         hidden_pre = linear_certain_full(
             features, params.hidden, config, tracker,
@@ -84,6 +121,10 @@ function propagate_dvi(
         hidden_post = relu_moments_diagonal(
             hidden_pre.mean, hidden_pre.variance,
         )
+        if config.hidden_layers == 2
+            second_pre = linear_diagonal(hidden_post, params.hidden2, config, tracker)
+            hidden_post = relu_moments_diagonal(second_pre.mean, second_pre.variance)
+        end
         return linear_diagonal(hidden_post, params.output, config, tracker)
     end
     throw(ArgumentError("unknown propagation mode '$(config.propagation)'"))
@@ -205,7 +246,7 @@ function empirical_bayes_kl(
     layer_kl(layer) = empirical_bayes_layer_kl(
         layer, config.eb_alpha, config.eb_beta, config, tracker,
     )
-    return layer_kl(params.hidden) + layer_kl(params.output)
+    return sum(map(layer_kl, model_layers(params)))
 end
 
 function empirical_bayes_prior_variances(params, config::DVIConfig)
@@ -214,10 +255,13 @@ function empirical_bayes_prior_variances(params, config::DVIConfig)
             layer, config.eb_alpha, config.eb_beta, config,
         ),
     )
-    return (
+    first_and_output = (
         hidden = layer_variance(params.hidden),
         output = layer_variance(params.output),
     )
+    return hasproperty(params, :hidden2) ? merge(first_and_output, (
+        hidden2 = layer_variance(params.hidden2),
+    )) : first_and_output
 end
 
 """
@@ -335,12 +379,9 @@ function clamp_tally(values, config::DVIConfig)
 end
 
 function parameter_variance_clamp_statistics(params, config::DVIConfig)
-    parameter_inputs = (
-        2f0 .* params.hidden.weight_log_std,
-        2f0 .* params.hidden.bias_log_std,
-        2f0 .* params.output.weight_log_std,
-        2f0 .* params.output.bias_log_std,
-    )
+    parameter_inputs = mapreduce(layer -> (
+        2f0 .* layer.weight_log_std, 2f0 .* layer.bias_log_std,
+    ), (left, right) -> (left..., right...), model_layers(params))
     tallies = map(values -> clamp_tally(values, config), parameter_inputs)
     return (
         calls = sum(tally.calls for tally in tallies),
@@ -397,11 +438,19 @@ function sample_forward(
     config::DVIConfig = DVIConfig(),
 )
     hidden = sample_layer(params.hidden, rng, config)
+    hidden2 = hasproperty(params, :hidden2) ?
+        sample_layer(params.hidden2, rng, config) : nothing
     output = sample_layer(params.output, rng, config)
     hidden_activation = max.(
         features * transpose(hidden.weight) .+ transpose(hidden.bias),
         0f0,
     )
+    if hidden2 !== nothing
+        hidden_activation = max.(
+            hidden_activation * transpose(hidden2.weight) .+ transpose(hidden2.bias),
+            0f0,
+        )
+    end
     return hidden_activation * transpose(output.weight) .+
         transpose(output.bias)
 end

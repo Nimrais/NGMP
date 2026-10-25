@@ -111,6 +111,8 @@ end
 artifact_config = DVIConfig(
     output_dir = destination,
     propagation = string(reference["propagation"]),
+    hidden_layers = get(reference, "hidden_layers", 1),
+    hidden_units = reference["hidden_units"],
     make_plot = false,
     show_progress = false,
 )

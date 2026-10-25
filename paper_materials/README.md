@@ -173,6 +173,16 @@ safeguards are documented in `baselines/bbb_uci/README.md`,
 
 ## Final comparison table
 
+The generator now also requires the separate `dDVI-2HL-Hetero` experiment:
+`wu2019_repeated_holdout_v1_20splits_heteroscedastic_2hidden50_v1_20261024/ddvi`
+under `dvi_uci/`. Run `bash baselines/dvi/run_ddvi_two_hidden_paper.sh` to
+train its 120 fits, merge and verify checkpoints, and save the updated full
+table and paired comparison. This uses two 50-unit hidden layers while
+retaining the original heteroscedastic dDVI training protocol. The historical
+table below is a historical snapshot; the completed experiment's
+`final_baseline_table.md` contains the updated results. The generator's
+existing method list is otherwise unchanged; it does not add IVON.
+
 The suffix is part of the method name: `Homo` denotes a homoscedastic
 likelihood and `Hetero` a heteroscedastic likelihood. BPC appears only as
 `BPC-Homo` because the paper-faithful conjugate model implemented here is
@@ -248,9 +258,9 @@ julia --project=. \
     > /tmp/final_baseline_table.md
 ```
 
-The generator does more than concatenate CSV files. It checks the 840
+The generator does more than concatenate CSV files. It checks the 1,080
 underlying rows for successful, non-duplicated splits 1--20; requires all
-seven method variants to have six matching summary rows with `n = 20`;
+nine method variants (including NGMP and two-hidden-layer dDVI) to have six matching summary rows with `n = 20`;
 verifies the required likelihood and DVI propagation mode; and requires every
 `split_manifest.jld2` to contain exactly the same outer and inner row indices.
 It aborts instead of producing a table if any of these checks fails.

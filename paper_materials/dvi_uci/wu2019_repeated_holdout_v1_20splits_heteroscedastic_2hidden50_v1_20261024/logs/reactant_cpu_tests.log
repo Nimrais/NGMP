@@ -1,0 +1,5 @@
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+E0000 00:00:1792874992.411734       3 cuda_platform.cc:51] failed call to cuInit: INTERNAL: CUDA error: Failed call to cuInit: CUDA_ERROR_NO_DEVICE: no CUDA-capable device is detected
+AssertionError("No visible GPU devices.")
+Test Summary:                        | Pass  Total     Time
+two-hidden-layer Reactant CPU parity |   13     13  1m35.9s

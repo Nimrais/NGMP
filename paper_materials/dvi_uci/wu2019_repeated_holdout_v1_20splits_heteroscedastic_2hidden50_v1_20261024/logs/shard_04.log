@@ -1,0 +1,61 @@
+[1/30] Yacht split 4 heteroscedastic diagonal
+    test LPD -0.46547  RMSE 0.37241  epoch 5000  216.2s
+[2/30] Yacht split 8 heteroscedastic diagonal
+    test LPD 0.14372  RMSE 0.43809  epoch 9905  223.9s
+[3/30] Yacht split 12 heteroscedastic diagonal
+    test LPD -0.77853  RMSE 0.91038  epoch 5000  139.0s
+[4/30] Yacht split 16 heteroscedastic diagonal
+    test LPD -0.67368  RMSE 1.86378  epoch 5000  139.1s
+[5/30] Yacht split 20 heteroscedastic diagonal
+    test LPD -0.62471  RMSE 0.84202  epoch 5000  139.1s
+[6/30] Concrete split 4 heteroscedastic diagonal
+    test LPD -3.15138  RMSE 5.28377  epoch 1670  204.0s
+[7/30] Concrete split 8 heteroscedastic diagonal
+    test LPD -3.19695  RMSE 5.64916  epoch 1670  205.8s
+[8/30] Concrete split 12 heteroscedastic diagonal
+    test LPD -3.18949  RMSE 6.25580  epoch 1670  205.7s
+[9/30] Concrete split 16 heteroscedastic diagonal
+    test LPD -3.24730  RMSE 5.94882  epoch 1675  205.2s
+[10/30] Concrete split 20 heteroscedastic diagonal
+    test LPD -3.16289  RMSE 5.28631  epoch 1670  207.0s
+[11/30] Energy split 4 heteroscedastic diagonal
+    test LPD -0.86242  RMSE 1.26694  epoch 9880  535.8s
+[12/30] Energy split 8 heteroscedastic diagonal
+    test LPD -0.45084  RMSE 0.43091  epoch 9995  535.9s
+[13/30] Energy split 12 heteroscedastic diagonal
+    test LPD -0.63651  RMSE 0.45702  epoch 9770  541.0s
+[14/30] Energy split 16 heteroscedastic diagonal
+    test LPD -0.61044  RMSE 0.48661  epoch 9945  530.0s
+[15/30] Energy split 20 heteroscedastic diagonal
+    test LPD -0.46714  RMSE 0.43713  epoch 9710  519.0s
+[16/30] Boston split 4 heteroscedastic diagonal
+    test LPD -2.58959  RMSE 4.01040  epoch 3000  155.1s
+[17/30] Boston split 8 heteroscedastic diagonal
+    test LPD -2.59211  RMSE 3.90461  epoch 3000  154.3s
+[18/30] Boston split 12 heteroscedastic diagonal
+    test LPD -2.43551  RMSE 2.80172  epoch 3000  155.5s
+[19/30] Boston split 16 heteroscedastic diagonal
+    test LPD -2.46553  RMSE 4.71137  epoch 3000  162.9s
+[20/30] Boston split 20 heteroscedastic diagonal
+    test LPD -2.34543  RMSE 2.59636  epoch 3000  161.7s
+[21/30] Power split 4 heteroscedastic diagonal
+    test LPD -2.91658  RMSE 4.34512  epoch 6605  5054.2s
+[22/30] Power split 8 heteroscedastic diagonal
+    test LPD -2.86044  RMSE 4.24086  epoch 3015  2701.6s
+[23/30] Power split 12 heteroscedastic diagonal
+    test LPD -2.81018  RMSE 4.06462  epoch 320  970.3s
+[24/30] Power split 16 heteroscedastic diagonal
+    test LPD -2.81719  RMSE 4.11745  epoch 6220  4576.7s
+[25/30] Power split 20 heteroscedastic diagonal
+    test LPD -2.77991  RMSE 3.86759  epoch 1095  1220.3s
+[26/30] Wine split 4 heteroscedastic diagonal
+    test LPD -0.95793  RMSE 0.65731  epoch 4545  494.9s
+[27/30] Wine split 8 heteroscedastic diagonal
+    test LPD -0.94228  RMSE 0.62933  epoch 1210  200.0s
+[28/30] Wine split 12 heteroscedastic diagonal
+    test LPD -0.94922  RMSE 0.63372  epoch 1675  225.1s
+[29/30] Wine split 16 heteroscedastic diagonal
+    test LPD -1.05554  RMSE 0.72048  epoch 1160  184.3s
+[30/30] Wine split 20 heteroscedastic diagonal
+    test LPD -0.97202  RMSE 0.65836  epoch 2945  325.6s
+DVI benchmark complete: 30 successful rows, 0 failure rows. Output: /home/nimrais/repos/NGMP/paper_materials/dvi_uci/wu2019_repeated_holdout_v1_20splits_heteroscedastic_2hidden50_v1_20261024/ddvi_shards/04

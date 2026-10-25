@@ -4,6 +4,7 @@ using CSV
 using DataFrames
 using JLD2
 using Printf
+using TOML
 
 struct ResultSource
     method::String
@@ -11,10 +12,12 @@ struct ResultSource
     propagation::Union{Nothing,String}
     directory::String
     success_status::String
+    hidden_layers::Union{Nothing,Int}
 end
 
-ResultSource(method, likelihood, propagation, directory) =
-    ResultSource(method, likelihood, propagation, directory, "success")
+ResultSource(method, likelihood, propagation, directory, success_status = "success";
+    hidden_layers = nothing) =
+    ResultSource(method, likelihood, propagation, directory, success_status, hidden_layers)
 
 const PAPER_ROOT = @__DIR__
 const SOURCES = [
@@ -59,6 +62,15 @@ const SOURCES = [
             "wu2019_repeated_holdout_v1_20splits_robust_v1_20260731",
             "ddvi",
         ),
+    ),
+    ResultSource(
+        "dDVI-2HL-Hetero",
+        "heteroscedastic",
+        "diagonal",
+        joinpath(PAPER_ROOT, "dvi_uci",
+            "wu2019_repeated_holdout_v1_20splits_heteroscedastic_2hidden50_v1_20261024",
+            "ddvi"),
+        hidden_layers = 2,
     ),
     ResultSource(
         "DVI-Homo",
@@ -154,6 +166,7 @@ function load_results(sources)
         isfile(summary_path) || error("missing summary: $summary_path")
         runs = CSV.read(runs_path, DataFrame)
         summary = CSV.read(summary_path, DataFrame)
+        validate_source_architecture(source, runs, summary)
         selected_runs = if hasproperty(runs, :likelihood)
             filter(row -> string(row.likelihood) == source.likelihood, runs)
         else
@@ -205,6 +218,9 @@ function load_results(sources)
         end
 
         for row in eachrow(selected)
+            all(isfinite, (row.lpd_original_mean, row.lpd_original_se,
+                row.rmse_original_mean, row.rmse_original_se)) ||
+                error("$(source.method) contains non-finite summary metrics")
             key = (string(row.dataset), source.method)
             haskey(results, key) && error("duplicate table row for $key")
             results[key] = (
@@ -221,6 +237,32 @@ function load_results(sources)
         "final table is incomplete",
     )
     return results
+end
+
+function validate_source_architecture(source, runs, summary)
+    source.hidden_layers === nothing && return nothing
+    config = TOML.parsefile(joinpath(source.directory, "config.toml"))
+    get(config, "hidden_layers", nothing) == source.hidden_layers ||
+        error("$(source.method) has the wrong hidden-layer count")
+    get(config, "hidden_units", nothing) == 50 ||
+        error("$(source.method) must have 50 units per hidden layer")
+    get(config, "propagation", nothing) == source.propagation ||
+        error("$(source.method) has the wrong propagation setting")
+    get(config, "likelihoods", nothing) == [source.likelihood] ||
+        error("$(source.method) has the wrong likelihood")
+    for table in (runs, summary)
+        all(name -> name in propertynames(table),
+            (:hidden_layers, :hidden_units, :model_coefficients)) ||
+            error("$(source.method) is missing architecture metadata")
+        all(table.hidden_layers .== source.hidden_layers) &&
+            all(table.hidden_units .== 50) ||
+            error("$(source.method) contains mixed architectures")
+        dimensions = Dict("concrete" => 8, "energy" => 8, "housing" => 13,
+            "power" => 4, "wine" => 11, "yacht" => 6)
+        all(row.model_coefficients == 50 * dimensions[string(row.dataset)] + 2702
+            for row in eachrow(table)) || error("$(source.method) has incorrect coefficient counts")
+    end
+    return nothing
 end
 
 function render_markdown(io, sources, results)
@@ -244,16 +286,19 @@ function render_markdown(io, sources, results)
     end
 end
 
-isempty(ARGS) || error(
-    "usage: julia --project=. " *
-    "paper_materials/make_final_baseline_table.jl",
-)
+function main(args = ARGS)
+    isempty(args) || error(
+        "usage: julia --project=. " *
+        "paper_materials/make_final_baseline_table.jl",
+    )
+    validate_split_manifests(SOURCES)
+    results = load_results(SOURCES)
+    render_markdown(stdout, SOURCES, results)
+    println(
+        stderr,
+        "Validated $(length(SOURCES)) method variants on " *
+        "$(length(DATASET_ORDER)) datasets × 20 exact paired splits.",
+    )
+end
 
-validate_split_manifests(SOURCES)
-results = load_results(SOURCES)
-render_markdown(stdout, SOURCES, results)
-println(
-    stderr,
-    "Validated $(length(SOURCES)) method variants on " *
-    "$(length(DATASET_ORDER)) datasets × 20 exact paired splits.",
-)
+abspath(PROGRAM_FILE) == abspath(@__FILE__) && main()

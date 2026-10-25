@@ -305,7 +305,7 @@ end
         execution_device = "gpu",
     )).implementation_version == DVIUCI.DVI_IMPLEMENTATION_VERSION
     @test occursin(
-        "selection-optimized-v2", DVIUCI.DVI_IMPLEMENTATION_VERSION,
+        "diagonal-two-hidden-layers-v3", DVIUCI.DVI_IMPLEMENTATION_VERSION,
     )
     @test_throws ArgumentError validate_config(tiny_config(
         full_selection_patience_steps = 0,
@@ -783,7 +783,9 @@ end
         @test isfile(joinpath(output_dir, "summary.csv"))
         @test isfile(paths.markdown)
         @test isfile(paths.latex)
-        @test occursin("LPD (standardized)", read(paths.markdown, String))
+        @test occursin("LPD (standardized, 95% CI)", read(paths.markdown, String))
         @test occursin("\\begin{tabular}", read(paths.latex, String))
     end
 end
+
+include("two_hidden_layers.jl")

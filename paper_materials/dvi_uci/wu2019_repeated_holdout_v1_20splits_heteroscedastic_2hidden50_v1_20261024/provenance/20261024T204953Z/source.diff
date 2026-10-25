@@ -1,0 +1,651 @@
+diff --git a/baselines/dvi/README.md b/baselines/dvi/README.md
+index 5ea7e9c..7f69bed 100644
+--- a/baselines/dvi/README.md
++++ b/baselines/dvi/README.md
+@@ -341,3 +341,51 @@ julia --project=baselines/dvi baselines/dvi/merge_shards.jl \
+   url       = {https://arxiv.org/abs/1810.03958}
+ }
+ ```
++
++## Two-hidden-layer dDVI experiment
++
++Set `DVI_HIDDEN_LAYERS=2 DVI_HIDDEN_UNITS=50 DVI_PROPAGATION=diagonal`
++for a `d -> 50 -> 50 -> 2` heteroscedastic network. The default remains one
++hidden layer; two hidden layers are supported only with diagonal propagation.
++The additional layer contributes its own factorized Gaussian posterior and
++empirical-Bayes KL term. Coefficient counts are `50d + 2702` (2,902–3,352).
++
++The fixed 120-fit campaign covers Concrete Compressive Strength, Energy
++Efficiency (heating load), Boston Housing, Combined Cycle Power Plant, Wine
++Quality Red, and Yacht Hydrodynamics, with the original 20 paired splits:
++
++```sh
++bash baselines/dvi/run_ddvi_two_hidden_paper.sh
++```
++
++The launcher uses Julia on PATH, or `DDVI_JULIA_BIN` when set. It runs four
++Zygote/CPU workers with one Julia/BLAS thread each, using the original
++heteroscedastic dDVI training settings: Adam `0.0003`, batches of 100,
++10,000 maximum epochs, validation every five epochs, patience 500, a
++14,000-step KL warmup and 1,000-step anneal, and no optimizer-step cap.
++Ambient `DVI_*` variables do not override this fixed campaign. Its writable
++package depot defaults to `cache/ddvi_depot`, followed by the user's existing
++depot; `DDVI_DEPOT_PATH` can override that search path.
++
++The output root is
++`paper_materials/dvi_uci/wu2019_repeated_holdout_v1_20splits_heteroscedastic_2hidden50_v1_20261024/`.
++It contains four `ddvi_shards/` directories, logs, source/environment provenance,
++`status.toml`, and the final merged `ddvi/` directory. Each run saves the
++configuration, exact split manifest, selection history, refitted posterior,
++refit loss history, standardizer, metrics, architecture, and failure diagnostics.
++Successful fits with valid matching checkpoints are skipped on restart;
++interrupted fits restart from initialization. A process lock prevents duplicate
++campaign launchers. Failure rows prevent merging and final-table generation.
++
++On completion, every saved posterior is re-evaluated against its recorded
++metrics. The launcher saves `final_baseline_table.md`, `paired_differences.csv`,
++`paired_summary.csv`, and `comparison.md`. Paired NLL/RMSE differences are
++**two hidden layers minus one hidden layer**, with negative values better;
++intervals are `1.96 * standard error` over the 20 paired split differences.
++The full-table generator names the additional method `dDVI-2HL-Hetero` and
++retains the original dDVI row. Missing/incomplete results are an error.
++
++New checkpoints use schema `dvi-uci-posterior-v4`. Existing one-hidden-layer
++posterior parameter structures still work with `DVIConfig(hidden_layers=1)`;
++historical results are not overwritten or automatically resumed across the
++implementation-version change.
+diff --git a/baselines/dvi/merge_shards.jl b/baselines/dvi/merge_shards.jl
+index c887d23..ae2d837 100644
+--- a/baselines/dvi/merge_shards.jl
++++ b/baselines/dvi/merge_shards.jl
+@@ -111,6 +111,8 @@ end
+ artifact_config = DVIConfig(
+     output_dir = destination,
+     propagation = string(reference["propagation"]),
++    hidden_layers = get(reference, "hidden_layers", 1),
++    hidden_units = reference["hidden_units"],
+     make_plot = false,
+     show_progress = false,
+ )
+diff --git a/baselines/dvi/src/artifacts.jl b/baselines/dvi/src/artifacts.jl
+index b1b7ae3..c92292a 100644
+--- a/baselines/dvi/src/artifacts.jl
++++ b/baselines/dvi/src/artifacts.jl
+@@ -5,7 +5,7 @@ const CONFIG_RUNTIME_ONLY_FIELDS = Set([
+     "show_progress",
+     "selection_only",
+ ])
+-const DVI_POSTERIOR_SCHEMA_VERSION = "dvi-uci-posterior-v3"
++const DVI_POSTERIOR_SCHEMA_VERSION = "dvi-uci-posterior-v4"
+ 
+ function configuration_stem(
+     dataset::AbstractString,
+@@ -177,13 +177,18 @@ function configuration_succeeded(
+                     "propagation",
+                     "posterior_params",
+                     "split_spec",
++                    "prediction_config",
++                    "n_features",
+                 ),
+             ) &&
+                 file["schema_version"] == DVI_POSTERIOR_SCHEMA_VERSION &&
+                 file["dataset"] == dataset &&
+                 file["split_id"] == split_id &&
+                 file["likelihood"] == likelihood &&
+-                file["propagation"] == propagation
++                file["propagation"] == propagation &&
++                model_architecture_matches(file["posterior_params"], file["n_features"], likelihood, config) &&
++                file["prediction_config"].hidden_layers == config.hidden_layers &&
++                file["prediction_config"].hidden_units == config.hidden_units
+         end
+     catch
+         false
+@@ -256,10 +261,11 @@ function summary_table(runs::DataFrame)
+     successful = filter(row -> row.status == "success", runs)
+     isempty(successful) && return DataFrame()
+     rows = NamedTuple[]
+-    for group in groupby(
+-        successful,
+-        [:dataset, :dataset_name, :likelihood, :propagation],
+-    )
++    grouping = [:dataset, :dataset_name, :likelihood, :propagation]
++    architecture_columns = filter(name -> name in propertynames(successful),
++        [:hidden_layers, :hidden_units, :model_coefficients])
++    append!(grouping, architecture_columns)
++    for group in groupby(successful, grouping)
+         metric_summary = Pair{Symbol, Any}[]
+         for metric in DVI_SCALAR_METRIC_NAMES
+             values = Float64.(group[!, metric])
+@@ -283,6 +289,7 @@ function summary_table(runs::DataFrame)
+             dataset_name = string(first(group.dataset_name)),
+             likelihood = string(first(group.likelihood)),
+             propagation = string(first(group.propagation)),
++            (name => first(group[!, name]) for name in architecture_columns)...,
+             n = nrow(group),
+             metric_summary...,
+         )...))
+@@ -297,6 +304,9 @@ end
+ format_ci95(mean_value, standard_error) =
+     @sprintf("%.4f ± %.4f", mean_value, 1.96 * standard_error)
+ 
++table_method_label(row) = hasproperty(row, :hidden_layers) && row.hidden_layers == 2 ?
++    "dDVI-2HL" : string(row.propagation)
++
+ function write_tables(summary::DataFrame, config::DVIConfig)
+     isempty(summary) && return nothing
+     atomic_csv_write(joinpath(config.output_dir, "summary.csv"), summary)
+@@ -310,7 +320,7 @@ function write_tables(summary::DataFrame, config::DVIConfig)
+         for row in eachrow(summary)
+             println(
+                 io,
+-                "| $(row.dataset_name) | $(row.propagation) | " *
++                "| $(row.dataset_name) | $(table_method_label(row)) | " *
+                 "$(row.likelihood) | $(row.n) | " *
+                 "$(format_ci95(row.lpd_original_mean, row.lpd_original_se)) | " *
+                 "$(format_ci95(row.rmse_original_mean, row.rmse_original_se)) | " *
+@@ -332,7 +342,7 @@ function write_tables(summary::DataFrame, config::DVIConfig)
+             dataset_name = replace(string(row.dataset_name), "_" => "\\_")
+             println(
+                 io,
+-                "$dataset_name & $(row.propagation) & $(row.likelihood) & " *
++                "$dataset_name & $(table_method_label(row)) & $(row.likelihood) & " *
+                 "$(row.n) & " *
+                 @sprintf(
+                     "%.4f \$\\pm\$ %.4f & %.4f \$\\pm\$ %.4f \\\\",
+diff --git a/baselines/dvi/src/benchmark.jl b/baselines/dvi/src/benchmark.jl
+index 55b8320..137d1e0 100644
+--- a/baselines/dvi/src/benchmark.jl
++++ b/baselines/dvi/src/benchmark.jl
+@@ -6,11 +6,18 @@ function scalar_metrics(metrics)
+ end
+ 
+ function method_name(config::DVIConfig)
++    config.hidden_layers == 2 && return "Diagonal Deterministic Variational Inference (dDVI-2HL)"
+     return config.propagation == "full" ?
+         "Deterministic Variational Inference (DVI)" :
+         "Diagonal Deterministic Variational Inference (dDVI)"
+ end
+ 
++architecture_record(input_dimension, likelihood, config) = (
++    hidden_layers = config.hidden_layers,
++    hidden_units = config.hidden_units,
++    model_coefficients = model_coefficient_count(input_dimension, likelihood, config),
++)
++
+ function run_configuration(
+     dataset,
+     split_id::Int,
+@@ -45,6 +52,7 @@ function run_configuration(
+     if config.selection_only
+         return (
+             method = method_name(config),
++            architecture_record(input_dimension, likelihood, config)...,
+             method_reference = "Wu et al., ICLR 2019, arXiv:1810.03958",
+             uci_protocol_reference = "Wu et al., ICLR 2019, Table 2",
+             numerical_protocol = config.numerical_protocol,
+@@ -96,6 +104,7 @@ function run_configuration(
+             y_center = prepared.outer.standardizer.y_center,
+             y_scale = prepared.outer.standardizer.y_scale,
+             eb_hidden_layer_variance = NaN,
++            eb_second_hidden_layer_variance = NaN,
+             eb_output_layer_variance = NaN,
+             metric_values...,
+         )
+@@ -165,6 +174,7 @@ function run_configuration(
+                 split_id = split_id,
+                 split_spec = split_spec_record(prepared.split_spec),
+                 posterior_params = refit.params,
++                architecture_record(input_dimension, likelihood, config)...,
+                 standardizer = prepared.outer.standardizer,
+                 method = method_name(config),
+                 method_reference =
+@@ -189,9 +199,11 @@ function run_configuration(
+                 model_seed = seeds.model,
+                 prediction_config = (
+                     hidden_units = config.hidden_units,
++                    hidden_layers = config.hidden_layers,
+                     homo_log_variance = config.homo_log_variance,
+                 ),
+                 training_config = config_dictionary(config),
++                refit_losses = refit.losses,
+                 test_metrics = scalar_metrics(metrics),
+             ),
+         )
+@@ -199,6 +211,7 @@ function run_configuration(
+ 
+     return (
+         method = method_name(config),
++        architecture_record(input_dimension, likelihood, config)...,
+         method_reference = "Wu et al., ICLR 2019, arXiv:1810.03958",
+         uci_protocol_reference = "Wu et al., ICLR 2019, Table 2",
+         numerical_protocol = config.numerical_protocol,
+@@ -251,6 +264,7 @@ function run_configuration(
+         y_center = prepared.outer.standardizer.y_center,
+         y_scale = prepared.outer.standardizer.y_scale,
+         eb_hidden_layer_variance = prior_variances.hidden,
++        eb_second_hidden_layer_variance = get(prior_variances, :hidden2, NaN),
+         eb_output_layer_variance = prior_variances.output,
+         scalar_metrics(metrics)...,
+     )
+@@ -282,6 +296,7 @@ function failure_row(
+     )...)
+     return (
+         method = method_name(config),
++        architecture_record(size(dataset.features, 2), likelihood, config)...,
+         method_reference = "Wu et al., ICLR 2019, arXiv:1810.03958",
+         uci_protocol_reference = "Wu et al., ICLR 2019, Table 2",
+         numerical_protocol = config.numerical_protocol,
+@@ -340,6 +355,7 @@ function failure_row(
+         y_center = prepared.outer.standardizer.y_center,
+         y_scale = prepared.outer.standardizer.y_scale,
+         eb_hidden_layer_variance = NaN,
++        eb_second_hidden_layer_variance = NaN,
+         eb_output_layer_variance = NaN,
+         metric_values...,
+     )
+diff --git a/baselines/dvi/src/config.jl b/baselines/dvi/src/config.jl
+index 722df15..e86df51 100644
+--- a/baselines/dvi/src/config.jl
++++ b/baselines/dvi/src/config.jl
+@@ -94,7 +94,7 @@ function default_output_directory()
+ end
+ 
+ const DVI_IMPLEMENTATION_VERSION =
+-    "full-covariance-selection-optimized-v2"
++    "diagonal-two-hidden-layers-v3"
+ 
+ Base.@kwdef struct DVIConfig
+     datasets::Vector{String} = first.(DATASET_REGISTRY)
+@@ -106,6 +106,7 @@ Base.@kwdef struct DVIConfig
+     execution_device::String = "cpu"
+     implementation_version::String = DVI_IMPLEMENTATION_VERSION
+     hidden_units::Int = 50
++    hidden_layers::Int = 1
+     batch_size::Int = 100
+     learning_rate::Float64 = 3e-4
+     eb_alpha::Float64 = 1.0
+@@ -179,6 +180,7 @@ function load_config()
+         ))),
+         implementation_version = DVI_IMPLEMENTATION_VERSION,
+         hidden_units = env_int("DVI_HIDDEN_UNITS", 50),
++        hidden_layers = env_int("DVI_HIDDEN_LAYERS", 1),
+         batch_size = env_int("DVI_BATCH_SIZE", 100),
+         learning_rate = env_float("DVI_LEARNING_RATE", 3e-4),
+         eb_alpha = env_float("DVI_EB_ALPHA", 1.0),
+@@ -278,6 +280,10 @@ function validate_config(config::DVIConfig)
+     )
+     config.hidden_units >= 1 ||
+         throw(ArgumentError("DVI_HIDDEN_UNITS must be positive"))
++    config.hidden_layers in (1, 2) ||
++        throw(ArgumentError("DVI_HIDDEN_LAYERS must be 1 or 2"))
++    config.hidden_layers == 1 || config.propagation == "diagonal" ||
++        throw(ArgumentError("two hidden layers require DVI_PROPAGATION=diagonal"))
+     config.batch_size >= 1 ||
+         throw(ArgumentError("DVI_BATCH_SIZE must be positive"))
+     isfinite(config.learning_rate) && config.learning_rate > 0 ||
+diff --git a/baselines/dvi/src/model.jl b/baselines/dvi/src/model.jl
+index 7af5cbb..8b8b14b 100644
+--- a/baselines/dvi/src/model.jl
++++ b/baselines/dvi/src/model.jl
+@@ -37,6 +37,9 @@ function initialize_model(
+     hidden = initialize_dvi_layer(
+         rng, input_dimension, config.hidden_units, config,
+     )
++    hidden2 = config.hidden_layers == 2 ? initialize_dvi_layer(
++        rng, config.hidden_units, config.hidden_units, config,
++    ) : nothing
+     output = initialize_dvi_layer(
+         rng, config.hidden_units, output_dimension, config,
+     )
+@@ -50,17 +53,48 @@ function initialize_model(
+             config.log_variance_head_posterior_std,
+         ))
+     end
++    config.hidden_layers == 2 && return (
++        hidden = hidden, hidden2 = hidden2, output = output,
++    )
+     return (
+         hidden = hidden,
+         output = output,
+     )
+ end
+ 
++model_layers(params) = values(params)
++model_hidden_layers(params) = hasproperty(params, :hidden2) ? 2 : 1
++
++function model_coefficient_count(input_dimension, likelihood, config::DVIConfig)
++    width = config.hidden_units
++    outputs = likelihood == "homoscedastic" ? 1 : 2
++    return (input_dimension + 1) * width +
++        (config.hidden_layers - 1) * (width + 1) * width +
++        (width + 1) * outputs
++end
++
++function model_architecture_matches(params, input_dimension, likelihood, config::DVIConfig)
++    model_hidden_layers(params) == config.hidden_layers || return false
++    names = config.hidden_layers == 2 ? (:hidden, :hidden2, :output) : (:hidden, :output)
++    keys(params) == names || return false
++    outputs = likelihood == "homoscedastic" ? 1 : 2
++    widths = config.hidden_layers == 2 ?
++        (input_dimension, config.hidden_units, config.hidden_units, outputs) :
++        (input_dimension, config.hidden_units, outputs)
++    for (i, layer) in enumerate(model_layers(params))
++        shape = (widths[i + 1], widths[i])
++        size(layer.weight_mu) == shape && size(layer.weight_log_std) == shape || return false
++        size(layer.bias_mu) == (widths[i + 1],) &&
++            size(layer.bias_log_std) == (widths[i + 1],) || return false
++    end
++    return parameters_are_finite(params)
++end
++
+ """
+     propagate_dvi(params, features, config)
+ 
+ Deterministically propagate Gaussian activation moments through the
+-one-hidden-layer Bayesian ReLU network. `config.propagation == "full"`
++Bayesian ReLU network. `config.propagation == "full"`
+ implements DVI; `"diagonal"` implements dDVI.
+ """
+ function propagate_dvi(
+@@ -69,6 +103,9 @@ function propagate_dvi(
+     config::DVIConfig;
+     tracker::Union{Nothing, NumericalTracker} = nothing,
+ )
++    model_hidden_layers(params) == config.hidden_layers || throw(ArgumentError(
++        "posterior architecture does not match DVI_HIDDEN_LAYERS",
++    ))
+     if config.propagation == "full"
+         hidden_pre = linear_certain_full(
+             features, params.hidden, config, tracker,
+@@ -84,6 +121,10 @@ function propagate_dvi(
+         hidden_post = relu_moments_diagonal(
+             hidden_pre.mean, hidden_pre.variance,
+         )
++        if config.hidden_layers == 2
++            second_pre = linear_diagonal(hidden_post, params.hidden2, config, tracker)
++            hidden_post = relu_moments_diagonal(second_pre.mean, second_pre.variance)
++        end
+         return linear_diagonal(hidden_post, params.output, config, tracker)
+     end
+     throw(ArgumentError("unknown propagation mode '$(config.propagation)'"))
+@@ -205,7 +246,7 @@ function empirical_bayes_kl(
+     layer_kl(layer) = empirical_bayes_layer_kl(
+         layer, config.eb_alpha, config.eb_beta, config, tracker,
+     )
+-    return layer_kl(params.hidden) + layer_kl(params.output)
++    return sum(map(layer_kl, model_layers(params)))
+ end
+ 
+ function empirical_bayes_prior_variances(params, config::DVIConfig)
+@@ -214,10 +255,13 @@ function empirical_bayes_prior_variances(params, config::DVIConfig)
+             layer, config.eb_alpha, config.eb_beta, config,
+         ),
+     )
+-    return (
++    first_and_output = (
+         hidden = layer_variance(params.hidden),
+         output = layer_variance(params.output),
+     )
++    return hasproperty(params, :hidden2) ? merge(first_and_output, (
++        hidden2 = layer_variance(params.hidden2),
++    )) : first_and_output
+ end
+ 
+ """
+@@ -335,12 +379,9 @@ function clamp_tally(values, config::DVIConfig)
+ end
+ 
+ function parameter_variance_clamp_statistics(params, config::DVIConfig)
+-    parameter_inputs = (
+-        2f0 .* params.hidden.weight_log_std,
+-        2f0 .* params.hidden.bias_log_std,
+-        2f0 .* params.output.weight_log_std,
+-        2f0 .* params.output.bias_log_std,
+-    )
++    parameter_inputs = mapreduce(layer -> (
++        2f0 .* layer.weight_log_std, 2f0 .* layer.bias_log_std,
++    ), (left, right) -> (left..., right...), model_layers(params))
+     tallies = map(values -> clamp_tally(values, config), parameter_inputs)
+     return (
+         calls = sum(tally.calls for tally in tallies),
+@@ -397,11 +438,19 @@ function sample_forward(
+     config::DVIConfig = DVIConfig(),
+ )
+     hidden = sample_layer(params.hidden, rng, config)
++    hidden2 = hasproperty(params, :hidden2) ?
++        sample_layer(params.hidden2, rng, config) : nothing
+     output = sample_layer(params.output, rng, config)
+     hidden_activation = max.(
+         features * transpose(hidden.weight) .+ transpose(hidden.bias),
+         0f0,
+     )
++    if hidden2 !== nothing
++        hidden_activation = max.(
++            hidden_activation * transpose(hidden2.weight) .+ transpose(hidden2.bias),
++            0f0,
++        )
++    end
+     return hidden_activation * transpose(output.weight) .+
+         transpose(output.bias)
+ end
+diff --git a/baselines/dvi/src/reactant_backend.jl b/baselines/dvi/src/reactant_backend.jl
+index c6f8730..dd199d7 100644
+--- a/baselines/dvi/src/reactant_backend.jl
++++ b/baselines/dvi/src/reactant_backend.jl
+@@ -157,12 +157,25 @@ function reactant_dvi_loss(
+     weight,
+ )
+     output = DVIUCI.propagate_dvi(params, features, config)
+-    reconstruction = mean(reactant_expected_log_likelihood(
+-        output, targets, likelihood, config,
++    # Use separate reductions for the direct log-variance and precision terms
++    # in the new architecture, avoiding the legacy fused likelihood expression.
++    reconstruction = if config.hidden_layers == 2
++        prediction = vec(output.mean[:, 1])
++        prediction_variance = DVIUCI.output_covariance_entry(output, 1, 1, config)
++        log_variance = likelihood == "heteroscedastic" ? vec(output.mean[:, 2]) :
++            zero.(prediction) .+ Float32(config.homo_log_variance)
++        log_variance_variance = likelihood == "heteroscedastic" ?
++            DVIUCI.output_covariance_entry(output, 2, 2, config) : zero.(prediction)
++        precision = DVIUCI.safe_exp(-log_variance .+ 0.5f0 .* log_variance_variance, config)
++        -0.5f0 * (DVIUCI.DVI_LOG2PI + mean(log_variance) +
++            mean(precision .* (prediction_variance .+ (prediction .- targets) .^ 2)))
++    else
++        mean(reactant_expected_log_likelihood(output, targets, likelihood, config))
++    end
++    kl = sum(map(
++        layer -> reactant_empirical_bayes_layer_kl(layer, config),
++        DVIUCI.model_layers(params),
+     ))
+-    kl =
+-        reactant_empirical_bayes_layer_kl(params.hidden, config) +
+-        reactant_empirical_bayes_layer_kl(params.output, config)
+     return weight * kl / n_training - reconstruction
+ end
+ 
+@@ -275,6 +288,7 @@ function batch_kernel_key(
+         batch_size,
+         eltype(backend.params.hidden.weight_mu),
+         config.hidden_units,
++        config.hidden_layers,
+         config.safe_exp_min,
+         config.safe_exp_max,
+         config.eb_alpha,
+@@ -335,6 +349,7 @@ function validation_kernel_key(
+         size(validation_features),
+         eltype(backend.params.hidden.weight_mu),
+         config.hidden_units,
++        config.hidden_layers,
+         config.safe_exp_min,
+         config.safe_exp_max,
+     )
+diff --git a/baselines/dvi/src/training.jl b/baselines/dvi/src/training.jl
+index 7120d6f..d087d30 100644
+--- a/baselines/dvi/src/training.jl
++++ b/baselines/dvi/src/training.jl
+@@ -112,12 +112,9 @@ function numerical_diagnostics(
+         output_error = sprint(showerror, error)
+         isnothing(first_nonfinite) && (first_nonfinite = "forward-pass-error")
+     end
+-    log_stds = vcat(
+-        vec(params.hidden.weight_log_std),
+-        vec(params.hidden.bias_log_std),
+-        vec(params.output.weight_log_std),
+-        vec(params.output.bias_log_std),
+-    )
++    log_stds = vcat(map(layer -> vcat(
++        vec(layer.weight_log_std), vec(layer.bias_log_std),
++    ), model_layers(params))...)
+     log_std_extrema = finite_extrema(log_stds)
+     tracker_state = tracker === nothing ? (
+         clamp_count = 0,
+diff --git a/baselines/dvi/test/runtests.jl b/baselines/dvi/test/runtests.jl
+index c9b802d..0601b5c 100644
+--- a/baselines/dvi/test/runtests.jl
++++ b/baselines/dvi/test/runtests.jl
+@@ -305,7 +305,7 @@ end
+         execution_device = "gpu",
+     )).implementation_version == DVIUCI.DVI_IMPLEMENTATION_VERSION
+     @test occursin(
+-        "selection-optimized-v2", DVIUCI.DVI_IMPLEMENTATION_VERSION,
++        "diagonal-two-hidden-layers-v3", DVIUCI.DVI_IMPLEMENTATION_VERSION,
+     )
+     @test_throws ArgumentError validate_config(tiny_config(
+         full_selection_patience_steps = 0,
+@@ -783,7 +783,9 @@ end
+         @test isfile(joinpath(output_dir, "summary.csv"))
+         @test isfile(paths.markdown)
+         @test isfile(paths.latex)
+-        @test occursin("LPD (standardized)", read(paths.markdown, String))
++        @test occursin("LPD (standardized, 95% CI)", read(paths.markdown, String))
+         @test occursin("\\begin{tabular}", read(paths.latex, String))
+     end
+ end
++
++include("two_hidden_layers.jl")
+diff --git a/paper_materials/make_final_baseline_table.jl b/paper_materials/make_final_baseline_table.jl
+index 8d21343..1607baa 100644
+--- a/paper_materials/make_final_baseline_table.jl
++++ b/paper_materials/make_final_baseline_table.jl
+@@ -4,6 +4,7 @@ using CSV
+ using DataFrames
+ using JLD2
+ using Printf
++using TOML
+ 
+ struct ResultSource
+     method::String
+@@ -11,10 +12,12 @@ struct ResultSource
+     propagation::Union{Nothing,String}
+     directory::String
+     success_status::String
++    hidden_layers::Union{Nothing,Int}
+ end
+ 
+-ResultSource(method, likelihood, propagation, directory) =
+-    ResultSource(method, likelihood, propagation, directory, "success")
++ResultSource(method, likelihood, propagation, directory, success_status = "success";
++    hidden_layers = nothing) =
++    ResultSource(method, likelihood, propagation, directory, success_status, hidden_layers)
+ 
+ const PAPER_ROOT = @__DIR__
+ const SOURCES = [
+@@ -60,6 +63,15 @@ const SOURCES = [
+             "ddvi",
+         ),
+     ),
++    ResultSource(
++        "dDVI-2HL-Hetero",
++        "heteroscedastic",
++        "diagonal",
++        joinpath(PAPER_ROOT, "dvi_uci",
++            "wu2019_repeated_holdout_v1_20splits_heteroscedastic_2hidden50_v1_20261024",
++            "ddvi"),
++        hidden_layers = 2,
++    ),
+     ResultSource(
+         "DVI-Homo",
+         "homoscedastic",
+@@ -154,6 +166,7 @@ function load_results(sources)
+         isfile(summary_path) || error("missing summary: $summary_path")
+         runs = CSV.read(runs_path, DataFrame)
+         summary = CSV.read(summary_path, DataFrame)
++        validate_source_architecture(source, runs, summary)
+         selected_runs = if hasproperty(runs, :likelihood)
+             filter(row -> string(row.likelihood) == source.likelihood, runs)
+         else
+@@ -205,6 +218,9 @@ function load_results(sources)
+         end
+ 
+         for row in eachrow(selected)
++            all(isfinite, (row.lpd_original_mean, row.lpd_original_se,
++                row.rmse_original_mean, row.rmse_original_se)) ||
++                error("$(source.method) contains non-finite summary metrics")
+             key = (string(row.dataset), source.method)
+             haskey(results, key) && error("duplicate table row for $key")
+             results[key] = (
+@@ -223,6 +239,32 @@ function load_results(sources)
+     return results
+ end
+ 
++function validate_source_architecture(source, runs, summary)
++    source.hidden_layers === nothing && return nothing
++    config = TOML.parsefile(joinpath(source.directory, "config.toml"))
++    get(config, "hidden_layers", nothing) == source.hidden_layers ||
++        error("$(source.method) has the wrong hidden-layer count")
++    get(config, "hidden_units", nothing) == 50 ||
++        error("$(source.method) must have 50 units per hidden layer")
++    get(config, "propagation", nothing) == source.propagation ||
++        error("$(source.method) has the wrong propagation setting")
++    get(config, "likelihoods", nothing) == [source.likelihood] ||
++        error("$(source.method) has the wrong likelihood")
++    for table in (runs, summary)
++        all(name -> name in propertynames(table),
++            (:hidden_layers, :hidden_units, :model_coefficients)) ||
++            error("$(source.method) is missing architecture metadata")
++        all(table.hidden_layers .== source.hidden_layers) &&
++            all(table.hidden_units .== 50) ||
++            error("$(source.method) contains mixed architectures")
++        dimensions = Dict("concrete" => 8, "energy" => 8, "housing" => 13,
++            "power" => 4, "wine" => 11, "yacht" => 6)
++        all(row.model_coefficients == 50 * dimensions[string(row.dataset)] + 2702
++            for row in eachrow(table)) || error("$(source.method) has incorrect coefficient counts")
++    end
++    return nothing
++end
++
+ function render_markdown(io, sources, results)
+     println(io, "| Dataset | Method | Runs | LPD (original, 95% CI) | RMSE (95% CI) |")
+     println(io, "|---|---|---:|---:|---:|")
+@@ -244,16 +286,19 @@ function render_markdown(io, sources, results)
+     end
+ end
+ 
+-isempty(ARGS) || error(
+-    "usage: julia --project=. " *
+-    "paper_materials/make_final_baseline_table.jl",
+-)
++function main(args = ARGS)
++    isempty(args) || error(
++        "usage: julia --project=. " *
++        "paper_materials/make_final_baseline_table.jl",
++    )
++    validate_split_manifests(SOURCES)
++    results = load_results(SOURCES)
++    render_markdown(stdout, SOURCES, results)
++    println(
++        stderr,
++        "Validated $(length(SOURCES)) method variants on " *
++        "$(length(DATASET_ORDER)) datasets × 20 exact paired splits.",
++    )
++end
+ 
+-validate_split_manifests(SOURCES)
+-results = load_results(SOURCES)
+-render_markdown(stdout, SOURCES, results)
+-println(
+-    stderr,
+-    "Validated $(length(SOURCES)) method variants on " *
+-    "$(length(DATASET_ORDER)) datasets × 20 exact paired splits.",
+-)
++abspath(PROGRAM_FILE) == abspath(@__FILE__) && main()
