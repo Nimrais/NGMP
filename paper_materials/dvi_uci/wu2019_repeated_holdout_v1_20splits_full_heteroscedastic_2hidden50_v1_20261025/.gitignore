@@ -1,0 +1,6 @@
+/campaign.lock
+/dvi_shards/
+/preflight/
+/pilots/*/ready_*
+/pilots/*/go
+!/provenance/*/Manifest.toml

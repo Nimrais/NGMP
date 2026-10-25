@@ -122,6 +122,19 @@ const DATASET_ORDER = [
     "yacht" => "Yacht",
 ]
 
+const DVI_BIG_ROOT = joinpath(PAPER_ROOT, "dvi_uci",
+    "wu2019_repeated_holdout_v1_20splits_full_heteroscedastic_2hidden50_v1_20261025")
+
+function table_sources(; include_dvi_big = false, dvi_big_directory = joinpath(DVI_BIG_ROOT, "dvi"))
+    sources = copy(SOURCES)
+    if include_dvi_big
+        position = findfirst(source -> source.method == "DVI-Hetero", sources)
+        insert!(sources, position + 1, ResultSource("DVI-2HL-Hetero", "heteroscedastic",
+            "full", dvi_big_directory; hidden_layers = 2))
+    end
+    return sources
+end
+
 function validate_split_manifests(sources)
     manifest_paths = unique(
         joinpath(source.directory, "split_manifest.jld2") for source in sources
@@ -287,16 +300,17 @@ function render_markdown(io, sources, results)
 end
 
 function main(args = ARGS)
-    isempty(args) || error(
+    (isempty(args) || args == ["--include-dvi-big"]) || error(
         "usage: julia --project=. " *
-        "paper_materials/make_final_baseline_table.jl",
+        "paper_materials/make_final_baseline_table.jl [--include-dvi-big]",
     )
-    validate_split_manifests(SOURCES)
-    results = load_results(SOURCES)
-    render_markdown(stdout, SOURCES, results)
+    sources = table_sources(; include_dvi_big = !isempty(args))
+    validate_split_manifests(sources)
+    results = load_results(sources)
+    render_markdown(stdout, sources, results)
     println(
         stderr,
-        "Validated $(length(SOURCES)) method variants on " *
+        "Validated $(length(sources)) method variants on " *
         "$(length(DATASET_ORDER)) datasets × 20 exact paired splits.",
     )
 end

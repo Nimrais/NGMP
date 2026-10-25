@@ -1,0 +1,165 @@
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+I0000 00:00:1792927698.403687   74442 service.cc:153] XLA service 0x214400d0 initialized for platform CUDA (this does not guarantee that XLA will be used). Devices:
+I0000 00:00:1792927698.403726   74442 service.cc:161]   StreamExecutor device (0): NVIDIA GeForce RTX 3090, Compute Capability 8.6
+I0000 00:00:1792927698.404240   74442 se_gpu_pjrt_client.cc:1440] Using BFC allocator.
+I0000 00:00:1792927698.404315   74442 gpu_helpers.cc:144] XLA backend will use up to 10115507814 bytes on device 0 for BFCAllocator.
+I0000 00:00:1792927698.404641   74442 gpu_helpers.cc:182] XLA backend will use up to 15173261721 bytes on device 0 for CollectiveBFCAllocator.
+I0000 00:00:1792927698.415151   74442 cuda_dnn.cc:461] Loaded cuDNN version 91400
+I0000 00:00:1792927744.648682   74442 dot_merger.cc:476] Merging Dots in computation: main.1
+I0000 00:00:1792927744.650541   74442 dot_merger.cc:476] Merging Dots in computation: main.1
+I0000 00:00:1792927744.652250   74442 dot_merger.cc:476] Merging Dots in computation: main.1
+I0000 00:00:1792927744.653651   74442 dot_merger.cc:476] Merging Dots in computation: main.1
+I0000 00:00:1792927744.654877   74442 dot_merger.cc:476] Merging Dots in computation: main.1
+I0000 00:00:1792927744.655690   74442 dot_merger.cc:476] Merging Dots in computation: main.1
+I0000 00:00:1792927744.656357   74442 dot_merger.cc:476] Merging Dots in computation: main.1
+I0000 00:00:1792927833.097368   74442 dot_merger.cc:476] Merging Dots in computation: main.24
+I0000 00:00:1792927833.100612   74442 dot_merger.cc:476] Merging Dots in computation: main.24
+I0000 00:00:1792927833.103412   74442 dot_merger.cc:476] Merging Dots in computation: main.24
+I0000 00:00:1792927833.107209   74442 dot_merger.cc:476] Merging Dots in computation: main.24
+I0000 00:00:1792927833.111855   74442 dot_merger.cc:476] Merging Dots in computation: main.24
+I0000 00:00:1792927833.114763   74442 dot_merger.cc:476] Merging Dots in computation: main.24
+I0000 00:00:1792927833.117300   74442 dot_merger.cc:476] Merging Dots in computation: main.24
+I0000 00:00:1792927840.481340   74442 dot_merger.cc:476] Merging Dots in computation: main.24
+I0000 00:00:1792927840.485612   74442 dot_merger.cc:476] Merging Dots in computation: main.24
+I0000 00:00:1792927840.488728   74442 dot_merger.cc:476] Merging Dots in computation: main.24
+I0000 00:00:1792927840.491394   74442 dot_merger.cc:476] Merging Dots in computation: main.24
+I0000 00:00:1792927840.493841   74442 dot_merger.cc:476] Merging Dots in computation: main.24
+I0000 00:00:1792927840.496093   74442 dot_merger.cc:476] Merging Dots in computation: main.24
+I0000 00:00:1792927840.498162   74442 dot_merger.cc:476] Merging Dots in computation: main.24
+I0000 00:00:1792927891.550871   74442 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792927891.556713   74442 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792927891.562015   74442 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792927891.566708   74442 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792927891.570943   74442 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792927891.574748   74442 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792927891.578324   74442 dot_merger.cc:476] Merging Dots in computation: main.62
+Test Summary:                       | Pass  Total     Time
+full two-hidden Reactant gpu parity |   44     44  3m20.1s
+Verified the six datasets and all 20 paired split manifests.
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+I0000 00:00:1792928024.084137   75301 service.cc:153] XLA service 0x3c5b3340 initialized for platform CUDA (this does not guarantee that XLA will be used). Devices:
+I0000 00:00:1792928024.084171   75301 service.cc:161]   StreamExecutor device (0): NVIDIA GeForce RTX 3090, Compute Capability 8.6
+I0000 00:00:1792928024.084619   75301 se_gpu_pjrt_client.cc:1440] Using BFC allocator.
+I0000 00:00:1792928024.084690   75301 gpu_helpers.cc:144] XLA backend will use up to 10115507814 bytes on device 0 for BFCAllocator.
+I0000 00:00:1792928024.084742   75301 gpu_helpers.cc:182] XLA backend will use up to 15173261721 bytes on device 0 for CollectiveBFCAllocator.
+I0000 00:00:1792928024.093266   75301 cuda_dnn.cc:461] Loaded cuDNN version 91400
+I0000 00:00:1792928109.787009   75301 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792928109.792222   75301 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792928109.798190   75301 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792928109.804733   75301 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792928109.809186   75301 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792928109.813406   75301 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792928109.817103   75301 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792928109.914792   75301 dot_search_space.cc:240] All configs were filtered out because none of them sufficiently match the hints. Maybe the hints set does not contain a good representative set of valid configs? Working around this by using the full hints set instead.
+I0000 00:00:1792928109.914821   75301 dot_search_space.cc:240] All configs were filtered out because none of them sufficiently match the hints. Maybe the hints set does not contain a good representative set of valid configs? Working around this by using the full hints set instead.
+I0000 00:00:1792928109.914955   75301 dot_search_space.cc:240] All configs were filtered out because none of them sufficiently match the hints. Maybe the hints set does not contain a good representative set of valid configs? Working around this by using the full hints set instead.
+I0000 00:00:1792928109.915082   75301 dot_search_space.cc:240] All configs were filtered out because none of them sufficiently match the hints. Maybe the hints set does not contain a good representative set of valid configs? Working around this by using the full hints set instead.
+I0000 00:00:1792928109.915095   75301 dot_search_space.cc:240] All configs were filtered out because none of them sufficiently match the hints. Maybe the hints set does not contain a good representative set of valid configs? Working around this by using the full hints set instead.
+I0000 00:00:1792928110.325029   75435 subprocess_compilation.cc:348] ptxas warning : Registers are spilled to local memory in function 'gemm_fusion_dot_11', 8 bytes spill stores, 8 bytes spill loads
+
+I0000 00:00:1792928110.871035   75429 subprocess_compilation.cc:348] ptxas warning : Registers are spilled to local memory in function 'gemm_fusion_dot_11', 44 bytes spill stores, 44 bytes spill loads
+
+I0000 00:00:1792928110.994965   75424 subprocess_compilation.cc:348] ptxas warning : Registers are spilled to local memory in function 'gemm_fusion_dot_general_33', 4 bytes spill stores, 4 bytes spill loads
+
+I0000 00:00:1792928111.714615   75432 subprocess_compilation.cc:348] ptxas warning : Registers are spilled to local memory in function 'gemm_fusion_dot_general_25', 52 bytes spill stores, 52 bytes spill loads
+
+I0000 00:00:1792928112.173422   75439 subprocess_compilation.cc:348] ptxas warning : Registers are spilled to local memory in function 'gemm_fusion_dot_general_33', 52 bytes spill stores, 52 bytes spill loads
+
+I0000 00:00:1792928131.310711   75301 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792928131.317837   75301 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792928131.324859   75301 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792928131.329278   75301 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792928131.334175   75301 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792928131.340793   75301 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792928131.345910   75301 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792928131.438849   75301 dot_search_space.cc:240] All configs were filtered out because none of them sufficiently match the hints. Maybe the hints set does not contain a good representative set of valid configs? Working around this by using the full hints set instead.
+I0000 00:00:1792928131.438887   75301 dot_search_space.cc:240] All configs were filtered out because none of them sufficiently match the hints. Maybe the hints set does not contain a good representative set of valid configs? Working around this by using the full hints set instead.
+I0000 00:00:1792928131.438897   75301 dot_search_space.cc:240] All configs were filtered out because none of them sufficiently match the hints. Maybe the hints set does not contain a good representative set of valid configs? Working around this by using the full hints set instead.
+I0000 00:00:1792928131.438906   75301 dot_search_space.cc:240] All configs were filtered out because none of them sufficiently match the hints. Maybe the hints set does not contain a good representative set of valid configs? Working around this by using the full hints set instead.
+I0000 00:00:1792928131.439002   75301 dot_search_space.cc:240] All configs were filtered out because none of them sufficiently match the hints. Maybe the hints set does not contain a good representative set of valid configs? Working around this by using the full hints set instead.
+I0000 00:00:1792928131.439022   75301 dot_search_space.cc:240] All configs were filtered out because none of them sufficiently match the hints. Maybe the hints set does not contain a good representative set of valid configs? Working around this by using the full hints set instead.
+I0000 00:00:1792928131.439031   75301 dot_search_space.cc:240] All configs were filtered out because none of them sufficiently match the hints. Maybe the hints set does not contain a good representative set of valid configs? Working around this by using the full hints set instead.
+I0000 00:00:1792928131.439118   75301 dot_search_space.cc:240] All configs were filtered out because none of them sufficiently match the hints. Maybe the hints set does not contain a good representative set of valid configs? Working around this by using the full hints set instead.
+I0000 00:00:1792928131.439127   75301 dot_search_space.cc:240] All configs were filtered out because none of them sufficiently match the hints. Maybe the hints set does not contain a good representative set of valid configs? Working around this by using the full hints set instead.
+I0000 00:00:1792928132.655310   75427 subprocess_compilation.cc:348] ptxas warning : Registers are spilled to local memory in function 'gemm_fusion_transpose_163', 64 bytes spill stores, 64 bytes spill loads
+
+I0000 00:00:1792928133.588625   75431 subprocess_compilation.cc:348] ptxas warning : Registers are spilled to local memory in function 'gemm_fusion_dot_general_25', 4 bytes spill stores, 4 bytes spill loads
+
+I0000 00:00:1792928134.343293   75439 subprocess_compilation.cc:348] ptxas warning : Registers are spilled to local memory in function 'gemm_fusion_dot_11', 48 bytes spill stores, 48 bytes spill loads
+
+I0000 00:00:1792928135.149854   75424 subprocess_compilation.cc:348] ptxas warning : Registers are spilled to local memory in function 'gemm_fusion_dot_10', 32 bytes spill stores, 32 bytes spill loads
+
+I0000 00:00:1792928135.585873   75435 subprocess_compilation.cc:348] ptxas warning : Registers are spilled to local memory in function 'gemm_fusion_transpose_218', 48 bytes spill stores, 48 bytes spill loads
+
+I0000 00:00:1792928135.677402   75432 subprocess_compilation.cc:348] ptxas warning : Registers are spilled to local memory in function 'gemm_fusion_dot_general_34', 120 bytes spill stores, 120 bytes spill loads
+
+I0000 00:00:1792928136.310379   75433 subprocess_compilation.cc:348] ptxas warning : Registers are spilled to local memory in function 'gemm_fusion_dot_general_36', 44 bytes spill stores, 44 bytes spill loads
+
+I0000 00:00:1792928149.571507   75301 dot_merger.cc:476] Merging Dots in computation: main.13
+I0000 00:00:1792928149.573600   75301 dot_merger.cc:476] Merging Dots in computation: main.13
+I0000 00:00:1792928149.574813   75301 dot_merger.cc:476] Merging Dots in computation: main.13
+I0000 00:00:1792928149.575951   75301 dot_merger.cc:476] Merging Dots in computation: main.13
+I0000 00:00:1792928149.576953   75301 dot_merger.cc:476] Merging Dots in computation: main.13
+I0000 00:00:1792928149.577853   75301 dot_merger.cc:476] Merging Dots in computation: main.13
+I0000 00:00:1792928149.578690   75301 dot_merger.cc:476] Merging Dots in computation: main.13
+I0000 00:00:1792928149.604489   75301 dot_search_space.cc:240] All configs were filtered out because none of them sufficiently match the hints. Maybe the hints set does not contain a good representative set of valid configs? Working around this by using the full hints set instead.
+I0000 00:00:1792928149.604538   75301 dot_search_space.cc:240] All configs were filtered out because none of them sufficiently match the hints. Maybe the hints set does not contain a good representative set of valid configs? Working around this by using the full hints set instead.
+I0000 00:00:1792928150.524016   75424 subprocess_compilation.cc:348] ptxas warning : Registers are spilled to local memory in function 'gemm_fusion_transpose_31', 28 bytes spill stores, 28 bytes spill loads
+
+I0000 00:00:1792928161.737812   75301 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792928161.742351   75301 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792928161.746456   75301 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792928161.752815   75301 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792928161.757386   75301 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792928161.761057   75301 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792928161.764730   75301 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792928171.315651   75301 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792928171.321741   75301 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792928171.325670   75301 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792928171.329065   75301 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792928171.332403   75301 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792928171.335583   75301 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792928171.338619   75301 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792928171.417543   75301 dot_search_space.cc:240] All configs were filtered out because none of them sufficiently match the hints. Maybe the hints set does not contain a good representative set of valid configs? Working around this by using the full hints set instead.
+I0000 00:00:1792928171.417584   75301 dot_search_space.cc:240] All configs were filtered out because none of them sufficiently match the hints. Maybe the hints set does not contain a good representative set of valid configs? Working around this by using the full hints set instead.
+I0000 00:00:1792928171.417792   75301 dot_search_space.cc:240] All configs were filtered out because none of them sufficiently match the hints. Maybe the hints set does not contain a good representative set of valid configs? Working around this by using the full hints set instead.
+I0000 00:00:1792928171.417939   75301 dot_search_space.cc:240] All configs were filtered out because none of them sufficiently match the hints. Maybe the hints set does not contain a good representative set of valid configs? Working around this by using the full hints set instead.
+I0000 00:00:1792928171.417955   75301 dot_search_space.cc:240] All configs were filtered out because none of them sufficiently match the hints. Maybe the hints set does not contain a good representative set of valid configs? Working around this by using the full hints set instead.
+I0000 00:00:1792928172.670926   75427 subprocess_compilation.cc:348] ptxas warning : Registers are spilled to local memory in function 'gemm_fusion_dot_11', 4 bytes spill stores, 4 bytes spill loads
+
+I0000 00:00:1792928172.744170   75425 subprocess_compilation.cc:348] ptxas warning : Registers are spilled to local memory in function 'gemm_fusion_dot_general_33', 4 bytes spill stores, 4 bytes spill loads
+
+I0000 00:00:1792928172.825552   75433 subprocess_compilation.cc:348] ptxas warning : Registers are spilled to local memory in function 'gemm_fusion_dot_11', 44 bytes spill stores, 44 bytes spill loads
+
+I0000 00:00:1792928173.239217   75435 subprocess_compilation.cc:348] ptxas warning : Registers are spilled to local memory in function 'gemm_fusion_transpose_219', 4 bytes spill stores, 4 bytes spill loads
+
+I0000 00:00:1792928173.956315   75434 subprocess_compilation.cc:348] ptxas warning : Registers are spilled to local memory in function 'gemm_fusion_dot_general_25', 12 bytes spill stores, 12 bytes spill loads
+
+I0000 00:00:1792928174.289386   75428 subprocess_compilation.cc:348] ptxas warning : Registers are spilled to local memory in function 'gemm_fusion_dot_general_33', 12 bytes spill stores, 12 bytes spill loads
+
+I0000 00:00:1792928175.089750   75433 subprocess_compilation.cc:348] ptxas warning : Registers are spilled to local memory in function 'gemm_fusion_transpose_216', 4 bytes spill stores, 4 bytes spill loads
+
+ERROR: LoadError: MethodError: no method matching configuration_succeeded(::DataFrame, ::String7, ::Int64, ::String, ::String, ::DVIConfig)
+The function `configuration_succeeded` exists, but no method is defined for this combination of argument types.
+
+Closest candidates are:
+  configuration_succeeded(::DataFrame, !Matched::String, ::Int64, ::String, ::String, ::DVIConfig)
+   @ DVIUCI ~/repos/NGMP/baselines/dvi/src/artifacts.jl:144
+
+Stacktrace:
+ [1] check_complete(config::DVIConfig)
+   @ Main ~/repos/NGMP/baselines/dvi/full_two_hidden_experiment.jl:62
+ [2] macro expansion
+   @ ~/repos/NGMP/baselines/dvi/full_two_hidden_experiment.jl:152 [inlined]
+ [3] macro expansion
+   @ ./timing.jl:421 [inlined]
+ [4] profile(backend_name::String, device::String)
+   @ Main ~/repos/NGMP/baselines/dvi/full_two_hidden_experiment.jl:150
+ [5] main(args::Vector{String})
+   @ Main ~/repos/NGMP/baselines/dvi/full_two_hidden_experiment.jl:297
+ [6] top-level scope
+   @ ~/repos/NGMP/baselines/dvi/full_two_hidden_experiment.jl:309
+in expression starting at /home/nimrais/repos/NGMP/baselines/dvi/full_two_hidden_experiment.jl:309
+[1/1] Yacht split 1 heteroscedastic full
+    test LPD -6.43708  RMSE 47.92057  epoch 2  40.3s
+DVI benchmark complete: 1 successful rows, 0 failure rows. Output: /home/nimrais/repos/NGMP/paper_materials/dvi_uci/wu2019_repeated_holdout_v1_20splits_full_heteroscedastic_2hidden50_v1_20261025/pilots/reactant_gpu/yacht

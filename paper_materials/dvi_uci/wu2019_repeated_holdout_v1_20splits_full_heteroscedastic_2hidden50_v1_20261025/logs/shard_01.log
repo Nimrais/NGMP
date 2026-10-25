@@ -1,0 +1,660 @@
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+I0000 00:00:1792932021.792595   93582 service.cc:153] XLA service 0x2741a6d0 initialized for platform CUDA (this does not guarantee that XLA will be used). Devices:
+I0000 00:00:1792932021.792627   93582 service.cc:161]   StreamExecutor device (0): NVIDIA GeForce RTX 3090, Compute Capability 8.6
+I0000 00:00:1792932021.793132   93582 se_gpu_pjrt_client.cc:1440] Using BFC allocator.
+I0000 00:00:1792932021.793199   93582 gpu_helpers.cc:144] XLA backend will use up to 10115507814 bytes on device 0 for BFCAllocator.
+I0000 00:00:1792932021.793269   93582 gpu_helpers.cc:182] XLA backend will use up to 15173261721 bytes on device 0 for CollectiveBFCAllocator.
+I0000 00:00:1792932021.804300   93582 cuda_dnn.cc:461] Loaded cuDNN version 91400
+I0000 00:00:1792932088.309544   93582 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792932088.314394   93582 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792932088.319131   93582 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792932088.325533   93582 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792932088.329760   93582 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792932088.333315   93582 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792932088.336908   93582 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792932101.240877   93582 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792932101.245732   93582 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792932101.249739   93582 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792932101.253680   93582 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792932101.257454   93582 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792932101.261066   93582 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792932101.264546   93582 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792932129.325772   93582 dot_merger.cc:476] Merging Dots in computation: main.13
+I0000 00:00:1792932129.327273   93582 dot_merger.cc:476] Merging Dots in computation: main.13
+I0000 00:00:1792932129.328343   93582 dot_merger.cc:476] Merging Dots in computation: main.13
+I0000 00:00:1792932129.329368   93582 dot_merger.cc:476] Merging Dots in computation: main.13
+I0000 00:00:1792932129.330299   93582 dot_merger.cc:476] Merging Dots in computation: main.13
+I0000 00:00:1792932129.331169   93582 dot_merger.cc:476] Merging Dots in computation: main.13
+I0000 00:00:1792932129.331999   93582 dot_merger.cc:476] Merging Dots in computation: main.13
+I0000 00:00:1792932157.749942   93582 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792932157.755511   93582 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792932157.760155   93582 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792932157.764474   93582 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792932157.768620   93582 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792932157.772608   93582 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792932157.776298   93582 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792932166.541263   93582 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792932166.547103   93582 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792932166.551828   93582 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792932166.556183   93582 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792932166.560355   93582 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792932166.564383   93582 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792932166.568293   93582 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792932778.515662   93582 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792932778.522215   93582 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792932778.527791   93582 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792932778.532807   93582 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792932778.537621   93582 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792932778.542316   93582 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792932778.546896   93582 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792932790.219417   93582 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792932790.226252   93582 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792932790.231764   93582 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792932790.236748   93582 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792932790.241539   93582 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792932790.246327   93582 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792932790.250945   93582 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792932819.585297   93582 dot_merger.cc:476] Merging Dots in computation: main.13
+I0000 00:00:1792932819.586888   93582 dot_merger.cc:476] Merging Dots in computation: main.13
+I0000 00:00:1792932819.588027   93582 dot_merger.cc:476] Merging Dots in computation: main.13
+I0000 00:00:1792932819.589062   93582 dot_merger.cc:476] Merging Dots in computation: main.13
+I0000 00:00:1792932819.589999   93582 dot_merger.cc:476] Merging Dots in computation: main.13
+I0000 00:00:1792932819.590881   93582 dot_merger.cc:476] Merging Dots in computation: main.13
+I0000 00:00:1792932819.591724   93582 dot_merger.cc:476] Merging Dots in computation: main.13
+I0000 00:00:1792932858.394114   93582 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792932858.400453   93582 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792932858.405689   93582 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792932858.410477   93582 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792932858.415144   93582 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792932858.419717   93582 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792932858.424111   93582 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792932868.405151   93582 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792932868.411789   93582 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792932868.417402   93582 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792932868.422304   93582 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792932868.427261   93582 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792932868.432086   93582 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792932868.436582   93582 dot_merger.cc:476] Merging Dots in computation: main.62
+F0000 00:00:1792933279.198756   93582 pjrt_stream_executor_client.cc:585] Check failed: event.status() is OK (INTERNAL: CUDA error: Error recording CUDA event: CUDA_ERROR_LAUNCH_FAILED: unspecified launch failure) 
+*** Check failure stack trace: ***
+    @     0x76be3859ee04  absl::lts_20250814::log_internal::LogMessage::SendToLog()
+    @     0x76be3859ed86  absl::lts_20250814::log_internal::LogMessage::Flush()
+    @     0x76be2bd92dcb  xla::PjRtStreamExecutorClient::WaitForAllocation()
+    @     0x76be2bd9318e  xla::PjRtStreamExecutorClient::LinearizeHostBufferInto()
+    @     0x76be2bdc83fa  xla::CommonPjRtClient::BufferFromHostBuffer()
+    @     0x76be2a3dc28c  ArrayFromHostBuffer
+    @     0x76be71d7627d  (unknown)
+    @     0x76be71d7632e  (unknown)
+    @     0x76bd7ce1f5c7  japi1_YY.AsyncBufferYY.18_32455
+    @     0x76be71d704ee  (unknown)
+    @     0x76be71d76181  (unknown)
+    @     0x76be71d74ccd  (unknown)
+    @     0x76be71d7605b  (unknown)
+    @     0x76be71d76103  (unknown)
+    @     0x76bead861a8e  do_apply
+    @     0x76be71d710d3  (unknown)
+    @     0x76be71d746b0  (unknown)
+    @     0x76be71d74753  (unknown)
+    @     0x76bead861a8e  do_apply
+    @     0x76be71d710d3  (unknown)
+    @     0x76be71d71400  (unknown)
+    @     0x76be71d71837  (unknown)
+    @     0x76bead85f85a  jl_f__call_latest
+    @     0x76be71d5130b  (unknown)
+    @     0x76be71d51547  (unknown)
+    @     0x76be71d467a0  (unknown)
+    @     0x76be71d49bbc  (unknown)
+    @     0x76be71d4e526  (unknown)
+    @     0x76be71d08ce4  (unknown)
+    @     0x76be71d12001  (unknown)
+    @     0x76be71d12553  (unknown)
+    @     0x76bead870335  do_call
+    @     0x76bead86fdfd  eval_value
+    @     0x76bead870f68  eval_body
+    @     0x76bead871b0e  jl_interpret_toplevel_thunk
+    @     0x76bead88e2ce  jl_toplevel_eval_flex
+    @     0x76bead88ec1a  jl_toplevel_eval_flex
+    @     0x76bead88fc86  ijl_toplevel_eval_in
+    @     0x76be985449a9  japi1_include_string_72191.2
+    @     0x76be9824dc76  japi1__include_72200.2
+    @     0x76be969e159c  julia_include_46984.1
+    @     0x76be9861a763  jfptr_include_46985.1
+    @     0x76be97d86a8f  julia_exec_options_73502.2
+    @     0x76be97bf77f5  julia__start_73651.2
+    @     0x76be9698ef44  jfptr__start_73652.1
+    @     0x76bead8c5066  true_main
+    @     0x76bead8c5aff  jl_repl_entrypoint
+    @           0x401089  main
+
+[93582] signal 6 (-6): Aborted
+in expression starting at /home/nimrais/repos/NGMP/baselines/dvi/full_two_hidden_experiment.jl:327
+pthread_kill at /lib/x86_64-linux-gnu/libc.so.6 (unknown line)
+raise at /lib/x86_64-linux-gnu/libc.so.6 (unknown line)
+abort at /lib/x86_64-linux-gnu/libc.so.6 (unknown line)
+_ZN4absl12lts_2025081412log_internal10LogMessage21FailWithoutStackTraceEv at /home/nimrais/.julia/artifacts/7ab91a019143c6814bf7cda69d50a77e4023c2aa/lib/libReactantExtra.so (unknown line)
+_ZN4absl12lts_2025081412log_internal10LogMessage9SendToLogEv at /home/nimrais/.julia/artifacts/7ab91a019143c6814bf7cda69d50a77e4023c2aa/lib/libReactantExtra.so (unknown line)
+_ZN4absl12lts_2025081412log_internal10LogMessage5FlushEv at /home/nimrais/.julia/artifacts/7ab91a019143c6814bf7cda69d50a77e4023c2aa/lib/libReactantExtra.so (unknown line)
+_ZN3xla24PjRtStreamExecutorClient17WaitForAllocationEPN15stream_executor6StreamERKNS_19CommonPjRtRawBufferE at /home/nimrais/.julia/artifacts/7ab91a019143c6814bf7cda69d50a77e4023c2aa/lib/libReactantExtra.so (unknown line)
+_ZN3xla24PjRtStreamExecutorClient23LinearizeHostBufferIntoEPKvNS_13PrimitiveTypeEN4absl12lts_202508144SpanIKlEESt8optionalIS8_ENS_10PjRtClient19HostBufferSemanticsENS5_12AnyInvocableIFvvOEEERKNS_5ShapeEN3tsl11RCReferenceINS_19CommonPjRtRawBufferEEE at /home/nimrais/.julia/artifacts/7ab91a019143c6814bf7cda69d50a77e4023c2aa/lib/libReactantExtra.so (unknown line)
+_ZN3xla16CommonPjRtClient20BufferFromHostBufferEPKvNS_13PrimitiveTypeEN4absl12lts_202508144SpanIKlEESt8optionalIS8_ENS_10PjRtClient19HostBufferSemanticsENS5_12AnyInvocableIFvvOEEEPNS_15PjRtMemorySpaceEPKNS_6LayoutE at /home/nimrais/.julia/artifacts/7ab91a019143c6814bf7cda69d50a77e4023c2aa/lib/libReactantExtra.so (unknown line)
+ArrayFromHostBuffer at /home/nimrais/.julia/artifacts/7ab91a019143c6814bf7cda69d50a77e4023c2aa/lib/libReactantExtra.so (unknown line)
+Buffer at /home/nimrais/.julia/packages/Reactant/UjybB/src/xla/PJRT/Buffer.jl:12
+unknown function (ip: 0x76be71d7632d)
+#AsyncBuffer#18 at /home/nimrais/.julia/packages/Reactant/UjybB/src/xla/PJRT/AsyncBuffer.jl:8
+AsyncBuffer at /home/nimrais/.julia/packages/Reactant/UjybB/src/xla/PJRT/AsyncBuffer.jl:8 [inlined]
+NoSharding at /home/nimrais/.julia/packages/Reactant/UjybB/src/Sharding.jl:193 [inlined]
+#ConcretePJRTArray#35 at /home/nimrais/.julia/packages/Reactant/UjybB/src/Types.jl:237
+ConcretePJRTArray at /home/nimrais/.julia/packages/Reactant/UjybB/src/Types.jl:229
+#make_tracer#149 at /home/nimrais/.julia/packages/Reactant/UjybB/src/Tracing.jl:1759
+make_tracer at /home/nimrais/.julia/packages/Reactant/UjybB/src/Tracing.jl:1734 [inlined]
+#155 at ./none:0 [inlined]
+iterate at ./generator.jl:48
+unknown function (ip: 0x76be71d76102)
+do_apply at /cache/build/builder-amdci4-7/julialang/julia-release-1-dot-11/src/builtins.c:804
+#make_tracer#154 at /home/nimrais/.julia/packages/Reactant/UjybB/src/Tracing.jl:1969
+make_tracer at /home/nimrais/.julia/packages/Reactant/UjybB/src/Tracing.jl:1946 [inlined]
+#155 at ./none:0 [inlined]
+iterate at ./generator.jl:48
+unknown function (ip: 0x76be71d74752)
+do_apply at /cache/build/builder-amdci4-7/julialang/julia-release-1-dot-11/src/builtins.c:804
+#make_tracer#154 at /home/nimrais/.julia/packages/Reactant/UjybB/src/Tracing.jl:1969
+make_tracer at /home/nimrais/.julia/packages/Reactant/UjybB/src/Tracing.jl:1946 [inlined]
+to_rarray_internal at /home/nimrais/.julia/packages/Reactant/UjybB/src/Tracing.jl:2089 [inlined]
+#to_rarray#161 at /home/nimrais/.julia/packages/Reactant/UjybB/src/Tracing.jl:2078 [inlined]
+to_rarray at /home/nimrais/.julia/packages/Reactant/UjybB/src/Tracing.jl:2068 [inlined]
+initialize_training_backend at /home/nimrais/repos/NGMP/baselines/dvi/src/reactant_backend.jl:259
+unknown function (ip: 0x76be71d71836)
+jl_apply at /cache/build/builder-amdci4-7/julialang/julia-release-1-dot-11/src/julia.h:2157 [inlined]
+jl_f__call_latest at /cache/build/builder-amdci4-7/julialang/julia-release-1-dot-11/src/builtins.c:875
+#invokelatest#2 at ./essentials.jl:1055 [inlined]
+invokelatest at ./essentials.jl:1052 [inlined]
+#call_reactant_backend#42 at /home/nimrais/repos/NGMP/baselines/dvi/src/backend.jl:24 [inlined]
+call_reactant_backend at /home/nimrais/repos/NGMP/baselines/dvi/src/backend.jl:21 [inlined]
+initialize_training_backend at /home/nimrais/repos/NGMP/baselines/dvi/src/backend.jl:42
+unknown function (ip: 0x76be71d51546)
+#train_with_validation#57 at /home/nimrais/repos/NGMP/baselines/dvi/src/training.jl:359
+train_with_validation at /home/nimrais/repos/NGMP/baselines/dvi/src/training.jl:348 [inlined]
+run_configuration at /home/nimrais/repos/NGMP/baselines/dvi/src/benchmark.jl:40
+unknown function (ip: 0x76be71d4e525)
+run_benchmark at /home/nimrais/repos/NGMP/baselines/dvi/src/benchmark.jl:447
+main at /home/nimrais/repos/NGMP/baselines/dvi/full_two_hidden_experiment.jl:321
+unknown function (ip: 0x76be71d12552)
+jl_apply at /cache/build/builder-amdci4-7/julialang/julia-release-1-dot-11/src/julia.h:2157 [inlined]
+do_call at /cache/build/builder-amdci4-7/julialang/julia-release-1-dot-11/src/interpreter.c:126
+eval_value at /cache/build/builder-amdci4-7/julialang/julia-release-1-dot-11/src/interpreter.c:223
+eval_stmt_value at /cache/build/builder-amdci4-7/julialang/julia-release-1-dot-11/src/interpreter.c:174 [inlined]
+eval_body at /cache/build/builder-amdci4-7/julialang/julia-release-1-dot-11/src/interpreter.c:666
+jl_interpret_toplevel_thunk at /cache/build/builder-amdci4-7/julialang/julia-release-1-dot-11/src/interpreter.c:824
+jl_toplevel_eval_flex at /cache/build/builder-amdci4-7/julialang/julia-release-1-dot-11/src/toplevel.c:943
+jl_toplevel_eval_flex at /cache/build/builder-amdci4-7/julialang/julia-release-1-dot-11/src/toplevel.c:886
+ijl_toplevel_eval_in at /cache/build/builder-amdci4-7/julialang/julia-release-1-dot-11/src/toplevel.c:994
+eval at ./boot.jl:430 [inlined]
+include_string at ./loading.jl:2777
+_include at ./loading.jl:2837
+include at ./Base.jl:562
+jfptr_include_46985.1 at /home/nimrais/.julia/juliaup/julia-1.11.9+0.x64.linux.gnu/lib/julia/sys.so (unknown line)
+exec_options at ./client.jl:316
+_start at ./client.jl:524
+jfptr__start_73652.1 at /home/nimrais/.julia/juliaup/julia-1.11.9+0.x64.linux.gnu/lib/julia/sys.so (unknown line)
+jl_apply at /cache/build/builder-amdci4-7/julialang/julia-release-1-dot-11/src/julia.h:2157 [inlined]
+true_main at /cache/build/builder-amdci4-7/julialang/julia-release-1-dot-11/src/jlapi.c:900
+jl_repl_entrypoint at /cache/build/builder-amdci4-7/julialang/julia-release-1-dot-11/src/jlapi.c:1059
+main at /cache/build/builder-amdci4-7/julialang/julia-release-1-dot-11/cli/loader_exe.c:58
+unknown function (ip: 0x76beae429d8f)
+__libc_start_main at /lib/x86_64-linux-gnu/libc.so.6 (unknown line)
+unknown function (ip: 0x4010b8)
+Allocations: 891581345 (Pool: 891573367; Big: 7978); GC: 1914
+./baselines/dvi/run_dvi_two_hidden_paper.sh: line 42: 93582 Aborted                 (core dumped) "$julia_bin" --startup-file=no --project="$script_dir" "$@"
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+I0000 00:00:1792933954.835710    6421 service.cc:153] XLA service 0x1b3e6e80 initialized for platform CUDA (this does not guarantee that XLA will be used). Devices:
+I0000 00:00:1792933954.835742    6421 service.cc:161]   StreamExecutor device (0): NVIDIA GeForce RTX 3090, Compute Capability 8.6
+I0000 00:00:1792933954.836173    6421 se_gpu_pjrt_client.cc:1440] Using BFC allocator.
+I0000 00:00:1792933954.836234    6421 gpu_helpers.cc:144] XLA backend will use up to 10115507814 bytes on device 0 for BFCAllocator.
+I0000 00:00:1792933954.836293    6421 gpu_helpers.cc:182] XLA backend will use up to 15173261721 bytes on device 0 for CollectiveBFCAllocator.
+I0000 00:00:1792933954.844158    6421 cuda_dnn.cc:461] Loaded cuDNN version 91400
+I0000 00:00:1792934020.676079    6421 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792934020.682213    6421 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792934020.686857    6421 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792934020.691141    6421 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792934020.695162    6421 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792934020.699200    6421 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792934020.703054    6421 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792934033.335123    6421 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792934033.341173    6421 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792934033.346219    6421 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792934033.351038    6421 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792934033.355595    6421 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792934033.361306    6421 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792934033.365767    6421 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792934060.901702    6421 dot_merger.cc:476] Merging Dots in computation: main.13
+I0000 00:00:1792934060.903063    6421 dot_merger.cc:476] Merging Dots in computation: main.13
+I0000 00:00:1792934060.904249    6421 dot_merger.cc:476] Merging Dots in computation: main.13
+I0000 00:00:1792934060.905270    6421 dot_merger.cc:476] Merging Dots in computation: main.13
+I0000 00:00:1792934060.906248    6421 dot_merger.cc:476] Merging Dots in computation: main.13
+I0000 00:00:1792934060.907151    6421 dot_merger.cc:476] Merging Dots in computation: main.13
+I0000 00:00:1792934060.908006    6421 dot_merger.cc:476] Merging Dots in computation: main.13
+I0000 00:00:1792934098.636372    6421 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792934098.642094    6421 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792934098.647000    6421 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792934098.651311    6421 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792934098.655586    6421 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792934098.659728    6421 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792934098.663838    6421 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792934107.937244    6421 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792934107.943192    6421 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792934107.947935    6421 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792934107.952510    6421 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792934107.957677    6421 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792934107.962530    6421 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792934107.966640    6421 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792934408.358384    6421 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792934408.364860    6421 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792934408.370162    6421 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792934408.375250    6421 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792934408.380126    6421 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792934408.384915    6421 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792934408.389670    6421 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792934417.652567    6421 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792934417.658649    6421 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792934417.663756    6421 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792934417.668389    6421 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792934417.672958    6421 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792934417.677377    6421 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792934417.681666    6421 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792934441.528763    6421 dot_merger.cc:476] Merging Dots in computation: main.13
+I0000 00:00:1792934441.530173    6421 dot_merger.cc:476] Merging Dots in computation: main.13
+I0000 00:00:1792934441.531209    6421 dot_merger.cc:476] Merging Dots in computation: main.13
+I0000 00:00:1792934441.532171    6421 dot_merger.cc:476] Merging Dots in computation: main.13
+I0000 00:00:1792934441.533096    6421 dot_merger.cc:476] Merging Dots in computation: main.13
+I0000 00:00:1792934441.533980    6421 dot_merger.cc:476] Merging Dots in computation: main.13
+I0000 00:00:1792934441.534793    6421 dot_merger.cc:476] Merging Dots in computation: main.13
+I0000 00:00:1792934506.869341    6421 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792934506.875990    6421 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792934506.881374    6421 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792934506.886627    6421 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792934506.891451    6421 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792934506.896127    6421 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792934506.900763    6421 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792934516.535393    6421 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792934516.542183    6421 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792934516.547649    6421 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792934516.552691    6421 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792934516.557589    6421 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792934516.562599    6421 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792934516.567323    6421 dot_merger.cc:476] Merging Dots in computation: main.62
+F0000 00:00:1792934827.520146    6421 pjrt_stream_executor_client.cc:585] Check failed: event.status() is OK (INTERNAL: CUDA error: Error recording CUDA event: CUDA_ERROR_LAUNCH_FAILED: unspecified launch failure) 
+*** Check failure stack trace: ***
+    @     0x710ac359ee04  absl::lts_20250814::log_internal::LogMessage::SendToLog()
+    @     0x710ac359ed86  absl::lts_20250814::log_internal::LogMessage::Flush()
+    @     0x710ab6d92dcb  xla::PjRtStreamExecutorClient::WaitForAllocation()
+    @     0x710ab6d9318e  xla::PjRtStreamExecutorClient::LinearizeHostBufferInto()
+    @     0x710ab6dc83fa  xla::CommonPjRtClient::BufferFromHostBuffer()
+    @     0x710ab53dc28c  ArrayFromHostBuffer
+    @     0x710afcd3311d  (unknown)
+    @     0x710afcd331ce  (unknown)
+    @     0x710a0381f5c7  japi1_YY.AsyncBufferYY.18_32455
+    @     0x710afcd2de2e  (unknown)
+    @     0x710afcd33021  (unknown)
+    @     0x710afcd31b6d  (unknown)
+    @     0x710afcd32ef1  (unknown)
+    @     0x710afcd32fa3  (unknown)
+    @     0x710b38861a8e  do_apply
+    @     0x710afcd2d96f  (unknown)
+    @     0x710afcd31552  (unknown)
+    @     0x710afcd315f3  (unknown)
+    @     0x710b38861a8e  do_apply
+    @     0x710afcd2d96f  (unknown)
+    @     0x710afcd2e284  (unknown)
+    @     0x710afcd2e6b7  (unknown)
+    @     0x710b3885f85a  jl_f__call_latest
+    @     0x710afcd0e18b  (unknown)
+    @     0x710afcd0e3c7  (unknown)
+    @     0x710afccfda70  (unknown)
+    @     0x710afcd08ddf  (unknown)
+    @     0x710afcd0d746  (unknown)
+    @     0x710afddf1b44  (unknown)
+    @     0x710afcc75514  (unknown)
+    @     0x710afcc75a63  (unknown)
+    @     0x710b38870335  do_call
+    @     0x710b3886fdfd  eval_value
+    @     0x710b38870f68  eval_body
+    @     0x710b38871b0e  jl_interpret_toplevel_thunk
+    @     0x710b3888e2ce  jl_toplevel_eval_flex
+    @     0x710b3888ec1a  jl_toplevel_eval_flex
+    @     0x710b3888fc86  ijl_toplevel_eval_in
+    @     0x710b235449a9  japi1_include_string_72191.2
+    @     0x710b2324dc76  japi1__include_72200.2
+    @     0x710b219e159c  julia_include_46984.1
+    @     0x710b2361a763  jfptr_include_46985.1
+    @     0x710b22d86a8f  julia_exec_options_73502.2
+    @     0x710b22bf77f5  julia__start_73651.2
+    @     0x710b2198ef44  jfptr__start_73652.1
+    @     0x710b388c5066  true_main
+    @     0x710b388c5aff  jl_repl_entrypoint
+    @           0x401089  main
+
+[6421] signal 6 (-6): Aborted
+in expression starting at /home/nimrais/repos/NGMP/baselines/dvi/full_two_hidden_experiment.jl:327
+pthread_kill at /lib/x86_64-linux-gnu/libc.so.6 (unknown line)
+raise at /lib/x86_64-linux-gnu/libc.so.6 (unknown line)
+abort at /lib/x86_64-linux-gnu/libc.so.6 (unknown line)
+_ZN4absl12lts_2025081412log_internal10LogMessage21FailWithoutStackTraceEv at /home/nimrais/.julia/artifacts/7ab91a019143c6814bf7cda69d50a77e4023c2aa/lib/libReactantExtra.so (unknown line)
+_ZN4absl12lts_2025081412log_internal10LogMessage9SendToLogEv at /home/nimrais/.julia/artifacts/7ab91a019143c6814bf7cda69d50a77e4023c2aa/lib/libReactantExtra.so (unknown line)
+_ZN4absl12lts_2025081412log_internal10LogMessage5FlushEv at /home/nimrais/.julia/artifacts/7ab91a019143c6814bf7cda69d50a77e4023c2aa/lib/libReactantExtra.so (unknown line)
+_ZN3xla24PjRtStreamExecutorClient17WaitForAllocationEPN15stream_executor6StreamERKNS_19CommonPjRtRawBufferE at /home/nimrais/.julia/artifacts/7ab91a019143c6814bf7cda69d50a77e4023c2aa/lib/libReactantExtra.so (unknown line)
+_ZN3xla24PjRtStreamExecutorClient23LinearizeHostBufferIntoEPKvNS_13PrimitiveTypeEN4absl12lts_202508144SpanIKlEESt8optionalIS8_ENS_10PjRtClient19HostBufferSemanticsENS5_12AnyInvocableIFvvOEEERKNS_5ShapeEN3tsl11RCReferenceINS_19CommonPjRtRawBufferEEE at /home/nimrais/.julia/artifacts/7ab91a019143c6814bf7cda69d50a77e4023c2aa/lib/libReactantExtra.so (unknown line)
+_ZN3xla16CommonPjRtClient20BufferFromHostBufferEPKvNS_13PrimitiveTypeEN4absl12lts_202508144SpanIKlEESt8optionalIS8_ENS_10PjRtClient19HostBufferSemanticsENS5_12AnyInvocableIFvvOEEEPNS_15PjRtMemorySpaceEPKNS_6LayoutE at /home/nimrais/.julia/artifacts/7ab91a019143c6814bf7cda69d50a77e4023c2aa/lib/libReactantExtra.so (unknown line)
+ArrayFromHostBuffer at /home/nimrais/.julia/artifacts/7ab91a019143c6814bf7cda69d50a77e4023c2aa/lib/libReactantExtra.so (unknown line)
+Buffer at /home/nimrais/.julia/packages/Reactant/UjybB/src/xla/PJRT/Buffer.jl:12
+unknown function (ip: 0x710afcd331cd)
+#AsyncBuffer#18 at /home/nimrais/.julia/packages/Reactant/UjybB/src/xla/PJRT/AsyncBuffer.jl:8
+AsyncBuffer at /home/nimrais/.julia/packages/Reactant/UjybB/src/xla/PJRT/AsyncBuffer.jl:8 [inlined]
+NoSharding at /home/nimrais/.julia/packages/Reactant/UjybB/src/Sharding.jl:193 [inlined]
+#ConcretePJRTArray#35 at /home/nimrais/.julia/packages/Reactant/UjybB/src/Types.jl:237
+ConcretePJRTArray at /home/nimrais/.julia/packages/Reactant/UjybB/src/Types.jl:229
+#make_tracer#149 at /home/nimrais/.julia/packages/Reactant/UjybB/src/Tracing.jl:1759
+make_tracer at /home/nimrais/.julia/packages/Reactant/UjybB/src/Tracing.jl:1734 [inlined]
+#155 at ./none:0 [inlined]
+iterate at ./generator.jl:48
+unknown function (ip: 0x710afcd32fa2)
+do_apply at /cache/build/builder-amdci4-7/julialang/julia-release-1-dot-11/src/builtins.c:804
+#make_tracer#154 at /home/nimrais/.julia/packages/Reactant/UjybB/src/Tracing.jl:1969
+make_tracer at /home/nimrais/.julia/packages/Reactant/UjybB/src/Tracing.jl:1946 [inlined]
+#155 at ./none:0 [inlined]
+iterate at ./generator.jl:48
+unknown function (ip: 0x710afcd315f2)
+do_apply at /cache/build/builder-amdci4-7/julialang/julia-release-1-dot-11/src/builtins.c:804
+#make_tracer#154 at /home/nimrais/.julia/packages/Reactant/UjybB/src/Tracing.jl:1969
+make_tracer at /home/nimrais/.julia/packages/Reactant/UjybB/src/Tracing.jl:1946 [inlined]
+to_rarray_internal at /home/nimrais/.julia/packages/Reactant/UjybB/src/Tracing.jl:2089 [inlined]
+#to_rarray#161 at /home/nimrais/.julia/packages/Reactant/UjybB/src/Tracing.jl:2078 [inlined]
+to_rarray at /home/nimrais/.julia/packages/Reactant/UjybB/src/Tracing.jl:2068 [inlined]
+initialize_training_backend at /home/nimrais/repos/NGMP/baselines/dvi/src/reactant_backend.jl:259
+unknown function (ip: 0x710afcd2e6b6)
+jl_apply at /cache/build/builder-amdci4-7/julialang/julia-release-1-dot-11/src/julia.h:2157 [inlined]
+jl_f__call_latest at /cache/build/builder-amdci4-7/julialang/julia-release-1-dot-11/src/builtins.c:875
+#invokelatest#2 at ./essentials.jl:1055 [inlined]
+invokelatest at ./essentials.jl:1052 [inlined]
+#call_reactant_backend#42 at /home/nimrais/repos/NGMP/baselines/dvi/src/backend.jl:24 [inlined]
+call_reactant_backend at /home/nimrais/repos/NGMP/baselines/dvi/src/backend.jl:21 [inlined]
+initialize_training_backend at /home/nimrais/repos/NGMP/baselines/dvi/src/backend.jl:42
+unknown function (ip: 0x710afcd0e3c6)
+#train_with_validation#57 at /home/nimrais/repos/NGMP/baselines/dvi/src/training.jl:359
+train_with_validation at /home/nimrais/repos/NGMP/baselines/dvi/src/training.jl:348 [inlined]
+run_configuration at /home/nimrais/repos/NGMP/baselines/dvi/src/benchmark.jl:40
+unknown function (ip: 0x710afcd0d745)
+run_benchmark at /home/nimrais/repos/NGMP/baselines/dvi/src/benchmark.jl:447
+main at /home/nimrais/repos/NGMP/baselines/dvi/full_two_hidden_experiment.jl:321
+unknown function (ip: 0x710afcc75a62)
+jl_apply at /cache/build/builder-amdci4-7/julialang/julia-release-1-dot-11/src/julia.h:2157 [inlined]
+do_call at /cache/build/builder-amdci4-7/julialang/julia-release-1-dot-11/src/interpreter.c:126
+eval_value at /cache/build/builder-amdci4-7/julialang/julia-release-1-dot-11/src/interpreter.c:223
+eval_stmt_value at /cache/build/builder-amdci4-7/julialang/julia-release-1-dot-11/src/interpreter.c:174 [inlined]
+eval_body at /cache/build/builder-amdci4-7/julialang/julia-release-1-dot-11/src/interpreter.c:666
+jl_interpret_toplevel_thunk at /cache/build/builder-amdci4-7/julialang/julia-release-1-dot-11/src/interpreter.c:824
+jl_toplevel_eval_flex at /cache/build/builder-amdci4-7/julialang/julia-release-1-dot-11/src/toplevel.c:943
+jl_toplevel_eval_flex at /cache/build/builder-amdci4-7/julialang/julia-release-1-dot-11/src/toplevel.c:886
+ijl_toplevel_eval_in at /cache/build/builder-amdci4-7/julialang/julia-release-1-dot-11/src/toplevel.c:994
+eval at ./boot.jl:430 [inlined]
+include_string at ./loading.jl:2777
+_include at ./loading.jl:2837
+include at ./Base.jl:562
+jfptr_include_46985.1 at /home/nimrais/.julia/juliaup/julia-1.11.9+0.x64.linux.gnu/lib/julia/sys.so (unknown line)
+exec_options at ./client.jl:316
+_start at ./client.jl:524
+jfptr__start_73652.1 at /home/nimrais/.julia/juliaup/julia-1.11.9+0.x64.linux.gnu/lib/julia/sys.so (unknown line)
+jl_apply at /cache/build/builder-amdci4-7/julialang/julia-release-1-dot-11/src/julia.h:2157 [inlined]
+true_main at /cache/build/builder-amdci4-7/julialang/julia-release-1-dot-11/src/jlapi.c:900
+jl_repl_entrypoint at /cache/build/builder-amdci4-7/julialang/julia-release-1-dot-11/src/jlapi.c:1059
+main at /cache/build/builder-amdci4-7/julialang/julia-release-1-dot-11/cli/loader_exe.c:58
+unknown function (ip: 0x710b39429d8f)
+__libc_start_main at /lib/x86_64-linux-gnu/libc.so.6 (unknown line)
+unknown function (ip: 0x4010b8)
+Allocations: 760026118 (Pool: 760018530; Big: 7588); GC: 1131
+./baselines/dvi/run_dvi_two_hidden_paper.sh: line 42:  6421 Aborted                 (core dumped) "$julia_bin" --startup-file=no --project="$script_dir" "$@"
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+I0000 00:00:1792944723.434356    7361 service.cc:153] XLA service 0x412144a0 initialized for platform CUDA (this does not guarantee that XLA will be used). Devices:
+I0000 00:00:1792944723.434398    7361 service.cc:161]   StreamExecutor device (0): NVIDIA GeForce RTX 3090, Compute Capability 8.6
+I0000 00:00:1792944723.434987    7361 se_gpu_pjrt_client.cc:1440] Using BFC allocator.
+I0000 00:00:1792944723.435071    7361 gpu_helpers.cc:144] XLA backend will use up to 10115507814 bytes on device 0 for BFCAllocator.
+I0000 00:00:1792944723.435150    7361 gpu_helpers.cc:182] XLA backend will use up to 15173261721 bytes on device 0 for CollectiveBFCAllocator.
+I0000 00:00:1792944723.443349    7361 cuda_dnn.cc:461] Loaded cuDNN version 91400
+I0000 00:00:1792944789.096685    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792944789.102300    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792944789.106382    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792944789.110007    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792944789.113857    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792944789.118864    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792944789.123298    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792944801.629441    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792944801.634633    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792944801.638830    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792944801.642830    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792944801.646549    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792944801.650098    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792944801.653550    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792944828.595119    7361 dot_merger.cc:476] Merging Dots in computation: main.13
+I0000 00:00:1792944828.596552    7361 dot_merger.cc:476] Merging Dots in computation: main.13
+I0000 00:00:1792944828.597608    7361 dot_merger.cc:476] Merging Dots in computation: main.13
+I0000 00:00:1792944828.598588    7361 dot_merger.cc:476] Merging Dots in computation: main.13
+I0000 00:00:1792944828.599508    7361 dot_merger.cc:476] Merging Dots in computation: main.13
+I0000 00:00:1792944828.600366    7361 dot_merger.cc:476] Merging Dots in computation: main.13
+I0000 00:00:1792944828.601183    7361 dot_merger.cc:476] Merging Dots in computation: main.13
+I0000 00:00:1792944908.789159    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792944908.794532    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792944908.798891    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792944908.802896    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792944908.806746    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792944908.810503    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792944908.814126    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792944917.267028    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792944917.272180    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792944917.276237    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792944917.280185    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792944917.283913    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792944917.287632    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792944917.291686    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792945995.205409    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792945995.211747    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792945995.216878    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792945995.221557    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792945995.226066    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792945995.230474    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792945995.234718    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792946005.629854    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792946005.636262    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792946005.642033    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792946005.646486    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792946005.650729    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792946005.654887    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792946005.658884    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792946030.850430    7361 dot_merger.cc:476] Merging Dots in computation: main.13
+I0000 00:00:1792946030.851852    7361 dot_merger.cc:476] Merging Dots in computation: main.13
+I0000 00:00:1792946030.853029    7361 dot_merger.cc:476] Merging Dots in computation: main.13
+I0000 00:00:1792946030.854140    7361 dot_merger.cc:476] Merging Dots in computation: main.13
+I0000 00:00:1792946030.855150    7361 dot_merger.cc:476] Merging Dots in computation: main.13
+I0000 00:00:1792946030.856111    7361 dot_merger.cc:476] Merging Dots in computation: main.13
+I0000 00:00:1792946030.857285    7361 dot_merger.cc:476] Merging Dots in computation: main.13
+I0000 00:00:1792946054.050894    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792946054.056639    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792946054.061284    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792946054.065946    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792946054.070595    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792946054.075144    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792946054.079458    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792946063.702262    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792946063.709030    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792946063.714775    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792946063.720005    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792946063.725142    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792946063.730176    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792946063.734987    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792946541.744575    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792946541.751275    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792946541.756861    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792946541.762012    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792946541.766930    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792946541.771724    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792946541.776385    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792946551.859249    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792946551.865097    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792946551.869937    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792946551.874317    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792946551.878612    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792946551.882862    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792946551.886966    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792946578.504477    7361 dot_merger.cc:476] Merging Dots in computation: main.13
+I0000 00:00:1792946578.505914    7361 dot_merger.cc:476] Merging Dots in computation: main.13
+I0000 00:00:1792946578.507022    7361 dot_merger.cc:476] Merging Dots in computation: main.13
+I0000 00:00:1792946578.508051    7361 dot_merger.cc:476] Merging Dots in computation: main.13
+I0000 00:00:1792946578.509012    7361 dot_merger.cc:476] Merging Dots in computation: main.13
+I0000 00:00:1792946578.509920    7361 dot_merger.cc:476] Merging Dots in computation: main.13
+I0000 00:00:1792946578.510802    7361 dot_merger.cc:476] Merging Dots in computation: main.13
+I0000 00:00:1792946731.657105    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792946731.663940    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792946731.669648    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792946731.675013    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792946731.680228    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792946731.685141    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792946731.689786    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792946741.155517    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792946741.161007    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792946741.165539    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792946741.169751    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792946741.173996    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792946741.178076    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792946741.181907    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792949239.400657    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792949239.407904    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792949239.413588    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792949239.418862    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792949239.423877    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792949239.428855    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792949239.433564    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792949250.024136    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792949250.030622    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792949250.035974    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792949250.040937    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792949250.045645    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792949250.050374    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792949250.055075    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792949275.752275    7361 dot_merger.cc:476] Merging Dots in computation: main.13
+I0000 00:00:1792949275.753594    7361 dot_merger.cc:476] Merging Dots in computation: main.13
+I0000 00:00:1792949275.754633    7361 dot_merger.cc:476] Merging Dots in computation: main.13
+I0000 00:00:1792949275.755602    7361 dot_merger.cc:476] Merging Dots in computation: main.13
+I0000 00:00:1792949275.756494    7361 dot_merger.cc:476] Merging Dots in computation: main.13
+I0000 00:00:1792949275.757331    7361 dot_merger.cc:476] Merging Dots in computation: main.13
+I0000 00:00:1792949275.758118    7361 dot_merger.cc:476] Merging Dots in computation: main.13
+I0000 00:00:1792949324.091094    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792949324.097949    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792949324.103378    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792949324.108120    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792949324.112528    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792949324.116713    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792949324.120744    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792949333.791604    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792949333.797371    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792949333.802303    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792949333.806828    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792949333.811312    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792949333.815733    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792949333.819973    7361 dot_merger.cc:476] Merging Dots in computation: main.62
+[1/60] skip Yacht split 1 heteroscedastic full
+[2/60] skip Yacht split 3 heteroscedastic full
+[3/60] skip Yacht split 5 heteroscedastic full
+[4/60] skip Yacht split 7 heteroscedastic full
+[5/60] skip Yacht split 9 heteroscedastic full
+[6/60] skip Yacht split 11 heteroscedastic full
+[7/60] skip Yacht split 13 heteroscedastic full
+[8/60] skip Yacht split 15 heteroscedastic full
+[9/60] skip Yacht split 17 heteroscedastic full
+[10/60] skip Yacht split 19 heteroscedastic full
+[11/60] skip Concrete split 1 heteroscedastic full
+[12/60] skip Concrete split 3 heteroscedastic full
+[13/60] skip Concrete split 5 heteroscedastic full
+[14/60] skip Concrete split 7 heteroscedastic full
+[15/60] skip Concrete split 9 heteroscedastic full
+[16/60] skip Concrete split 11 heteroscedastic full
+[17/60] skip Concrete split 13 heteroscedastic full
+[18/60] skip Concrete split 15 heteroscedastic full
+[19/60] skip Concrete split 17 heteroscedastic full
+[20/60] skip Concrete split 19 heteroscedastic full
+[21/60] skip Energy split 1 heteroscedastic full
+[22/60] skip Energy split 3 heteroscedastic full
+[23/60] Energy split 5 heteroscedastic full
+    test LPD -0.61553  RMSE 0.54206  epoch 9890  290.5s
+[24/60] Energy split 7 heteroscedastic full
+    test LPD -0.52744  RMSE 0.43633  epoch 9915  178.0s
+[25/60] Energy split 9 heteroscedastic full
+    test LPD -1.85092  RMSE 0.56274  epoch 7260  146.4s
+[26/60] Energy split 11 heteroscedastic full
+    test LPD -0.44180  RMSE 0.42652  epoch 9345  168.0s
+[27/60] Energy split 13 heteroscedastic full
+    test LPD -1.18737  RMSE 0.77167  epoch 2330  59.4s
+[28/60] Energy split 15 heteroscedastic full
+    test LPD -0.52784  RMSE 0.45524  epoch 9975  164.9s
+[29/60] Energy split 17 heteroscedastic full
+    test LPD -0.70754  RMSE 0.51938  epoch 3500  84.4s
+[30/60] Energy split 19 heteroscedastic full
+    test LPD -0.43098  RMSE 0.40364  epoch 9970  171.8s
+[31/60] Boston split 1 heteroscedastic full
+    test LPD -2.56093  RMSE 3.34399  epoch 3000  97.0s
+[32/60] Boston split 3 heteroscedastic full
+    test LPD -2.32735  RMSE 2.99052  epoch 3000  51.3s
+[33/60] Boston split 5 heteroscedastic full
+    test LPD -2.58242  RMSE 3.14041  epoch 3000  48.1s
+[34/60] Boston split 7 heteroscedastic full
+    test LPD -2.46609  RMSE 3.01041  epoch 3000  47.8s
+[35/60] Boston split 9 heteroscedastic full
+    test LPD -2.41691  RMSE 2.73376  epoch 3000  51.9s
+[36/60] Boston split 11 heteroscedastic full
+    test LPD -2.49272  RMSE 3.29417  epoch 3000  50.6s
+[37/60] Boston split 13 heteroscedastic full
+    test LPD -2.46466  RMSE 4.28017  epoch 3000  49.3s
+[38/60] Boston split 15 heteroscedastic full
+    test LPD -2.32845  RMSE 2.50118  epoch 3000  50.1s
+[39/60] Boston split 17 heteroscedastic full
+    test LPD -2.69875  RMSE 4.51014  epoch 3000  48.4s
+[40/60] Boston split 19 heteroscedastic full
+    test LPD -2.40605  RMSE 3.40866  epoch 3000  51.5s
+[41/60] Power split 1 heteroscedastic full
+    test LPD -2.88526  RMSE 4.27851  epoch 1245  333.1s
+[42/60] Power split 3 heteroscedastic full
+    test LPD -2.83186  RMSE 4.10968  epoch 205  96.5s
+[43/60] Power split 5 heteroscedastic full
+    test LPD -2.83374  RMSE 4.13425  epoch 275  115.8s
+[44/60] Power split 7 heteroscedastic full
+    test LPD -2.79880  RMSE 3.98837  epoch 2505  533.9s
+[45/60] Power split 9 heteroscedastic full
+    test LPD -2.82660  RMSE 4.13384  epoch 520  152.9s
+[46/60] Power split 11 heteroscedastic full
+    test LPD -2.77134  RMSE 3.88955  epoch 290  114.3s
+[47/60] Power split 13 heteroscedastic full
+    test LPD -2.88921  RMSE 4.48188  epoch 2170  475.2s
+[48/60] Power split 15 heteroscedastic full
+    test LPD -2.85084  RMSE 4.04562  epoch 1740  391.6s
+[49/60] Power split 17 heteroscedastic full
+    test LPD -2.82220  RMSE 4.10964  epoch 1460  339.1s
+[50/60] Power split 19 heteroscedastic full
+    test LPD -2.84662  RMSE 4.21141  epoch 455  145.2s
+[51/60] Wine split 1 heteroscedastic full
+    test LPD -0.96091  RMSE 0.65598  epoch 1155  126.7s
+[52/60] Wine split 3 heteroscedastic full
+    test LPD -0.92030  RMSE 0.59934  epoch 1155  76.7s
+[53/60] Wine split 5 heteroscedastic full
+    test LPD -1.07156  RMSE 0.74652  epoch 1235  79.1s
+[54/60] Wine split 7 heteroscedastic full
+    test LPD -1.02654  RMSE 0.69008  epoch 1155  78.9s
+[55/60] Wine split 9 heteroscedastic full
+    test LPD -0.99456  RMSE 0.66490  epoch 1910  97.3s
+[56/60] Wine split 11 heteroscedastic full
+    test LPD -0.93567  RMSE 0.59753  epoch 1170  75.4s
+[57/60] Wine split 13 heteroscedastic full
+    test LPD -0.95466  RMSE 0.63809  epoch 1155  63.9s
+[58/60] Wine split 15 heteroscedastic full
+    test LPD -0.92912  RMSE 0.59120  epoch 1155  63.6s
+[59/60] Wine split 17 heteroscedastic full
+    test LPD -0.95663  RMSE 0.64126  epoch 1155  63.8s
+[60/60] Wine split 19 heteroscedastic full
+    test LPD -0.99869  RMSE 0.68920  epoch 1155  63.2s
+DVI benchmark complete: 60 successful rows, 0 failure rows. Output: /home/nimrais/repos/NGMP/paper_materials/dvi_uci/wu2019_repeated_holdout_v1_20splits_full_heteroscedastic_2hidden50_v1_20261025/dvi_shards/01

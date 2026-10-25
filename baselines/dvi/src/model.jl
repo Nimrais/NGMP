@@ -113,6 +113,10 @@ function propagate_dvi(
         hidden_post = relu_moments_full(
             hidden_pre.mean, hidden_pre.covariance,
         )
+        if config.hidden_layers == 2
+            second_pre = linear_full(hidden_post, params.hidden2, config, tracker)
+            hidden_post = relu_moments_full(second_pre.mean, second_pre.covariance)
+        end
         return linear_full(hidden_post, params.output, config, tracker)
     elseif config.propagation == "diagonal"
         hidden_pre = linear_certain_diagonal(

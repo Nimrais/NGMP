@@ -1,0 +1,37 @@
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+I0000 00:00:1792927698.403687   74442 service.cc:153] XLA service 0x214400d0 initialized for platform CUDA (this does not guarantee that XLA will be used). Devices:
+I0000 00:00:1792927698.403726   74442 service.cc:161]   StreamExecutor device (0): NVIDIA GeForce RTX 3090, Compute Capability 8.6
+I0000 00:00:1792927698.404240   74442 se_gpu_pjrt_client.cc:1440] Using BFC allocator.
+I0000 00:00:1792927698.404315   74442 gpu_helpers.cc:144] XLA backend will use up to 10115507814 bytes on device 0 for BFCAllocator.
+I0000 00:00:1792927698.404641   74442 gpu_helpers.cc:182] XLA backend will use up to 15173261721 bytes on device 0 for CollectiveBFCAllocator.
+I0000 00:00:1792927698.415151   74442 cuda_dnn.cc:461] Loaded cuDNN version 91400
+I0000 00:00:1792927744.648682   74442 dot_merger.cc:476] Merging Dots in computation: main.1
+I0000 00:00:1792927744.650541   74442 dot_merger.cc:476] Merging Dots in computation: main.1
+I0000 00:00:1792927744.652250   74442 dot_merger.cc:476] Merging Dots in computation: main.1
+I0000 00:00:1792927744.653651   74442 dot_merger.cc:476] Merging Dots in computation: main.1
+I0000 00:00:1792927744.654877   74442 dot_merger.cc:476] Merging Dots in computation: main.1
+I0000 00:00:1792927744.655690   74442 dot_merger.cc:476] Merging Dots in computation: main.1
+I0000 00:00:1792927744.656357   74442 dot_merger.cc:476] Merging Dots in computation: main.1
+I0000 00:00:1792927833.097368   74442 dot_merger.cc:476] Merging Dots in computation: main.24
+I0000 00:00:1792927833.100612   74442 dot_merger.cc:476] Merging Dots in computation: main.24
+I0000 00:00:1792927833.103412   74442 dot_merger.cc:476] Merging Dots in computation: main.24
+I0000 00:00:1792927833.107209   74442 dot_merger.cc:476] Merging Dots in computation: main.24
+I0000 00:00:1792927833.111855   74442 dot_merger.cc:476] Merging Dots in computation: main.24
+I0000 00:00:1792927833.114763   74442 dot_merger.cc:476] Merging Dots in computation: main.24
+I0000 00:00:1792927833.117300   74442 dot_merger.cc:476] Merging Dots in computation: main.24
+I0000 00:00:1792927840.481340   74442 dot_merger.cc:476] Merging Dots in computation: main.24
+I0000 00:00:1792927840.485612   74442 dot_merger.cc:476] Merging Dots in computation: main.24
+I0000 00:00:1792927840.488728   74442 dot_merger.cc:476] Merging Dots in computation: main.24
+I0000 00:00:1792927840.491394   74442 dot_merger.cc:476] Merging Dots in computation: main.24
+I0000 00:00:1792927840.493841   74442 dot_merger.cc:476] Merging Dots in computation: main.24
+I0000 00:00:1792927840.496093   74442 dot_merger.cc:476] Merging Dots in computation: main.24
+I0000 00:00:1792927840.498162   74442 dot_merger.cc:476] Merging Dots in computation: main.24
+I0000 00:00:1792927891.550871   74442 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792927891.556713   74442 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792927891.562015   74442 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792927891.566708   74442 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792927891.570943   74442 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792927891.574748   74442 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792927891.578324   74442 dot_merger.cc:476] Merging Dots in computation: main.62
+Test Summary:                       | Pass  Total     Time
+full two-hidden Reactant gpu parity |   44     44  3m20.1s

@@ -173,6 +173,14 @@ safeguards are documented in `baselines/bbb_uci/README.md`,
 
 ## Final comparison table
 
+Full-covariance DVI big (`d -> 50 -> 50 -> 2`) has a separate bounded pilot
+and resumable launcher: `bash baselines/dvi/run_dvi_two_hidden_paper.sh pilot`
+then `run`. See `baselines/dvi/README.md` for the protocol and saved timing
+report. Its 120 fits completed and passed checkpoint replay on 2026-10-25.
+Pass `--include-dvi-big` to the table
+generator to include `DVI-2HL-Hetero`; without this option the existing nine
+variants remain available. Pilot results never enter the table.
+
 The generator now also requires the separate `dDVI-2HL-Hetero` experiment:
 `wu2019_repeated_holdout_v1_20splits_heteroscedastic_2hidden50_v1_20261024/ddvi`
 under `dvi_uci/`. Run `bash baselines/dvi/run_ddvi_two_hidden_paper.sh` to

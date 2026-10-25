@@ -1,0 +1,4 @@
+backend = "zygote"
+device = "cpu"
+seconds = 27.517908096313477
+steps = 156

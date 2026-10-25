@@ -1,0 +1,4 @@
+backend = "reactant"
+device = "gpu"
+seconds = 15.06537914276123
+steps = 10764

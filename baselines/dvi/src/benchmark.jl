@@ -6,7 +6,9 @@ function scalar_metrics(metrics)
 end
 
 function method_name(config::DVIConfig)
-    config.hidden_layers == 2 && return "Diagonal Deterministic Variational Inference (dDVI-2HL)"
+    config.hidden_layers == 2 && return config.propagation == "full" ?
+        "Deterministic Variational Inference (DVI-2HL)" :
+        "Diagonal Deterministic Variational Inference (dDVI-2HL)"
     return config.propagation == "full" ?
         "Deterministic Variational Inference (DVI)" :
         "Diagonal Deterministic Variational Inference (dDVI)"

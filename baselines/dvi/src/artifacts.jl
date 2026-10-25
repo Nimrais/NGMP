@@ -305,7 +305,7 @@ format_ci95(mean_value, standard_error) =
     @sprintf("%.4f ± %.4f", mean_value, 1.96 * standard_error)
 
 table_method_label(row) = hasproperty(row, :hidden_layers) && row.hidden_layers == 2 ?
-    "dDVI-2HL" : string(row.propagation)
+    (row.propagation == "full" ? "DVI-2HL" : "dDVI-2HL") : string(row.propagation)
 
 function write_tables(summary::DataFrame, config::DVIConfig)
     isempty(summary) && return nothing

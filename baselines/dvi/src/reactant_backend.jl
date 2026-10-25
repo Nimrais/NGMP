@@ -167,8 +167,11 @@ function reactant_dvi_loss(
         log_variance_variance = likelihood == "heteroscedastic" ?
             DVIUCI.output_covariance_entry(output, 2, 2, config) : zero.(prediction)
         precision = DVIUCI.safe_exp(-log_variance .+ 0.5f0 .* log_variance_variance, config)
+        mean_log_variance_covariance = likelihood == "heteroscedastic" ?
+            DVIUCI.output_covariance_entry(output, 1, 2, config) : zero.(prediction)
+        residual = prediction .- mean_log_variance_covariance .- targets
         -0.5f0 * (DVIUCI.DVI_LOG2PI + mean(log_variance) +
-            mean(precision .* (prediction_variance .+ (prediction .- targets) .^ 2)))
+            mean(precision .* (prediction_variance .+ residual .^ 2)))
     else
         mean(reactant_expected_log_likelihood(output, targets, likelihood, config))
     end

@@ -1,0 +1,339 @@
+diff --git a/baselines/dvi/README.md b/baselines/dvi/README.md
+index 7f69bed..c68f8cc 100644
+--- a/baselines/dvi/README.md
++++ b/baselines/dvi/README.md
+@@ -346,7 +346,7 @@ julia --project=baselines/dvi baselines/dvi/merge_shards.jl \
+ 
+ Set `DVI_HIDDEN_LAYERS=2 DVI_HIDDEN_UNITS=50 DVI_PROPAGATION=diagonal`
+ for a `d -> 50 -> 50 -> 2` heteroscedastic network. The default remains one
+-hidden layer; two hidden layers are supported only with diagonal propagation.
++hidden layer; the separate full-covariance campaign is described below.
+ The additional layer contributes its own factorized Gaussian posterior and
+ empirical-Bayes KL term. Coefficient counts are `50d + 2702` (2,902–3,352).
+ 
+@@ -389,3 +389,103 @@ New checkpoints use schema `dvi-uci-posterior-v4`. Existing one-hidden-layer
+ posterior parameter structures still work with `DVIConfig(hidden_layers=1)`;
+ historical results are not overwritten or automatically resumed across the
+ implementation-version change.
++
++## Full-covariance DVI big on GPU
++
++Full DVI also supports `DVI_HIDDEN_LAYERS=2`: `d -> 50 -> 50 -> 2`, with
++heteroscedastic mean/log-variance outputs and full activation covariance at
++both hidden layers. Its implementation tag is `full-two-hidden-layers-v1`;
++one-hidden-layer and diagonal-DVI implementation tags are unchanged.
++The covariance transforms use two matrix products, and the compiled loss
++retains the mean–log-variance covariance term.
++
++The fixed campaign uses Concrete, Energy (heating load), Boston Housing,
++Power, Wine Quality Red, and Yacht, each with the original 20 paired splits.
++It matches small DVI's settings: Adam 0.0003, batch size 100, 10,000 maximum
++epochs, validation every five epochs, patience 500 checks, and a 50,000-step
++no-improvement limit. This last limit is not a hard total-step budget.
++KL warmup/annealing remain 14,000/1,000 steps; selection and refit have no
++hard step ceilings.
++
++From the repository root:
++
++The launcher selects an installed Juliaup **1.11.9** executable automatically
++and rejects other versions before loading packages. The saved environment and
++GPU pilot were validated on 1.11.9; an unrelated default Julia channel (such
++as 1.13) must not be used for this experiment. Set `DVI_BIG_JULIA_BIN` to an
++explicit 1.11.9 executable for other installation layouts. To check package
++loading and the saved pilot without starting training:
++
++```sh
++bash baselines/dvi/run_dvi_two_hidden_paper.sh check
++```
++
++```sh
++# Numerical parity, short artifact pilots, and CPU/GPU throughput comparison.
++bash baselines/dvi/run_dvi_two_hidden_paper.sh pilot
++
++# Run all 120 fits using the pilot's recommended backend and worker count.
++bash baselines/dvi/run_dvi_two_hidden_paper.sh run
++
++# Verify saved posteriors and regenerate comparisons without training.
++bash baselines/dvi/run_dvi_two_hidden_paper.sh finish
++```
++
++`pilot` caps its GPU phase at 1,800 seconds including startup/compilation; a
++shorter limit can be supplied with `DVI_BIG_PILOT_SECONDS`. CPU reference
++measurements run separately, so total wall time can be longer. Successful
++GPU parity checks are reused only when numerical sources, package manifests,
++Julia version, and GPU/driver information match. It does not start the full
++campaign. Its two-epoch fits use a shortened KL schedule solely to test
++training, checkpoint replay, and resume. They are stored under `pilots/`
++and never enter the paper comparison.
++
++The pilot compares synchronized CPU/Zygote and GPU/Reactant moments, losses,
++gradients, and Adam updates before timing all six datasets. It measures
++concurrent throughput on Power with one/two GPU workers and four CPU
++workers. Two GPU workers are selected only if aggregate throughput improves
++by at least 10%; CPU is recommended if its projected campaign is faster.
++`pilots/report.md`, `runtime_projection.csv`, and `recommendation.toml`
++record the recommendation and separate timing scenarios based on historical
++small-DVI and dDVI-big step counts, with a 25% margin. These scenarios are
++not confidence intervals: actual early stopping can differ. GPU memory is
++sampled in `logs/pilot_gpu_memory.csv`.
++
++The full run requires a successful recommendation matching the current
++source fingerprint. Missing GPU support fails explicitly, with no silent
++CPU fallback. Configure `DVI_BIG_GPU` (default `0`), `DVI_BIG_JULIA_BIN`,
++`DVI_BIG_DEPOT_PATH`, or `DVI_BIG_OUTPUT_ROOT` as needed. Optional
++`DVI_BIG_BACKEND`, `DVI_BIG_DEVICE`, and `DVI_BIG_WORKERS` override the
++recommendation; use only the profiled layouts (Reactant/GPU with one or two
++workers, Zygote/CPU with four). Keep settings fixed when resuming.
++
++The default output root is
++`paper_materials/dvi_uci/wu2019_repeated_holdout_v1_20splits_full_heteroscedastic_2hidden50_v1_20261025/`.
++It saves canonical `dvi/` results, all 120 posterior checkpoints, selection
++histories, refit losses, exact split manifests, configurations, logs, source
++and environment provenance, replay verification, and paired comparisons
++against small DVI and dDVI big. A complete canonical bundle can be reused
++without shard copies. Interrupted individual fits restart from initialization;
++successful fits with matching checkpoints are skipped. Source/environment
++changes or altered result-affecting settings require a fresh experiment root.
++
++The existing table remains available before the campaign completes. Add the
++new row explicitly after completion:
++
++```sh
++julia --project=. paper_materials/make_final_baseline_table.jl --include-dvi-big
++```
++
++This requires all ten variants × six datasets × 20 splits and rejects
++missing or partial results. With a custom output root, `finish` writes the
++combined table there; the standalone table flag uses the default root.
++Existing `.gitattributes` rules store checkpoints, split manifests, and
++source archives in Git LFS; code and text results remain in regular Git.
++
++Validation commands (from the repository root):
++
++```sh
++julia --project=baselines/dvi baselines/dvi/test/runtests.jl
++julia --project=baselines/dvi baselines/dvi/test/full_two_hidden_workflow.jl
++DVI_DEVICE=gpu julia --project=baselines/dvi baselines/dvi/test/full_two_hidden_reactant.jl
++```
+diff --git a/baselines/dvi/src/artifacts.jl b/baselines/dvi/src/artifacts.jl
+index c92292a..a54f5c9 100644
+--- a/baselines/dvi/src/artifacts.jl
++++ b/baselines/dvi/src/artifacts.jl
+@@ -305,7 +305,7 @@ format_ci95(mean_value, standard_error) =
+     @sprintf("%.4f ± %.4f", mean_value, 1.96 * standard_error)
+ 
+ table_method_label(row) = hasproperty(row, :hidden_layers) && row.hidden_layers == 2 ?
+-    "dDVI-2HL" : string(row.propagation)
++    (row.propagation == "full" ? "DVI-2HL" : "dDVI-2HL") : string(row.propagation)
+ 
+ function write_tables(summary::DataFrame, config::DVIConfig)
+     isempty(summary) && return nothing
+diff --git a/baselines/dvi/src/benchmark.jl b/baselines/dvi/src/benchmark.jl
+index 137d1e0..3c1fd64 100644
+--- a/baselines/dvi/src/benchmark.jl
++++ b/baselines/dvi/src/benchmark.jl
+@@ -6,7 +6,9 @@ function scalar_metrics(metrics)
+ end
+ 
+ function method_name(config::DVIConfig)
+-    config.hidden_layers == 2 && return "Diagonal Deterministic Variational Inference (dDVI-2HL)"
++    config.hidden_layers == 2 && return config.propagation == "full" ?
++        "Deterministic Variational Inference (DVI-2HL)" :
++        "Diagonal Deterministic Variational Inference (dDVI-2HL)"
+     return config.propagation == "full" ?
+         "Deterministic Variational Inference (DVI)" :
+         "Diagonal Deterministic Variational Inference (dDVI)"
+diff --git a/baselines/dvi/src/config.jl b/baselines/dvi/src/config.jl
+index e86df51..81f0c12 100644
+--- a/baselines/dvi/src/config.jl
++++ b/baselines/dvi/src/config.jl
+@@ -95,6 +95,10 @@ end
+ 
+ const DVI_IMPLEMENTATION_VERSION =
+     "diagonal-two-hidden-layers-v3"
++const DVI_FULL_TWO_HIDDEN_VERSION = "full-two-hidden-layers-v1"
++dvi_implementation_version(propagation, hidden_layers) =
++    propagation == "full" && hidden_layers == 2 ?
++    DVI_FULL_TWO_HIDDEN_VERSION : DVI_IMPLEMENTATION_VERSION
+ 
+ Base.@kwdef struct DVIConfig
+     datasets::Vector{String} = first.(DATASET_REGISTRY)
+@@ -104,9 +108,9 @@ Base.@kwdef struct DVIConfig
+     propagation::String = "full"
+     execution_backend::String = "zygote"
+     execution_device::String = "cpu"
+-    implementation_version::String = DVI_IMPLEMENTATION_VERSION
+     hidden_units::Int = 50
+     hidden_layers::Int = 1
++    implementation_version::String = dvi_implementation_version(propagation, hidden_layers)
+     batch_size::Int = 100
+     learning_rate::Float64 = 3e-4
+     eb_alpha::Float64 = 1.0
+@@ -178,7 +182,6 @@ function load_config()
+         execution_device = lowercase(strip(get(
+             ENV, "DVI_DEVICE", "cpu",
+         ))),
+-        implementation_version = DVI_IMPLEMENTATION_VERSION,
+         hidden_units = env_int("DVI_HIDDEN_UNITS", 50),
+         hidden_layers = env_int("DVI_HIDDEN_LAYERS", 1),
+         batch_size = env_int("DVI_BATCH_SIZE", 100),
+@@ -272,18 +275,16 @@ function validate_config(config::DVIConfig)
+         config.execution_device == "cpu" || throw(ArgumentError(
+             "DVI_DEVICE=gpu requires DVI_BACKEND=reactant",
+         ))
+-    config.implementation_version == DVI_IMPLEMENTATION_VERSION || throw(
++    config.implementation_version == dvi_implementation_version(config.propagation, config.hidden_layers) || throw(
+         ArgumentError(
+             "DVI implementation version must be " *
+-            DVI_IMPLEMENTATION_VERSION,
++            dvi_implementation_version(config.propagation, config.hidden_layers),
+         ),
+     )
+     config.hidden_units >= 1 ||
+         throw(ArgumentError("DVI_HIDDEN_UNITS must be positive"))
+     config.hidden_layers in (1, 2) ||
+         throw(ArgumentError("DVI_HIDDEN_LAYERS must be 1 or 2"))
+-    config.hidden_layers == 1 || config.propagation == "diagonal" ||
+-        throw(ArgumentError("two hidden layers require DVI_PROPAGATION=diagonal"))
+     config.batch_size >= 1 ||
+         throw(ArgumentError("DVI_BATCH_SIZE must be positive"))
+     isfinite(config.learning_rate) && config.learning_rate > 0 ||
+diff --git a/baselines/dvi/src/model.jl b/baselines/dvi/src/model.jl
+index 8b8b14b..3fb0778 100644
+--- a/baselines/dvi/src/model.jl
++++ b/baselines/dvi/src/model.jl
+@@ -113,6 +113,10 @@ function propagate_dvi(
+         hidden_post = relu_moments_full(
+             hidden_pre.mean, hidden_pre.covariance,
+         )
++        if config.hidden_layers == 2
++            second_pre = linear_full(hidden_post, params.hidden2, config, tracker)
++            hidden_post = relu_moments_full(second_pre.mean, second_pre.covariance)
++        end
+         return linear_full(hidden_post, params.output, config, tracker)
+     elseif config.propagation == "diagonal"
+         hidden_pre = linear_certain_diagonal(
+diff --git a/baselines/dvi/src/moments.jl b/baselines/dvi/src/moments.jl
+index 9d93d17..f002407 100644
+--- a/baselines/dvi/src/moments.jl
++++ b/baselines/dvi/src/moments.jl
+@@ -202,6 +202,19 @@ function linear_certain_full(
+     return (mean = mean, covariance = batch_diagonal(variance_diagonal))
+ end
+ 
++# Compute WΣW' with two GEMMs instead of one reduction per output pair.
++# This also traces to compact XLA dot operations on the GPU.
++function batch_quadratic_matmul(weight_mean, covariance)
++    batch, inputs, other_inputs = size(covariance)
++    outputs, weight_inputs = size(weight_mean)
++    inputs == other_inputs == weight_inputs ||
++        throw(DimensionMismatch("weight and activation covariance disagree"))
++    left = weight_mean * reshape(permutedims(covariance, (2, 3, 1)), inputs, inputs * batch)
++    right_inputs = reshape(permutedims(reshape(left, outputs, inputs, batch), (2, 1, 3)),
++        inputs, outputs * batch)
++    return permutedims(reshape(weight_mean * right_inputs, outputs, outputs, batch), (3, 2, 1))
++end
++
+ function linear_full(
+     activations,
+     layer,
+@@ -217,9 +230,9 @@ function linear_full(
+     independent_weight_diagonal =
+         input_second_moment * transpose(weight_variance) .+
+         transpose(bias_variance)
+-    correlated_term = batch_quadratic(
+-        layer.weight_mu, activations.covariance,
+-    )
++    correlated_term = config.hidden_layers == 2 ?
++        batch_quadratic_matmul(layer.weight_mu, activations.covariance) :
++        batch_quadratic(layer.weight_mu, activations.covariance)
+     covariance =
+         correlated_term .+ batch_diagonal(independent_weight_diagonal)
+     return (mean = mean, covariance = covariance)
+diff --git a/baselines/dvi/src/reactant_backend.jl b/baselines/dvi/src/reactant_backend.jl
+index dd199d7..f5f04aa 100644
+--- a/baselines/dvi/src/reactant_backend.jl
++++ b/baselines/dvi/src/reactant_backend.jl
+@@ -167,8 +167,11 @@ function reactant_dvi_loss(
+         log_variance_variance = likelihood == "heteroscedastic" ?
+             DVIUCI.output_covariance_entry(output, 2, 2, config) : zero.(prediction)
+         precision = DVIUCI.safe_exp(-log_variance .+ 0.5f0 .* log_variance_variance, config)
++        mean_log_variance_covariance = likelihood == "heteroscedastic" ?
++            DVIUCI.output_covariance_entry(output, 1, 2, config) : zero.(prediction)
++        residual = prediction .- mean_log_variance_covariance .- targets
+         -0.5f0 * (DVIUCI.DVI_LOG2PI + mean(log_variance) +
+-            mean(precision .* (prediction_variance .+ (prediction .- targets) .^ 2)))
++            mean(precision .* (prediction_variance .+ residual .^ 2)))
+     else
+         mean(reactant_expected_log_likelihood(output, targets, likelihood, config))
+     end
+diff --git a/baselines/dvi/test/runtests.jl b/baselines/dvi/test/runtests.jl
+index 0601b5c..b3a5050 100644
+--- a/baselines/dvi/test/runtests.jl
++++ b/baselines/dvi/test/runtests.jl
+@@ -789,3 +789,4 @@ end
+ end
+ 
+ include("two_hidden_layers.jl")
++include("full_two_hidden_layers.jl")
+diff --git a/baselines/dvi/test/two_hidden_layers.jl b/baselines/dvi/test/two_hidden_layers.jl
+index 00df579..75985f4 100644
+--- a/baselines/dvi/test/two_hidden_layers.jl
++++ b/baselines/dvi/test/two_hidden_layers.jl
+@@ -2,7 +2,7 @@ using JLD2
+ using TOML
+ 
+ @testset "two-hidden-layer configuration and legacy initialization" begin
+-    @test_throws ArgumentError validate_config(tiny_config(hidden_layers = 2))
++    @test validate_config(tiny_config(hidden_layers = 2)).propagation == "full"
+     @test_throws ArgumentError validate_config(tiny_config(hidden_layers = 3))
+     config = tiny_config(propagation = "diagonal", hidden_layers = 2)
+     @test validate_config(config) === config
+diff --git a/paper_materials/make_final_baseline_table.jl b/paper_materials/make_final_baseline_table.jl
+index 1607baa..26c8872 100644
+--- a/paper_materials/make_final_baseline_table.jl
++++ b/paper_materials/make_final_baseline_table.jl
+@@ -122,6 +122,19 @@ const DATASET_ORDER = [
+     "yacht" => "Yacht",
+ ]
+ 
++const DVI_BIG_ROOT = joinpath(PAPER_ROOT, "dvi_uci",
++    "wu2019_repeated_holdout_v1_20splits_full_heteroscedastic_2hidden50_v1_20261025")
++
++function table_sources(; include_dvi_big = false, dvi_big_directory = joinpath(DVI_BIG_ROOT, "dvi"))
++    sources = copy(SOURCES)
++    if include_dvi_big
++        position = findfirst(source -> source.method == "DVI-Hetero", sources)
++        insert!(sources, position + 1, ResultSource("DVI-2HL-Hetero", "heteroscedastic",
++            "full", dvi_big_directory; hidden_layers = 2))
++    end
++    return sources
++end
++
+ function validate_split_manifests(sources)
+     manifest_paths = unique(
+         joinpath(source.directory, "split_manifest.jld2") for source in sources
+@@ -287,16 +300,17 @@ function render_markdown(io, sources, results)
+ end
+ 
+ function main(args = ARGS)
+-    isempty(args) || error(
++    (isempty(args) || args == ["--include-dvi-big"]) || error(
+         "usage: julia --project=. " *
+-        "paper_materials/make_final_baseline_table.jl",
++        "paper_materials/make_final_baseline_table.jl [--include-dvi-big]",
+     )
+-    validate_split_manifests(SOURCES)
+-    results = load_results(SOURCES)
+-    render_markdown(stdout, SOURCES, results)
++    sources = table_sources(; include_dvi_big = !isempty(args))
++    validate_split_manifests(sources)
++    results = load_results(sources)
++    render_markdown(stdout, sources, results)
+     println(
+         stderr,
+-        "Validated $(length(SOURCES)) method variants on " *
++        "Validated $(length(sources)) method variants on " *
+         "$(length(DATASET_ORDER)) datasets × 20 exact paired splits.",
+     )
+ end

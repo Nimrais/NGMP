@@ -1,0 +1,21 @@
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+I0000 00:00:1792929769.312030   81772 service.cc:153] XLA service 0x45003250 initialized for platform CUDA (this does not guarantee that XLA will be used). Devices:
+I0000 00:00:1792929769.312078   81772 service.cc:161]   StreamExecutor device (0): NVIDIA GeForce RTX 3090, Compute Capability 8.6
+I0000 00:00:1792929769.312657   81772 se_gpu_pjrt_client.cc:1440] Using BFC allocator.
+I0000 00:00:1792929769.312744   81772 gpu_helpers.cc:144] XLA backend will use up to 10115507814 bytes on device 0 for BFCAllocator.
+I0000 00:00:1792929769.312839   81772 gpu_helpers.cc:182] XLA backend will use up to 15173261721 bytes on device 0 for CollectiveBFCAllocator.
+I0000 00:00:1792929769.325134   81772 cuda_dnn.cc:461] Loaded cuDNN version 91400
+I0000 00:00:1792929853.924134   81772 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792929853.931523   81772 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792929853.936473   81772 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792929853.941150   81772 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792929853.945502   81772 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792929853.949539   81772 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792929853.953580   81772 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792929869.226610   81772 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792929869.233936   81772 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792929869.238759   81772 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792929869.242820   81772 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792929869.246586   81772 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792929869.251948   81772 dot_merger.cc:476] Merging Dots in computation: main.62
+I0000 00:00:1792929869.258276   81772 dot_merger.cc:476] Merging Dots in computation: main.62

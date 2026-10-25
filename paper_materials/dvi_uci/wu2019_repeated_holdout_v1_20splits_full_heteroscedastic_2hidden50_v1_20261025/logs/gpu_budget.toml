@@ -1,0 +1,9 @@
+budget_seconds = 1800
+# Conservative enclosing time intervals; these also count some CPU startup.
+# Long CPU-only profiling and the final CPU-only benchmark are excluded.
+initial_attempt_upper_bound_seconds = 625
+restarted_gpu_profile_upper_bound_seconds = 590
+interrupted_gpu_worker_upper_bound_seconds = 155
+final_gpu_workers_limit_seconds = 400
+termination_grace_seconds = 10
+combined_upper_bound_seconds = 1780

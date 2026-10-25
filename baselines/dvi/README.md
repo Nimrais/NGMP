@@ -346,7 +346,7 @@ julia --project=baselines/dvi baselines/dvi/merge_shards.jl \
 
 Set `DVI_HIDDEN_LAYERS=2 DVI_HIDDEN_UNITS=50 DVI_PROPAGATION=diagonal`
 for a `d -> 50 -> 50 -> 2` heteroscedastic network. The default remains one
-hidden layer; two hidden layers are supported only with diagonal propagation.
+hidden layer; the separate full-covariance campaign is described below.
 The additional layer contributes its own factorized Gaussian posterior and
 empirical-Bayes KL term. Coefficient counts are `50d + 2702` (2,902–3,352).
 
@@ -389,3 +389,103 @@ New checkpoints use schema `dvi-uci-posterior-v4`. Existing one-hidden-layer
 posterior parameter structures still work with `DVIConfig(hidden_layers=1)`;
 historical results are not overwritten or automatically resumed across the
 implementation-version change.
+
+## Full-covariance DVI big on GPU
+
+Full DVI also supports `DVI_HIDDEN_LAYERS=2`: `d -> 50 -> 50 -> 2`, with
+heteroscedastic mean/log-variance outputs and full activation covariance at
+both hidden layers. Its implementation tag is `full-two-hidden-layers-v1`;
+one-hidden-layer and diagonal-DVI implementation tags are unchanged.
+The covariance transforms use two matrix products, and the compiled loss
+retains the mean–log-variance covariance term.
+
+The fixed campaign uses Concrete, Energy (heating load), Boston Housing,
+Power, Wine Quality Red, and Yacht, each with the original 20 paired splits.
+It matches small DVI's settings: Adam 0.0003, batch size 100, 10,000 maximum
+epochs, validation every five epochs, patience 500 checks, and a 50,000-step
+no-improvement limit. This last limit is not a hard total-step budget.
+KL warmup/annealing remain 14,000/1,000 steps; selection and refit have no
+hard step ceilings.
+
+From the repository root:
+
+The launcher selects an installed Juliaup **1.11.9** executable automatically
+and rejects other versions before loading packages. The saved environment and
+GPU pilot were validated on 1.11.9; an unrelated default Julia channel (such
+as 1.13) must not be used for this experiment. Set `DVI_BIG_JULIA_BIN` to an
+explicit 1.11.9 executable for other installation layouts. To check package
+loading and the saved pilot without starting training:
+
+```sh
+bash baselines/dvi/run_dvi_two_hidden_paper.sh check
+```
+
+```sh
+# Numerical parity, short artifact pilots, and CPU/GPU throughput comparison.
+bash baselines/dvi/run_dvi_two_hidden_paper.sh pilot
+
+# Run all 120 fits using the pilot's recommended backend and worker count.
+bash baselines/dvi/run_dvi_two_hidden_paper.sh run
+
+# Verify saved posteriors and regenerate comparisons without training.
+bash baselines/dvi/run_dvi_two_hidden_paper.sh finish
+```
+
+`pilot` caps its GPU phase at 1,800 seconds including startup/compilation; a
+shorter limit can be supplied with `DVI_BIG_PILOT_SECONDS`. CPU reference
+measurements run separately, so total wall time can be longer. Successful
+GPU parity checks are reused only when numerical sources, package manifests,
+Julia version, and GPU/driver information match. It does not start the full
+campaign. Its two-epoch fits use a shortened KL schedule solely to test
+training, checkpoint replay, and resume. They are stored under `pilots/`
+and never enter the paper comparison.
+
+The pilot compares synchronized CPU/Zygote and GPU/Reactant moments, losses,
+gradients, and Adam updates before timing all six datasets. It measures
+concurrent throughput on Power with one/two GPU workers and four CPU
+workers. Two GPU workers are selected only if aggregate throughput improves
+by at least 10%; CPU is recommended if its projected campaign is faster.
+`pilots/report.md`, `runtime_projection.csv`, and `recommendation.toml`
+record the recommendation and separate timing scenarios based on historical
+small-DVI and dDVI-big step counts, with a 25% margin. These scenarios are
+not confidence intervals: actual early stopping can differ. GPU memory is
+sampled in `logs/pilot_gpu_memory.csv`.
+
+The full run requires a successful recommendation matching the current
+source fingerprint. Missing GPU support fails explicitly, with no silent
+CPU fallback. Configure `DVI_BIG_GPU` (default `0`), `DVI_BIG_JULIA_BIN`,
+`DVI_BIG_DEPOT_PATH`, or `DVI_BIG_OUTPUT_ROOT` as needed. Optional
+`DVI_BIG_BACKEND`, `DVI_BIG_DEVICE`, and `DVI_BIG_WORKERS` override the
+recommendation; use only the profiled layouts (Reactant/GPU with one or two
+workers, Zygote/CPU with four). Keep settings fixed when resuming.
+
+The default output root is
+`paper_materials/dvi_uci/wu2019_repeated_holdout_v1_20splits_full_heteroscedastic_2hidden50_v1_20261025/`.
+It saves canonical `dvi/` results, all 120 posterior checkpoints, selection
+histories, refit losses, exact split manifests, configurations, logs, source
+and environment provenance, replay verification, and paired comparisons
+against small DVI and dDVI big. A complete canonical bundle can be reused
+without shard copies. Interrupted individual fits restart from initialization;
+successful fits with matching checkpoints are skipped. Source/environment
+changes or altered result-affecting settings require a fresh experiment root.
+
+The existing table remains available before the campaign completes. Add the
+new row explicitly after completion:
+
+```sh
+julia --project=. paper_materials/make_final_baseline_table.jl --include-dvi-big
+```
+
+This requires all ten variants × six datasets × 20 splits and rejects
+missing or partial results. With a custom output root, `finish` writes the
+combined table there; the standalone table flag uses the default root.
+Existing `.gitattributes` rules store checkpoints, split manifests, and
+source archives in Git LFS; code and text results remain in regular Git.
+
+Validation commands (from the repository root):
+
+```sh
+julia --project=baselines/dvi baselines/dvi/test/runtests.jl
+julia --project=baselines/dvi baselines/dvi/test/full_two_hidden_workflow.jl
+DVI_DEVICE=gpu julia --project=baselines/dvi baselines/dvi/test/full_two_hidden_reactant.jl
+```

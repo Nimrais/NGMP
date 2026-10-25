@@ -105,6 +105,7 @@ differs.
 | hoBPC | `baselines/bpc/run.jl`, `paper_materials/README.md` §5 | `paper_materials/bpc_uci/...` |
 | hoIVON | `julia --project=baselines/ivon baselines/ivon/run_uci.jl pilot`, then `full`, then `summarize` (see [`baselines/ivon/README.md`](baselines/ivon/README.md), section "Standalone UCI regression benchmark") | `paper_materials/ivon/uci/` |
 | Two-hidden-layer dDVI (`d -> 50 -> 50 -> 2`, heteroscedastic) | `bash baselines/dvi/run_ddvi_two_hidden_paper.sh` runs all six datasets × 20 splits with the original dDVI protocol; see `baselines/dvi/README.md`. | `paper_materials/dvi_uci/wu2019_repeated_holdout_v1_20splits_heteroscedastic_2hidden50_v1_20261024/` |
+| Full-covariance DVI big (`d -> 50 -> 50 -> 2`, heteroscedastic) | `bash baselines/dvi/run_dvi_two_hidden_paper.sh pilot` benchmarks CPU/GPU execution; `run` launches the 120 fits after successful validation. | `paper_materials/dvi_uci/wu2019_repeated_holdout_v1_20splits_full_heteroscedastic_2hidden50_v1_20261025/` |
 | Final combined table (nine variants, bold = CI-compatible with the best) | `julia --project=. paper_materials/make_final_baseline_table.jl` validates 1,080 rows and identical split manifests before printing; requires the completed two-hidden-layer dDVI campaign. | stdout Markdown; the campaign also saves `final_baseline_table.md`. Manuscript tables are not updated automatically. |
 
 `paper_materials/README.md` documents the compute budget of the baselines

@@ -1,0 +1,25 @@
+# DVI big pilot report
+
+All six short artifact pilots and checkpoint replays passed on both backends.
+
+Recommended: reactant/gpu, 2 workers.
+Peak sampled whole-device GPU memory: 3191 MiB (includes other applications).
+
+GPU projections: [3.49, 5.35] hours; four-worker CPU: [190.37, 307.26] hours.
+The two projections use small-DVI and dDVI-big step counts, respectively, with a 25% margin. They are scenarios, not confidence bounds. Early stopping can differ.
+Concurrency scaling is measured on Power and extrapolated to the other datasets. Two-epoch pilots validate the pipeline, not final predictive quality.
+
+| Basis | Dataset | Steps | GPU hours | CPU hours |
+|---|---|---:|---:|---:|
+| small_dvi | yacht | 1038525 | 0.38 | 10.71 |
+| small_dvi | concrete | 1844030 | 0.64 | 28.93 |
+| small_dvi | energy | 2442020 | 0.45 | 40.39 |
+| small_dvi | housing | 883950 | 0.23 | 12.06 |
+| small_dvi | power | 4698075 | 1.22 | 72.07 |
+| small_dvi | wine | 1845495 | 0.58 | 26.21 |
+| big_ddvi | yacht | 837525 | 0.34 | 8.64 |
+| big_ddvi | concrete | 1334030 | 0.47 | 20.93 |
+| big_ddvi | energy | 2651285 | 0.48 | 43.85 |
+| big_ddvi | housing | 850150 | 0.22 | 11.6 |
+| big_ddvi | power | 12656160 | 3.22 | 194.17 |
+| big_ddvi | wine | 1976640 | 0.61 | 28.07 |

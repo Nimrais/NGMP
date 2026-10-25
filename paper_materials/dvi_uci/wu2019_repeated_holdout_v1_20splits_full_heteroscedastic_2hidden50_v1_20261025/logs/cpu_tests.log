@@ -1,0 +1,59 @@
+Precompiling DVIUCI...
+  26777.1 ms  ✓ DVIUCI
+  1 dependency successfully precompiled in 29 seconds. 848 already precompiled.
+┌ Warning: Opening file with JLD2.MmapIO failed, falling back to IOStream
+└ @ JLD2 ~/.julia/packages/JLD2/ADycq/src/JLD2.jl:162
+Test Summary:   | Pass  Total  Time
+split selection |    4      4  0.5s
+Test Summary:                  | Pass  Total  Time
+Gaussian and soft-ReLU helpers |    4      4  0.1s
+Test Summary:                  | Pass  Total  Time
+full and diagonal ReLU moments |    5      5  7.6s
+Test Summary:                | Pass  Total  Time
+certain-input affine moments |    3      3  2.1s
+Test Summary:                                | Pass  Total   Time
+allocation-efficient full-covariance helpers |    4      4  19.5s
+Test Summary:                              | Pass  Total  Time
+DVI moments agree with network Monte Carlo |    3      3  3.3s
+Test Summary:                | Pass  Total  Time
+empirical-Bayes prior and KL |    4      4  1.0s
+Test Summary:                                  | Pass  Total  Time
+heteroscedastic expected likelihood equation 8 |    1      1  0.5s
+Test Summary:            | Pass  Total  Time
+diagonal-DVI propagation |    4      4  0.5s
+Test Summary:                          | Pass  Total  Time
+preprocessing and deterministic splits |    6      6  1.2s
+Test Summary:              | Pass  Total  Time
+bounded numerical protocol |   30     30  3.4s
+Test Summary:                                | Pass  Total  Time
+heteroscedastic variance-head initialization |    4      4  0.2s
+Test Summary:                          | Pass  Total   Time
+extreme posterior scales remain finite |    2      2  32.9s
+Test Summary:                      | Pass  Total   Time
+finite deterministic ELBO gradient |    4      4  12.5s
+Test Summary:                     | Pass  Total  Time
+optional Reactant training parity |    1      1  0.0s
+Test Summary:                                     | Pass  Total   Time
+non-finite loss aborts before an optimizer update |    5      5  10.3s
+Test Summary:                                   | Pass  Total  Time
+run rows are upserted by configuration identity |    2      2  4.3s
+Test Summary:           | Pass  Total  Time
+complete run validation |    3      3  0.8s
+Test Summary:                                  | Pass  Total  Time
+configuration stems accept CSV string subtypes |    1      1  0.4s
+Test Summary:                 | Pass  Total   Time
+offline synthetic integration |   16     16  15.6s
+Test Summary:               | Pass  Total  Time
+BBB-compatible paper tables |    5      5  2.5s
+Test Summary:                                            | Pass  Total  Time
+two-hidden-layer configuration and legacy initialization |   35     35  0.2s
+Test Summary:                                      | Pass  Total  Time
+second-layer independent moments, KL and gradients |   12     12  4.7s
+Test Summary:                                           | Pass  Total   Time
+two-layer saved artifacts, checkpoint replay and resume |   18     18  16.5s
+Test Summary:                                      | Pass  Total  Time
+final table new source and architecture validation |    6      6  1.0s
+Test Summary:                            | Pass  Total   Time
+full two-hidden covariance and gradients |   11     11  11.3s
+Test Summary:                       | Pass  Total  Time
+full two-hidden artifact round trip |   10     10  0.6s

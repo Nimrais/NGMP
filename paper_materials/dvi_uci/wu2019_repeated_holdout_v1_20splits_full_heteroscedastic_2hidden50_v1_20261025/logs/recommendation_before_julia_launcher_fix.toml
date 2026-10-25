@@ -1,0 +1,17 @@
+backend = "reactant"
+cpu_four_steps_per_second = 22.67614230761953
+cpu_hours_big_ddvi_steps = 307.2616134348607
+cpu_hours_small_dvi_steps = 190.37109995532984
+device = "gpu"
+gpu_hardware = "NVIDIA GeForce RTX 3090, 24576 MiB, 595.84"
+gpu_hours_big_ddvi_steps = 5.35123893250018
+gpu_hours_small_dvi_steps = 3.493197064516827
+gpu_one_steps_per_second = 725.1341699606861
+gpu_two_steps_per_second = 1377.1973345900965
+gpu_workers = 2
+implementation_version = "full-two-hidden-layers-v1"
+peak_whole_gpu_memory_mib = 3191
+source_fingerprint = "7329811d53135b512d94299a1be5a9b3043210b49d9b27b22667639f93243cb9"
+status = "passed"
+updated_utc = "2026-10-25T12:10:35.315"
+workers = 2

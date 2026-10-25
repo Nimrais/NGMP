@@ -1,0 +1,2 @@
+This experiment requires the tested Julia 1.11.9; '/home/nimrais/.julia/juliaup/julia-1.13.2+0.x64.linux.gnu/bin/julia' reports 1.13.2.
+Set DVI_BIG_JULIA_BIN to its executable, or install Julia 1.11.9 before retrying.

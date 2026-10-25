@@ -95,6 +95,10 @@ end
 
 const DVI_IMPLEMENTATION_VERSION =
     "diagonal-two-hidden-layers-v3"
+const DVI_FULL_TWO_HIDDEN_VERSION = "full-two-hidden-layers-v1"
+dvi_implementation_version(propagation, hidden_layers) =
+    propagation == "full" && hidden_layers == 2 ?
+    DVI_FULL_TWO_HIDDEN_VERSION : DVI_IMPLEMENTATION_VERSION
 
 Base.@kwdef struct DVIConfig
     datasets::Vector{String} = first.(DATASET_REGISTRY)
@@ -104,9 +108,9 @@ Base.@kwdef struct DVIConfig
     propagation::String = "full"
     execution_backend::String = "zygote"
     execution_device::String = "cpu"
-    implementation_version::String = DVI_IMPLEMENTATION_VERSION
     hidden_units::Int = 50
     hidden_layers::Int = 1
+    implementation_version::String = dvi_implementation_version(propagation, hidden_layers)
     batch_size::Int = 100
     learning_rate::Float64 = 3e-4
     eb_alpha::Float64 = 1.0
@@ -178,7 +182,6 @@ function load_config()
         execution_device = lowercase(strip(get(
             ENV, "DVI_DEVICE", "cpu",
         ))),
-        implementation_version = DVI_IMPLEMENTATION_VERSION,
         hidden_units = env_int("DVI_HIDDEN_UNITS", 50),
         hidden_layers = env_int("DVI_HIDDEN_LAYERS", 1),
         batch_size = env_int("DVI_BATCH_SIZE", 100),
@@ -272,18 +275,16 @@ function validate_config(config::DVIConfig)
         config.execution_device == "cpu" || throw(ArgumentError(
             "DVI_DEVICE=gpu requires DVI_BACKEND=reactant",
         ))
-    config.implementation_version == DVI_IMPLEMENTATION_VERSION || throw(
+    config.implementation_version == dvi_implementation_version(config.propagation, config.hidden_layers) || throw(
         ArgumentError(
             "DVI implementation version must be " *
-            DVI_IMPLEMENTATION_VERSION,
+            dvi_implementation_version(config.propagation, config.hidden_layers),
         ),
     )
     config.hidden_units >= 1 ||
         throw(ArgumentError("DVI_HIDDEN_UNITS must be positive"))
     config.hidden_layers in (1, 2) ||
         throw(ArgumentError("DVI_HIDDEN_LAYERS must be 1 or 2"))
-    config.hidden_layers == 1 || config.propagation == "diagonal" ||
-        throw(ArgumentError("two hidden layers require DVI_PROPAGATION=diagonal"))
     config.batch_size >= 1 ||
         throw(ArgumentError("DVI_BATCH_SIZE must be positive"))
     isfinite(config.learning_rate) && config.learning_rate > 0 ||

@@ -202,6 +202,19 @@ function linear_certain_full(
     return (mean = mean, covariance = batch_diagonal(variance_diagonal))
 end
 
+# Compute WΣW' with two GEMMs instead of one reduction per output pair.
+# This also traces to compact XLA dot operations on the GPU.
+function batch_quadratic_matmul(weight_mean, covariance)
+    batch, inputs, other_inputs = size(covariance)
+    outputs, weight_inputs = size(weight_mean)
+    inputs == other_inputs == weight_inputs ||
+        throw(DimensionMismatch("weight and activation covariance disagree"))
+    left = weight_mean * reshape(permutedims(covariance, (2, 3, 1)), inputs, inputs * batch)
+    right_inputs = reshape(permutedims(reshape(left, outputs, inputs, batch), (2, 1, 3)),
+        inputs, outputs * batch)
+    return permutedims(reshape(weight_mean * right_inputs, outputs, outputs, batch), (3, 2, 1))
+end
+
 function linear_full(
     activations,
     layer,
@@ -217,9 +230,9 @@ function linear_full(
     independent_weight_diagonal =
         input_second_moment * transpose(weight_variance) .+
         transpose(bias_variance)
-    correlated_term = batch_quadratic(
-        layer.weight_mu, activations.covariance,
-    )
+    correlated_term = config.hidden_layers == 2 ?
+        batch_quadratic_matmul(layer.weight_mu, activations.covariance) :
+        batch_quadratic(layer.weight_mu, activations.covariance)
     covariance =
         correlated_term .+ batch_diagonal(independent_weight_diagonal)
     return (mean = mean, covariance = covariance)

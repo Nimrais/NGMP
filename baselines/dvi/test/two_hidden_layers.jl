@@ -2,7 +2,7 @@ using JLD2
 using TOML
 
 @testset "two-hidden-layer configuration and legacy initialization" begin
-    @test_throws ArgumentError validate_config(tiny_config(hidden_layers = 2))
+    @test validate_config(tiny_config(hidden_layers = 2)).propagation == "full"
     @test_throws ArgumentError validate_config(tiny_config(hidden_layers = 3))
     config = tiny_config(propagation = "diagonal", hidden_layers = 2)
     @test validate_config(config) === config
