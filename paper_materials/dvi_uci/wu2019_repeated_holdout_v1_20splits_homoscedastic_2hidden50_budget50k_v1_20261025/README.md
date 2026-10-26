@@ -13,13 +13,17 @@ and Yacht Hydrodynamics on the same 20 paired splits (120 fits per method).
 The dDVI campaign completed on 2026-10-25 at 20:05 UTC: all 120 fits
 succeeded and passed checkpoint metric replay. Its canonical results are in
 `ddvi/`, including `checkpoint_replay.csv` and `final_baseline_table.md`.
-The full-covariance DVI campaign has not yet produced a completed bundle.
+The full-covariance DVI campaign completed on 2026-10-25 at 22:13 UTC,
+also with 120 successful fits and verified checkpoint metrics, saved in `dvi/`.
+The combined 12-method comparison is saved as `final_baseline_table.md`
+in this parent directory.
 
 After cloning, fetch binary artifacts with `git lfs pull`. To verify and
-regenerate the saved dDVI comparison without retraining, run:
+regenerate either saved comparison without retraining, run:
 
 ```sh
 bash baselines/dvi/run_ddvi_homoscedastic_two_hidden_paper.sh finish
+bash baselines/dvi/run_dvi_homoscedastic_two_hidden_paper.sh finish
 ```
 
 From the repository root, run either campaign independently:

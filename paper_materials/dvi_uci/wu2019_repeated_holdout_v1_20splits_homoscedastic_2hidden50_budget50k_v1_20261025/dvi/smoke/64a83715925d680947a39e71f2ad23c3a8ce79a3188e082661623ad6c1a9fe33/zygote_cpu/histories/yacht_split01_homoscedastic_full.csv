@@ -1,0 +1,3 @@
+epoch,optimizer_step,kl_weight,training_dvi_loss,validation_lpd_original,validation_lpd_standardized,validation_rmse_original,safe_exp_clamp_count,safe_exp_clamp_rate
+1,3,1.0,244.57760467366634,-6.829793325437093,-4.098333770096903,242.21098040077356,0,0.0
+2,6,1.0,235.01064821228124,-6.790264301931476,-4.058804746591286,234.47803384532892,0,0.0

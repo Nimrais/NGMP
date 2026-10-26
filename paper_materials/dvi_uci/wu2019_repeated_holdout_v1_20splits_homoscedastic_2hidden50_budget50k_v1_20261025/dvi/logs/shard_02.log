@@ -1,0 +1,440 @@
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+I0000 00:00:1792961282.506744   17687 service.cc:153] XLA service 0xfde8220 initialized for platform CUDA (this does not guarantee that XLA will be used). Devices:
+I0000 00:00:1792961282.506794   17687 service.cc:161]   StreamExecutor device (0): NVIDIA GeForce RTX 3090, Compute Capability 8.6
+I0000 00:00:1792961282.507382   17687 se_gpu_pjrt_client.cc:1440] Using BFC allocator.
+I0000 00:00:1792961282.507469   17687 gpu_helpers.cc:144] XLA backend will use up to 10115507814 bytes on device 0 for BFCAllocator.
+I0000 00:00:1792961282.507536   17687 gpu_helpers.cc:182] XLA backend will use up to 15173261721 bytes on device 0 for CollectiveBFCAllocator.
+I0000 00:00:1792961282.515972   17687 cuda_dnn.cc:461] Loaded cuDNN version 91400
+I0000 00:00:1792961348.720070   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961348.724401   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961348.727875   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961348.731180   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961348.734372   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961348.737713   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961348.741021   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961348.744201   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961348.747364   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961359.182257   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961359.186434   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961359.189908   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961359.193185   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961359.196509   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961359.199696   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961359.202699   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961359.205712   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961359.208601   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961381.207644   17687 dot_merger.cc:476] Merging Dots in computation: main.11
+I0000 00:00:1792961381.209293   17687 dot_merger.cc:476] Merging Dots in computation: main.11
+I0000 00:00:1792961381.210515   17687 dot_merger.cc:476] Merging Dots in computation: main.11
+I0000 00:00:1792961381.211583   17687 dot_merger.cc:476] Merging Dots in computation: main.11
+I0000 00:00:1792961381.212557   17687 dot_merger.cc:476] Merging Dots in computation: main.11
+I0000 00:00:1792961381.213455   17687 dot_merger.cc:476] Merging Dots in computation: main.11
+I0000 00:00:1792961381.214242   17687 dot_merger.cc:476] Merging Dots in computation: main.11
+I0000 00:00:1792961381.214989   17687 dot_merger.cc:476] Merging Dots in computation: main.11
+I0000 00:00:1792961381.215740   17687 dot_merger.cc:476] Merging Dots in computation: main.11
+I0000 00:00:1792961398.378141   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961398.383107   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961398.387034   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961398.390546   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961398.393945   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961398.397258   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961398.400554   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961398.403807   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961398.407050   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961405.408179   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961405.412713   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961405.416404   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961405.420044   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961405.423647   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961405.427310   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961405.430832   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961405.434413   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961405.437722   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961862.719463   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961862.725083   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961862.729945   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961862.734438   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961862.738819   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961862.742981   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961862.746935   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961862.750892   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961862.754758   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961872.081454   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961872.087053   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961872.091732   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961872.096178   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961872.100477   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961872.104654   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961872.108704   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961872.112726   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961872.116610   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961893.307306   17687 dot_merger.cc:476] Merging Dots in computation: main.11
+I0000 00:00:1792961893.308826   17687 dot_merger.cc:476] Merging Dots in computation: main.11
+I0000 00:00:1792961893.310094   17687 dot_merger.cc:476] Merging Dots in computation: main.11
+I0000 00:00:1792961893.311242   17687 dot_merger.cc:476] Merging Dots in computation: main.11
+I0000 00:00:1792961893.312270   17687 dot_merger.cc:476] Merging Dots in computation: main.11
+I0000 00:00:1792961893.313261   17687 dot_merger.cc:476] Merging Dots in computation: main.11
+I0000 00:00:1792961893.314165   17687 dot_merger.cc:476] Merging Dots in computation: main.11
+I0000 00:00:1792961893.315069   17687 dot_merger.cc:476] Merging Dots in computation: main.11
+I0000 00:00:1792961893.315937   17687 dot_merger.cc:476] Merging Dots in computation: main.11
+I0000 00:00:1792961940.471834   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961940.477498   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961940.482078   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961940.486310   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961940.490403   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961940.494409   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961940.498254   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961940.502177   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961940.505896   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961949.396767   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961949.403034   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961949.408155   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961949.412923   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961949.417569   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961949.422039   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961949.426386   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961949.430646   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792961949.434916   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792962633.348620   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792962633.353385   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792962633.357437   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792962633.361187   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792962633.364889   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792962633.368429   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792962633.371829   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792962633.375217   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792962633.378522   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792962641.607018   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792962641.612042   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792962641.616235   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792962641.620099   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792962641.623870   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792962641.627499   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792962641.631016   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792962641.634556   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792962641.638056   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792962663.518722   17687 dot_merger.cc:476] Merging Dots in computation: main.11
+I0000 00:00:1792962663.520323   17687 dot_merger.cc:476] Merging Dots in computation: main.11
+I0000 00:00:1792962663.521663   17687 dot_merger.cc:476] Merging Dots in computation: main.11
+I0000 00:00:1792962663.522830   17687 dot_merger.cc:476] Merging Dots in computation: main.11
+I0000 00:00:1792962663.523924   17687 dot_merger.cc:476] Merging Dots in computation: main.11
+I0000 00:00:1792962663.524944   17687 dot_merger.cc:476] Merging Dots in computation: main.11
+I0000 00:00:1792962663.525878   17687 dot_merger.cc:476] Merging Dots in computation: main.11
+I0000 00:00:1792962663.526808   17687 dot_merger.cc:476] Merging Dots in computation: main.11
+I0000 00:00:1792962663.527706   17687 dot_merger.cc:476] Merging Dots in computation: main.11
+I0000 00:00:1792962710.735737   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792962710.741942   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792962710.746836   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792962710.751407   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792962710.755943   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792962710.760371   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792962710.764539   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792962710.768721   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792962710.772881   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792962719.322209   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792962719.328090   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792962719.332996   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792962719.337471   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792962719.341709   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792962719.345834   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792962719.349842   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792962719.353758   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792962719.357621   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792963540.148163   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792963540.153190   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792963540.157110   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792963540.160629   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792963540.164268   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792963540.167748   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792963540.170962   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792963540.174126   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792963540.177261   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792963549.200314   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792963549.205668   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792963549.210200   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792963549.214395   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792963549.218453   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792963549.222487   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792963549.226370   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792963549.230203   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792963549.234000   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792963571.659395   17687 dot_merger.cc:476] Merging Dots in computation: main.11
+I0000 00:00:1792963571.660995   17687 dot_merger.cc:476] Merging Dots in computation: main.11
+I0000 00:00:1792963571.662283   17687 dot_merger.cc:476] Merging Dots in computation: main.11
+I0000 00:00:1792963571.663389   17687 dot_merger.cc:476] Merging Dots in computation: main.11
+I0000 00:00:1792963571.664374   17687 dot_merger.cc:476] Merging Dots in computation: main.11
+I0000 00:00:1792963571.665275   17687 dot_merger.cc:476] Merging Dots in computation: main.11
+I0000 00:00:1792963571.666111   17687 dot_merger.cc:476] Merging Dots in computation: main.11
+I0000 00:00:1792963571.666945   17687 dot_merger.cc:476] Merging Dots in computation: main.11
+I0000 00:00:1792963571.667779   17687 dot_merger.cc:476] Merging Dots in computation: main.11
+I0000 00:00:1792963623.093823   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792963623.099153   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792963623.103701   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792963623.107936   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792963623.111970   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792963623.115846   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792963623.119541   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792963623.123182   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792963623.126768   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792963631.534641   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792963631.540035   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792963631.544435   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792963631.548468   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792963631.552484   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792963631.556325   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792963631.560039   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792963631.563751   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792963631.567509   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792964323.145936   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792964323.152005   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792964323.157202   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792964323.162095   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792964323.166973   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792964323.171443   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792964323.175731   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792964323.179886   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792964323.184041   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792964332.597705   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792964332.603359   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792964332.608026   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792964332.612381   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792964332.616654   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792964332.620762   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792964332.624690   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792964332.628510   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792964332.632311   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792964332.705561   17687 dot_search_space.cc:240] All configs were filtered out because none of them sufficiently match the hints. Maybe the hints set does not contain a good representative set of valid configs? Working around this by using the full hints set instead.
+I0000 00:00:1792964332.705627   17687 dot_search_space.cc:240] All configs were filtered out because none of them sufficiently match the hints. Maybe the hints set does not contain a good representative set of valid configs? Working around this by using the full hints set instead.
+I0000 00:00:1792964332.705652   17687 dot_search_space.cc:240] All configs were filtered out because none of them sufficiently match the hints. Maybe the hints set does not contain a good representative set of valid configs? Working around this by using the full hints set instead.
+I0000 00:00:1792964332.705674   17687 dot_search_space.cc:240] All configs were filtered out because none of them sufficiently match the hints. Maybe the hints set does not contain a good representative set of valid configs? Working around this by using the full hints set instead.
+I0000 00:00:1792964332.705694   17687 dot_search_space.cc:240] All configs were filtered out because none of them sufficiently match the hints. Maybe the hints set does not contain a good representative set of valid configs? Working around this by using the full hints set instead.
+I0000 00:00:1792964332.705713   17687 dot_search_space.cc:240] All configs were filtered out because none of them sufficiently match the hints. Maybe the hints set does not contain a good representative set of valid configs? Working around this by using the full hints set instead.
+I0000 00:00:1792964334.423472   17806 subprocess_compilation.cc:348] ptxas warning : Registers are spilled to local memory in function 'gemm_fusion_dot_general_70', 48 bytes spill stores, 48 bytes spill loads
+
+I0000 00:00:1792964334.824705   17804 subprocess_compilation.cc:348] ptxas warning : Registers are spilled to local memory in function 'gemm_fusion_dot_general_73', 48 bytes spill stores, 48 bytes spill loads
+
+I0000 00:00:1792964335.127378   17809 subprocess_compilation.cc:348] ptxas warning : Registers are spilled to local memory in function 'gemm_fusion_dot_16', 32 bytes spill stores, 32 bytes spill loads
+
+I0000 00:00:1792964355.820164   17687 dot_merger.cc:476] Merging Dots in computation: main.11
+I0000 00:00:1792964355.821590   17687 dot_merger.cc:476] Merging Dots in computation: main.11
+I0000 00:00:1792964355.822800   17687 dot_merger.cc:476] Merging Dots in computation: main.11
+I0000 00:00:1792964355.823890   17687 dot_merger.cc:476] Merging Dots in computation: main.11
+I0000 00:00:1792964355.824867   17687 dot_merger.cc:476] Merging Dots in computation: main.11
+I0000 00:00:1792964355.825791   17687 dot_merger.cc:476] Merging Dots in computation: main.11
+I0000 00:00:1792964355.826616   17687 dot_merger.cc:476] Merging Dots in computation: main.11
+I0000 00:00:1792964355.827443   17687 dot_merger.cc:476] Merging Dots in computation: main.11
+I0000 00:00:1792964355.828258   17687 dot_merger.cc:476] Merging Dots in computation: main.11
+I0000 00:00:1792964397.566475   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792964397.572565   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792964397.577449   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792964397.582003   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792964397.586368   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792964397.590596   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792964397.594621   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792964397.598650   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792964397.602632   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792964406.178928   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792964406.184506   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792964406.188835   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792964406.192842   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792964406.196706   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792964406.200471   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792964406.204099   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792964406.207625   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792964406.211136   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792964406.286552   17687 dot_search_space.cc:240] All configs were filtered out because none of them sufficiently match the hints. Maybe the hints set does not contain a good representative set of valid configs? Working around this by using the full hints set instead.
+I0000 00:00:1792964406.286629   17687 dot_search_space.cc:240] All configs were filtered out because none of them sufficiently match the hints. Maybe the hints set does not contain a good representative set of valid configs? Working around this by using the full hints set instead.
+I0000 00:00:1792964406.286673   17687 dot_search_space.cc:240] All configs were filtered out because none of them sufficiently match the hints. Maybe the hints set does not contain a good representative set of valid configs? Working around this by using the full hints set instead.
+I0000 00:00:1792964407.288782   17804 subprocess_compilation.cc:348] ptxas warning : Registers are spilled to local memory in function 'gemm_fusion_transpose_132', 48 bytes spill stores, 48 bytes spill loads
+
+I0000 00:00:1792964407.623752   17807 subprocess_compilation.cc:348] ptxas warning : Registers are spilled to local memory in function 'gemm_fusion_transpose_130', 64 bytes spill stores, 64 bytes spill loads
+
+I0000 00:00:1792965342.353462   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792965342.358658   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792965342.362816   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792965342.367030   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792965342.371139   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792965342.375045   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792965342.378998   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792965342.382939   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792965342.386888   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792965351.492834   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792965351.497972   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792965351.502071   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792965351.505871   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792965351.509554   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792965351.513190   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792965351.516687   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792965351.520147   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792965351.523577   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792965351.598226   17687 dot_search_space.cc:240] All configs were filtered out because none of them sufficiently match the hints. Maybe the hints set does not contain a good representative set of valid configs? Working around this by using the full hints set instead.
+I0000 00:00:1792965351.598320   17687 dot_search_space.cc:240] All configs were filtered out because none of them sufficiently match the hints. Maybe the hints set does not contain a good representative set of valid configs? Working around this by using the full hints set instead.
+I0000 00:00:1792965352.884892   17809 subprocess_compilation.cc:348] ptxas warning : Registers are spilled to local memory in function 'gemm_fusion_transpose_184', 4 bytes spill stores, 4 bytes spill loads
+
+I0000 00:00:1792965352.954570   17807 subprocess_compilation.cc:348] ptxas warning : Registers are spilled to local memory in function 'gemm_fusion_dot_general_70', 32 bytes spill stores, 32 bytes spill loads
+
+I0000 00:00:1792965352.964781   17801 subprocess_compilation.cc:348] ptxas warning : Registers are spilled to local memory in function 'gemm_fusion_dot_general_47', 40 bytes spill stores, 40 bytes spill loads
+
+I0000 00:00:1792965373.964648   17687 dot_merger.cc:476] Merging Dots in computation: main.11
+I0000 00:00:1792965373.965937   17687 dot_merger.cc:476] Merging Dots in computation: main.11
+I0000 00:00:1792965373.967038   17687 dot_merger.cc:476] Merging Dots in computation: main.11
+I0000 00:00:1792965373.968008   17687 dot_merger.cc:476] Merging Dots in computation: main.11
+I0000 00:00:1792965373.968874   17687 dot_merger.cc:476] Merging Dots in computation: main.11
+I0000 00:00:1792965373.969678   17687 dot_merger.cc:476] Merging Dots in computation: main.11
+I0000 00:00:1792965373.970410   17687 dot_merger.cc:476] Merging Dots in computation: main.11
+I0000 00:00:1792965373.971140   17687 dot_merger.cc:476] Merging Dots in computation: main.11
+I0000 00:00:1792965373.971858   17687 dot_merger.cc:476] Merging Dots in computation: main.11
+I0000 00:00:1792965374.936103   17808 subprocess_compilation.cc:348] ptxas warning : Registers are spilled to local memory in function 'input_reduce_fusion_1', 8 bytes spill stores, 8 bytes spill loads
+
+I0000 00:00:1792965376.161429   17687 subprocess_compilation.cc:348] ptxas warning : Registers are spilled to local memory in function 'input_reduce_fusion_1', 8 bytes spill stores, 8 bytes spill loads
+
+I0000 00:00:1792965414.686017   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792965414.691022   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792965414.694692   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792965414.698041   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792965414.701376   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792965414.704590   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792965414.707741   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792965414.711163   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792965414.714283   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792965422.765358   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792965422.770082   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792965422.773978   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792965422.777747   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792965422.781455   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792965422.785045   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792965422.788532   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792965422.791971   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792965422.795332   17687 dot_merger.cc:476] Merging Dots in computation: main.54
+I0000 00:00:1792965422.868364   17687 dot_search_space.cc:240] All configs were filtered out because none of them sufficiently match the hints. Maybe the hints set does not contain a good representative set of valid configs? Working around this by using the full hints set instead.
+I0000 00:00:1792965422.868439   17687 dot_search_space.cc:240] All configs were filtered out because none of them sufficiently match the hints. Maybe the hints set does not contain a good representative set of valid configs? Working around this by using the full hints set instead.
+I0000 00:00:1792965422.868454   17687 dot_search_space.cc:240] All configs were filtered out because none of them sufficiently match the hints. Maybe the hints set does not contain a good representative set of valid configs? Working around this by using the full hints set instead.
+I0000 00:00:1792965422.868477   17687 dot_search_space.cc:240] All configs were filtered out because none of them sufficiently match the hints. Maybe the hints set does not contain a good representative set of valid configs? Working around this by using the full hints set instead.
+I0000 00:00:1792965422.868489   17687 dot_search_space.cc:240] All configs were filtered out because none of them sufficiently match the hints. Maybe the hints set does not contain a good representative set of valid configs? Working around this by using the full hints set instead.
+I0000 00:00:1792965424.143241   17806 subprocess_compilation.cc:348] ptxas warning : Registers are spilled to local memory in function 'gemm_fusion_transpose_136', 48 bytes spill stores, 48 bytes spill loads
+
+I0000 00:00:1792965424.402851   17808 subprocess_compilation.cc:348] ptxas warning : Registers are spilled to local memory in function 'gemm_fusion_dot_general_47', 48 bytes spill stores, 48 bytes spill loads
+
+I0000 00:00:1792965424.552951   17799 subprocess_compilation.cc:348] ptxas warning : Registers are spilled to local memory in function 'gemm_fusion_transpose_134', 64 bytes spill stores, 64 bytes spill loads
+
+[1/60] Yacht split 2 homoscedastic full
+    test LPD -3.81498  RMSE 3.10252  epoch 5345  153.5s
+[2/60] Yacht split 4 homoscedastic full
+    test LPD -3.79537  RMSE 3.17375  epoch 5390  43.1s
+[3/60] Yacht split 6 homoscedastic full
+    test LPD -3.80768  RMSE 4.94469  epoch 5805  46.9s
+[4/60] Yacht split 8 homoscedastic full
+    test LPD -3.79401  RMSE 3.28235  epoch 5515  46.5s
+[5/60] Yacht split 10 homoscedastic full
+    test LPD -3.82684  RMSE 4.82802  epoch 9990  63.8s
+[6/60] Yacht split 12 homoscedastic full
+    test LPD -3.78660  RMSE 4.77892  epoch 5975  46.7s
+[7/60] Yacht split 14 homoscedastic full
+    test LPD -3.78990  RMSE 4.91222  epoch 5610  44.9s
+[8/60] Yacht split 16 homoscedastic full
+    test LPD -3.78055  RMSE 5.43636  epoch 5165  41.9s
+[9/60] Yacht split 18 homoscedastic full
+    test LPD -3.78265  RMSE 2.77353  epoch 5400  44.1s
+[10/60] Yacht split 20 homoscedastic full
+    test LPD -3.77814  RMSE 5.27019  epoch 5555  43.7s
+[11/60] Concrete split 2 homoscedastic full
+    test LPD -3.89826  RMSE 7.60651  epoch 5380  146.2s
+[12/60] Concrete split 4 homoscedastic full
+    test LPD -3.91677  RMSE 8.12506  epoch 1670  58.8s
+[13/60] Concrete split 6 homoscedastic full
+    test LPD -3.92109  RMSE 7.87231  epoch 1670  56.3s
+[14/60] Concrete split 8 homoscedastic full
+    test LPD -3.87174  RMSE 6.93982  epoch 5455  105.6s
+[15/60] Concrete split 10 homoscedastic full
+    test LPD -3.87635  RMSE 7.04825  epoch 5505  109.5s
+[16/60] Concrete split 12 homoscedastic full
+    test LPD -3.89742  RMSE 7.66951  epoch 1670  57.6s
+[17/60] Concrete split 14 homoscedastic full
+    test LPD -3.92350  RMSE 8.05442  epoch 1670  58.9s
+[18/60] Concrete split 16 homoscedastic full
+    test LPD -3.92170  RMSE 8.36581  epoch 1670  61.5s
+[19/60] Concrete split 18 homoscedastic full
+    test LPD -3.92447  RMSE 8.52408  epoch 1670  59.5s
+[20/60] Concrete split 20 homoscedastic full
+    test LPD -3.89242  RMSE 6.94575  epoch 1670  56.6s
+[21/60] Energy split 2 homoscedastic full
+    test LPD -3.33987  RMSE 3.41136  epoch 5800  134.6s
+[22/60] Energy split 4 homoscedastic full
+    test LPD -3.33966  RMSE 3.44615  epoch 6175  105.1s
+[23/60] Energy split 6 homoscedastic full
+    test LPD -3.34053  RMSE 3.08556  epoch 5695  96.6s
+[24/60] Energy split 8 homoscedastic full
+    test LPD -3.33183  RMSE 2.75854  epoch 4970  89.7s
+[25/60] Energy split 10 homoscedastic full
+    test LPD -3.33415  RMSE 3.28416  epoch 5310  92.2s
+[26/60] Energy split 12 homoscedastic full
+    test LPD -3.33937  RMSE 3.60606  epoch 4070  84.9s
+[27/60] Energy split 14 homoscedastic full
+    test LPD -3.33456  RMSE 2.75197  epoch 5670  106.1s
+[28/60] Energy split 16 homoscedastic full
+    test LPD -3.33041  RMSE 2.98159  epoch 2875  64.8s
+[29/60] Energy split 18 homoscedastic full
+    test LPD -3.33921  RMSE 3.06951  epoch 3365  72.1s
+[30/60] Energy split 20 homoscedastic full
+    test LPD -3.32185  RMSE 2.74447  epoch 2695  58.4s
+[31/60] Boston split 2 homoscedastic full
+    test LPD -3.31471  RMSE 4.15417  epoch 7665  139.8s
+[32/60] Boston split 4 homoscedastic full
+    test LPD -3.37341  RMSE 5.70742  epoch 5755  76.2s
+[33/60] Boston split 6 homoscedastic full
+    test LPD -3.30659  RMSE 4.44501  epoch 9225  101.6s
+[34/60] Boston split 8 homoscedastic full
+    test LPD -3.38568  RMSE 5.90760  epoch 8530  105.9s
+[35/60] Boston split 10 homoscedastic full
+    test LPD -3.30095  RMSE 2.95526  epoch 3490  50.8s
+[36/60] Boston split 12 homoscedastic full
+    test LPD -3.32418  RMSE 3.66382  epoch 3020  45.3s
+[37/60] Boston split 14 homoscedastic full
+    test LPD -3.32547  RMSE 4.31622  epoch 8960  106.7s
+[38/60] Boston split 16 homoscedastic full
+    test LPD -3.35693  RMSE 5.02535  epoch 3000  45.5s
+[39/60] Boston split 18 homoscedastic full
+    test LPD -3.31822  RMSE 3.36292  epoch 3000  46.4s
+[40/60] Boston split 20 homoscedastic full
+    test LPD -3.28421  RMSE 3.08853  epoch 4745  64.7s
+[41/60] Power split 2 homoscedastic full
+    test LPD -3.79534  RMSE 4.26422  epoch 635  141.4s
+[42/60] Power split 4 homoscedastic full
+    test LPD -3.79655  RMSE 4.43318  epoch 642  97.5s
+[43/60] Power split 6 homoscedastic full
+    test LPD -3.79628  RMSE 4.51982  epoch 610  98.5s
+[44/60] Power split 8 homoscedastic full
+    test LPD -3.79282  RMSE 4.31056  epoch 620  101.3s
+[45/60] Power split 10 homoscedastic full
+    test LPD -3.79457  RMSE 4.24881  epoch 640  97.0s
+[46/60] Power split 12 homoscedastic full
+    test LPD -3.79348  RMSE 4.15717  epoch 642  100.1s
+[47/60] Power split 14 homoscedastic full
+    test LPD -3.79142  RMSE 4.14394  epoch 635  96.0s
+[48/60] Power split 16 homoscedastic full
+    test LPD -3.79351  RMSE 4.25890  epoch 640  94.6s
+[49/60] Power split 18 homoscedastic full
+    test LPD -3.79721  RMSE 4.53246  epoch 425  88.4s
+[50/60] Power split 20 homoscedastic full
+    test LPD -3.78944  RMSE 3.96549  epoch 620  103.5s
+[51/60] Wine split 2 homoscedastic full
+    test LPD -1.04034  RMSE 0.63961  epoch 1155  109.1s
+[52/60] Wine split 4 homoscedastic full
+    test LPD -1.04239  RMSE 0.65870  epoch 3390  99.5s
+[53/60] Wine split 6 homoscedastic full
+    test LPD -0.98245  RMSE 0.57426  epoch 1155  66.0s
+[54/60] Wine split 8 homoscedastic full
+    test LPD -1.02654  RMSE 0.63016  epoch 1165  63.1s
+[55/60] Wine split 10 homoscedastic full
+    test LPD -1.06291  RMSE 0.67598  epoch 3535  101.5s
+[56/60] Wine split 12 homoscedastic full
+    test LPD -1.02523  RMSE 0.63960  epoch 2570  89.0s
+[57/60] Wine split 14 homoscedastic full
+    test LPD -1.05766  RMSE 0.67012  epoch 1545  80.3s
+[58/60] Wine split 16 homoscedastic full
+    test LPD -1.10355  RMSE 0.72593  epoch 3645  96.3s
+[59/60] Wine split 18 homoscedastic full
+    test LPD -1.05367  RMSE 0.67569  epoch 1630  72.7s
+[60/60] Wine split 20 homoscedastic full
+    test LPD -1.05616  RMSE 0.66426  epoch 1155  68.1s
+DVI benchmark complete: 60 successful rows, 0 failure rows. Output: /home/nimrais/repos/NGMP/paper_materials/dvi_uci/wu2019_repeated_holdout_v1_20splits_homoscedastic_2hidden50_budget50k_v1_20261025/dvi_shards/02
